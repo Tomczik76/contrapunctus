@@ -1,4 +1,3 @@
-import scala.annotation.tailrec
 
 enum Interval(val value: Int):
   case Unison extends Interval(0)
@@ -13,11 +12,22 @@ enum Interval(val value: Int):
   case MajorSixth extends Interval(9)
   case MinorSeventh extends Interval(10)
   case MajorSeventh extends Interval(11)
+  case AugmentedUnison extends Interval(MinorSecond.value)
+  case DiminishedThird extends Interval(MajorSecond.value)
+  case DiminishedFourth extends Interval(MajorThird.value)
+  case AugmentedThird extends Interval(PerfectFourth.value)
+  case AugmentedFourth extends Interval(Tritone.value)
+  case DiminishedFifth extends Interval(Tritone.value)
+  case AugmentedFifth extends Interval(MinorSixth.value)
+  case DiminishedSixth extends Interval(PerfectFifth.value)
+  case DiminishedSeventh extends Interval(MajorSixth.value)
 
   override def equals(that: Any): Boolean =
     that match
       case int: Interval => this.value == int.value
       case _: Any => false
+
+  override def hashCode(): Int = this.value
 
   def invert: Interval =
     if (this == Unison) Unison 

@@ -12,3 +12,6 @@ class IntervalSuite extends munit.FunSuite:
       C(1).interval(E(0)),
       Some(MinorSixth)
     )
+  test("Test Map lookups"):
+    val map = Map(Set(DiminishedFifth) -> 1)
+    assertEquals(map(Set(Tritone)), 1)

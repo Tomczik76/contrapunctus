@@ -2,6 +2,7 @@ import cats.implicits.*
 import Interval.*
 import cats.data.NonEmptyList
 import Inversion as GlobalInversion
+import SeventhChordType.DiminishedSeventh
 
 sealed trait Inversion(val value: Int)
 
@@ -9,29 +10,31 @@ trait ChordType(
     rootIntervals: Set[Interval],
     val inversion: Inversion
 ):
-  private val rootInts = rootIntervals.toList
+  private val sortedIntervals: List[Interval] = rootIntervals.toList
     .sortBy {
       case x: Interval.ExtendedChordInterval => x.value + 12
       case x                                 => x.value
     }
 
-  def invert(intervals: List[Interval], inver: Int): List[Interval] =
-    if inver <= 0 then intervals
-    else
-      val tail = intervals.tail
-      val head = tail.head
-      val result = tail.tail
-        .map { interval =>
-          val int = interval.value - head.value
-          if int < 0 then Interval.fromOrdinal(int + 12)
-          else Interval.fromOrdinal(int)
-        }
-        .prepended(Unison)
-        .appended(head.invert)
-      invert(result, inver - 1)
+  def invert(intervals: List[Interval], times: Int): List[Interval] =
+    (intervals, times) match
+      case (Nil, _)         => Nil
+      case (List(_), _)     => intervals
+      case (_, i) if i <= 0 => intervals
+      case (_ :: head :: tail, times) =>
+        val result =
+          tail
+            .map { interval =>
+              val int = interval.value - head.value
+              if int < 0 then Interval.fromOrdinal(int + 12)
+              else Interval.fromOrdinal(int)
+            }
+            .prepended(Unison)
+            .appended(head.invert)
+        invert(result, times - 1)
 
-  val intervals = invert(rootInts, inversion.value).toSet
-  val rootInterval: Interval = rootInts(inversion.value).invert
+  val intervals = invert(sortedIntervals, inversion.value).toSet
+  val rootInterval: Interval = sortedIntervals(inversion.value).invert
 
 object TriadChordType:
   enum Inversion(value: Int) extends GlobalInversion(value):
@@ -43,17 +46,17 @@ enum TriadChordType(
     rootIntervals: Set[Interval],
     inversion: TriadChordType.Inversion
 ) extends ChordType(rootIntervals, inversion):
-  case Minor(override val inversion: TriadChordType.Inversion)
+  case Minor(inver: TriadChordType.Inversion)
       extends TriadChordType(
         Set(Unison, MinorThird, PerfectFifth),
-        inversion
+        inver
       )
-  case Major(override val inversion: TriadChordType.Inversion)
-      extends TriadChordType(Set(Unison, MajorThird, PerfectFifth), inversion)
-  case Diminished(override val inversion: TriadChordType.Inversion)
-      extends TriadChordType(Set(Unison, MinorThird, Tritone), inversion)
-  case Augmented(override val inversion: TriadChordType.Inversion)
-      extends TriadChordType(Set(Unison, MajorThird, MajorSixth), inversion)
+  case Major(inver: TriadChordType.Inversion)
+      extends TriadChordType(Set(Unison, MajorThird, PerfectFifth), inver)
+  case Diminished(inver: TriadChordType.Inversion)
+      extends TriadChordType(Set(Unison, MinorThird, DiminishedFifth), inver)
+  case Augmented(inver: TriadChordType.Inversion)
+      extends TriadChordType(Set(Unison, MajorThird, AugmentedFifth), inver)
 
 object SeventhChordType:
   enum Inversion(value: Int) extends GlobalInversion(value):
@@ -66,25 +69,30 @@ enum SeventhChordType(
     rootIntervals: Set[Interval],
     inversion: SeventhChordType.Inversion
 ) extends ChordType(rootIntervals, inversion):
-  case MinorSeventh(override val inversion: SeventhChordType.Inversion)
+  case MinorSeventh(inver: SeventhChordType.Inversion)
       extends SeventhChordType(
         Set(Unison, MinorThird, PerfectFifth, Interval.MinorSeventh),
-        inversion
+        inver
       )
-  case MinorMajorSeventh(override val inversion: SeventhChordType.Inversion)
+  case MinorMajorSeventh(inver: SeventhChordType.Inversion)
       extends SeventhChordType(
         Set(Unison, MinorThird, PerfectFifth, Interval.MajorSeventh),
-        inversion
+        inver
       )
-  case DominantSeventh(override val inversion: SeventhChordType.Inversion)
+  case DominantSeventh(inver: SeventhChordType.Inversion)
       extends SeventhChordType(
         Set(Unison, MajorThird, PerfectFifth, Interval.MinorSeventh),
-        inversion
+        inver
       )
-  case MajorSeventh(override val inversion: SeventhChordType.Inversion)
+  case MajorSeventh(inver: SeventhChordType.Inversion)
       extends SeventhChordType(
         Set(Unison, MajorThird, PerfectFifth, Interval.MajorSeventh),
-        inversion
+        inver
+      )
+  case DiminishedSeventh(inver: SeventhChordType.Inversion)
+      extends SeventhChordType(
+        Set(Unison, MinorThird, DiminishedFifth, Interval.DiminishedSeventh),
+        inver
       )
 
 object NinethChordType:
@@ -99,7 +107,7 @@ enum NinethChordType(
     rootIntervals: Set[Interval],
     inversion: NinethChordType.Inversion
 ) extends ChordType(rootIntervals, inversion):
-  case MinorNineth(override val inversion: NinethChordType.Inversion)
+  case MinorNineth(inver: NinethChordType.Inversion)
       extends NinethChordType(
         Set(
           Unison,
@@ -108,9 +116,9 @@ enum NinethChordType(
           Interval.MajorSeventh,
           MajorSecond
         ),
-        inversion
+        inver
       )
-  case DominantNineth(override val inversion: NinethChordType.Inversion)
+  case DominantNineth(inver: NinethChordType.Inversion)
       extends NinethChordType(
         Set(
           Unison,
@@ -119,10 +127,10 @@ enum NinethChordType(
           Interval.MinorSeventh,
           MajorSecond
         ),
-        inversion
+        inver
       )
 
-  case MajorNineth(override val inversion: NinethChordType.Inversion)
+  case MajorNineth(inver: NinethChordType.Inversion)
       extends NinethChordType(
         Set(
           Unison,
@@ -131,7 +139,7 @@ enum NinethChordType(
           Interval.MajorSeventh,
           MajorSecond
         ),
-        inversion
+        inver
       )
 
 object ChordType:
@@ -147,7 +155,8 @@ object ChordType:
       SeventhChordType.MinorSeventh(_),
       SeventhChordType.DominantSeventh(_),
       SeventhChordType.MinorMajorSeventh(_),
-      SeventhChordType.MajorSeventh(_)
+      SeventhChordType.MajorSeventh(_),
+      SeventhChordType.DiminishedSeventh(_)
     )
 
   private val ninethChordTypes = List(
@@ -156,36 +165,47 @@ object ChordType:
     NinethChordType.MajorNineth(_)
   )
 
-  private val triadPairs =
-    for {
+  private val triadPairs: Map[Set[Interval], Set[ChordType]] = {
+    val chordTypes = for {
       inversion <- TriadChordType.Inversion.values
       chordTypeConstructor <- triadChordTypes
       chordType = chordTypeConstructor(inversion)
-      intervals = chordType.intervals
-    } yield (intervals -> chordType)
+    } yield chordType
 
-  private val seventhPairs =
-    for {
+    chordTypes.toList.foldMap(chordType =>
+      Map(chordType.intervals -> Set(chordType))
+    )
+  }
+
+  private val seventhPairs: Map[Set[Interval], Set[ChordType]] = {
+    val chordTypes = for {
       inversion <- SeventhChordType.Inversion.values
       chordTypeConstructor <- seventhChordTypes
       chordType = chordTypeConstructor(inversion)
-      intervals = chordType.intervals
-    } yield (intervals -> chordType)
+    } yield chordType
 
-  private val ninethPairs =
-    for {
+    chordTypes.toList.foldMap(chordType =>
+      Map(chordType.intervals -> Set(chordType))
+    )
+  }
+
+  private val ninethPairs: Map[Set[Interval], Set[ChordType]] = {
+    val chordTypes = for {
       inversion <- NinethChordType.Inversion.values
       chordTypeConstructor <- ninethChordTypes
       chordType = chordTypeConstructor(inversion)
-      intervals = chordType.intervals
-    } yield (intervals -> chordType)
+    } yield chordType
 
-  private val intervalMap = (triadPairs ++ seventhPairs ++ ninethPairs).toMap
+    chordTypes.toList.foldMap(chordType =>
+      Map(chordType.intervals -> Set(chordType))
+    )
+  }
+  private val intervalMap = triadPairs |+| seventhPairs |+| ninethPairs
 
-  def apply(intervals: Set[Interval]): Option[ChordType] =
+  def apply(intervals: Set[Interval]): Option[Set[ChordType]] =
     intervalMap.get(intervals)
 
-  def fromNotes(notes: Set[Note]): Option[ChordType] =
+  def fromNotes(notes: Set[Note]): Option[Set[ChordType]] =
     for
       bass <- notes.minByOption(_.midi)
       intervals <- notes.toList.traverse(bass.interval)
@@ -194,12 +214,16 @@ object ChordType:
 
 case class Chord(root: NoteType, chordType: ChordType)
 object Chord:
-  def fromNotes(notes: Set[Note]): Option[Chord] =
+  def fromNotes(notes: Set[Note]): Option[Set[Chord]] =
     for
       bass <- notes.minByOption(_.midi)
       intervalNotePairs <- notes.toList
         .traverse(note => bass.interval(note).tupleRight(note))
         .map(_.toMap)
-      chordType <- ChordType(intervalNotePairs.keySet)
-      root <- intervalNotePairs.get(chordType.rootInterval)
-    yield Chord(root.noteType, chordType)
+      chordTypes <- ChordType(intervalNotePairs.keySet)
+      chords <- chordTypes.toList.traverse(chordType =>
+        intervalNotePairs
+          .get(chordType.rootInterval)
+          .map(note => Chord(note.noteType, chordType))
+      )
+    yield chords.toSet
