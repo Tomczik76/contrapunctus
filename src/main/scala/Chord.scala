@@ -2,6 +2,7 @@ import cats.implicits.*
 import Interval.*
 import cats.data.NonEmptyList
 import Inversion as GlobalInversion
+
 import SeventhChordType.DiminishedSeventh
 
 sealed trait Inversion(val value: Int)
@@ -11,10 +12,7 @@ trait ChordType(
     val inversion: Inversion
 ):
   private val sortedIntervals: List[Interval] = rootIntervals.toList
-    .sortBy {
-      case x: Interval.ExtendedChordInterval => x.value + 12
-      case x                                 => x.value
-    }
+    .sortBy(_.trueValue)
 
   def invert(intervals: List[Interval], times: Int): List[Interval] =
     (intervals, times) match
@@ -29,7 +27,7 @@ trait ChordType(
               if int < 0 then Interval.fromOrdinal(int + 12)
               else Interval.fromOrdinal(int)
             }
-            .prepended(Unison)
+            .prepended(PerfectUnison)
             .appended(head.invert)
         invert(result, times - 1)
 
@@ -48,15 +46,15 @@ enum TriadChordType(
 ) extends ChordType(rootIntervals, inversion):
   case Minor(inver: TriadChordType.Inversion)
       extends TriadChordType(
-        Set(Unison, MinorThird, PerfectFifth),
+        Set(PerfectUnison, MinorThird, PerfectFifth),
         inver
       )
   case Major(inver: TriadChordType.Inversion)
-      extends TriadChordType(Set(Unison, MajorThird, PerfectFifth), inver)
+      extends TriadChordType(Set(PerfectUnison, MajorThird, PerfectFifth), inver)
   case Diminished(inver: TriadChordType.Inversion)
-      extends TriadChordType(Set(Unison, MinorThird, DiminishedFifth), inver)
+      extends TriadChordType(Set(PerfectUnison, MinorThird, DiminishedFifth), inver)
   case Augmented(inver: TriadChordType.Inversion)
-      extends TriadChordType(Set(Unison, MajorThird, AugmentedFifth), inver)
+      extends TriadChordType(Set(PerfectUnison, MajorThird, AugmentedFifth), inver)
 
 object SeventhChordType:
   enum Inversion(value: Int) extends GlobalInversion(value):
@@ -71,31 +69,31 @@ enum SeventhChordType(
 ) extends ChordType(rootIntervals, inversion):
   case MinorSeventh(inver: SeventhChordType.Inversion)
       extends SeventhChordType(
-        Set(Unison, MinorThird, PerfectFifth, Interval.MinorSeventh),
+        Set(PerfectUnison, MinorThird, PerfectFifth, Interval.MinorSeventh),
         inver
       )
   case MinorMajorSeventh(inver: SeventhChordType.Inversion)
       extends SeventhChordType(
-        Set(Unison, MinorThird, PerfectFifth, Interval.MajorSeventh),
+        Set(PerfectUnison, MinorThird, PerfectFifth, Interval.MajorSeventh),
         inver
       )
   case DominantSeventh(inver: SeventhChordType.Inversion)
       extends SeventhChordType(
-        Set(Unison, MajorThird, PerfectFifth, Interval.MinorSeventh),
+        Set(PerfectUnison, MajorThird, PerfectFifth, Interval.MinorSeventh),
         inver
       )
   case MajorSeventh(inver: SeventhChordType.Inversion)
       extends SeventhChordType(
-        Set(Unison, MajorThird, PerfectFifth, Interval.MajorSeventh),
+        Set(PerfectUnison, MajorThird, PerfectFifth, Interval.MajorSeventh),
         inver
       )
   case DiminishedSeventh(inver: SeventhChordType.Inversion)
       extends SeventhChordType(
-        Set(Unison, MinorThird, DiminishedFifth, Interval.DiminishedSeventh),
+        Set(PerfectUnison, MinorThird, DiminishedFifth, Interval.DiminishedSeventh),
         inver
       )
 
-object NinethChordType:
+object NinthChordType:
   enum Inversion(value: Int) extends GlobalInversion(value):
     case Root extends Inversion(0)
     case First extends Inversion(1)
@@ -103,44 +101,95 @@ object NinethChordType:
     case Third extends Inversion(3)
     case Fourth extends Inversion(4)
 
-enum NinethChordType(
+enum NinthChordType(
     rootIntervals: Set[Interval],
-    inversion: NinethChordType.Inversion
+    inversion: NinthChordType.Inversion
 ) extends ChordType(rootIntervals, inversion):
-  case MinorNineth(inver: NinethChordType.Inversion)
-      extends NinethChordType(
+  case MinorNinth(inver: NinthChordType.Inversion)
+      extends NinthChordType(
         Set(
-          Unison,
+          PerfectUnison,
           MinorThird,
           PerfectFifth,
-          Interval.MajorSeventh,
-          MajorSecond
+          Interval.MinorSeventh,
+          Interval.MajorNinth
         ),
         inver
       )
-  case DominantNineth(inver: NinethChordType.Inversion)
-      extends NinethChordType(
+  case DominantNinth(inver: NinthChordType.Inversion)
+      extends NinthChordType(
         Set(
-          Unison,
+          PerfectUnison,
           MajorThird,
           PerfectFifth,
           Interval.MinorSeventh,
-          MajorSecond
+          Interval.MajorNinth
         ),
         inver
       )
 
-  case MajorNineth(inver: NinethChordType.Inversion)
-      extends NinethChordType(
+  case MajorNinth(inver: NinthChordType.Inversion)
+      extends NinthChordType(
         Set(
-          Unison,
+          PerfectUnison,
           MajorThird,
           PerfectFifth,
           Interval.MajorSeventh,
-          MajorSecond
+          Interval.MajorNinth
         ),
         inver
       )
+  case MinorMajorNinth(inver: NinthChordType.Inversion)
+      extends NinthChordType(
+        Set(
+          PerfectUnison,
+          MinorThird,
+          PerfectFifth,
+          Interval.MajorSeventh,
+          Interval.MajorNinth
+        ),
+        inver
+      )
+  case MinorNinthOmit5(inver: NinthChordType.Inversion)
+  extends NinthChordType(
+    Set(
+      PerfectUnison,
+      MinorThird,
+      Interval.MajorSeventh,
+      Interval.MajorNinth
+    ),
+    inver
+  )
+  case DominantNinthOmit5(inver: NinthChordType.Inversion)
+  extends NinthChordType(
+    Set(
+      PerfectUnison,
+      MajorThird,
+      Interval.MinorSeventh,
+      Interval.MajorNinth
+    ),
+    inver
+  )
+  case MajorNinthOmit5(inver: NinthChordType.Inversion)
+  extends NinthChordType(
+    Set(
+      PerfectUnison,
+      MajorThird,
+      Interval.MajorSeventh,
+      Interval.MajorNinth
+    ),
+    inver
+  )
+  case MinorMajorNinthOmit5(inver: NinthChordType.Inversion)
+    extends NinthChordType(
+      Set(
+        PerfectUnison,
+        MinorThird,
+        Interval.MajorSeventh,
+        Interval.MajorNinth
+      ),
+      inver
+    )
 
 object ChordType:
   private val triadChordTypes =
@@ -159,10 +208,10 @@ object ChordType:
       SeventhChordType.DiminishedSeventh(_)
     )
 
-  private val ninethChordTypes = List(
-    NinethChordType.MinorNineth(_),
-    NinethChordType.DominantNineth(_),
-    NinethChordType.MajorNineth(_)
+  private val NinthChordTypes = List(
+    NinthChordType.MinorNinth(_),
+    NinthChordType.DominantNinth(_),
+    NinthChordType.MajorNinth(_)
   )
 
   private val triadPairs: Map[Set[Interval], Set[ChordType]] = {
@@ -189,10 +238,10 @@ object ChordType:
     )
   }
 
-  private val ninethPairs: Map[Set[Interval], Set[ChordType]] = {
+  private val NinthPairs: Map[Set[Interval], Set[ChordType]] = {
     val chordTypes = for {
-      inversion <- NinethChordType.Inversion.values
-      chordTypeConstructor <- ninethChordTypes
+      inversion <- NinthChordType.Inversion.values
+      chordTypeConstructor <- NinthChordTypes
       chordType = chordTypeConstructor(inversion)
     } yield chordType
 
@@ -200,7 +249,7 @@ object ChordType:
       Map(chordType.intervals -> Set(chordType))
     )
   }
-  private val intervalMap = triadPairs |+| seventhPairs |+| ninethPairs
+  private val intervalMap = triadPairs |+| seventhPairs |+| NinthPairs
 
   def apply(intervals: Set[Interval]): Option[Set[ChordType]] =
     intervalMap.get(intervals)

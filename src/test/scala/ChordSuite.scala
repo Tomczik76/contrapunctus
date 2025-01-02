@@ -330,7 +330,7 @@ class ChordSuite extends munit.FunSuite:
         Set(
           Chord(
             NoteType.C,
-            NinethChordType.MajorNineth(NinethChordType.Inversion.Root)
+            NinthChordType.MajorNinth(NinthChordType.Inversion.Root)
           )
         )
       )
@@ -341,7 +341,7 @@ class ChordSuite extends munit.FunSuite:
         Set(
           Chord(
             NoteType.C,
-            NinethChordType.MajorNineth(NinethChordType.Inversion.First)
+            NinthChordType.MajorNinth(NinthChordType.Inversion.First)
           )
         )
       )
@@ -352,7 +352,7 @@ class ChordSuite extends munit.FunSuite:
         Set(
           Chord(
             NoteType.C,
-            NinethChordType.MajorNineth(NinethChordType.Inversion.Second)
+            NinthChordType.MajorNinth(NinthChordType.Inversion.Second)
           )
         )
       )
@@ -363,7 +363,7 @@ class ChordSuite extends munit.FunSuite:
         Set(
           Chord(
             NoteType.C,
-            NinethChordType.MajorNineth(NinethChordType.Inversion.Third)
+            NinthChordType.MajorNinth(NinthChordType.Inversion.Third)
           )
         )
       )
@@ -374,7 +374,7 @@ class ChordSuite extends munit.FunSuite:
         Set(
           Chord(
             NoteType.C,
-            NinethChordType.MajorNineth(NinethChordType.Inversion.Fourth)
+            NinthChordType.MajorNinth(NinthChordType.Inversion.Fourth)
           )
         )
       )
@@ -385,7 +385,7 @@ class ChordSuite extends munit.FunSuite:
         Set(
           Chord(
             NoteType.C,
-            NinethChordType.DominantNineth(NinethChordType.Inversion.Root)
+            NinthChordType.DominantNinth(NinthChordType.Inversion.Root)
           )
         )
       )
@@ -396,7 +396,7 @@ class ChordSuite extends munit.FunSuite:
         Set(
           Chord(
             NoteType.C,
-            NinethChordType.DominantNineth(NinethChordType.Inversion.First)
+            NinthChordType.DominantNinth(NinthChordType.Inversion.First)
           )
         )
       )
@@ -407,7 +407,7 @@ class ChordSuite extends munit.FunSuite:
         Set(
           Chord(
             NoteType.C,
-            NinethChordType.DominantNineth(NinethChordType.Inversion.Second)
+            NinthChordType.DominantNinth(NinthChordType.Inversion.Second)
           )
         )
       )
@@ -418,7 +418,7 @@ class ChordSuite extends munit.FunSuite:
         Set(
           Chord(
             NoteType.C,
-            NinethChordType.DominantNineth(NinethChordType.Inversion.Third)
+            NinthChordType.DominantNinth(NinthChordType.Inversion.Third)
           )
         )
       )
@@ -429,7 +429,7 @@ class ChordSuite extends munit.FunSuite:
         Set(
           Chord(
             NoteType.C,
-            NinethChordType.DominantNineth(NinethChordType.Inversion.Fourth)
+            NinthChordType.DominantNinth(NinthChordType.Inversion.Fourth)
           )
         )
       )
