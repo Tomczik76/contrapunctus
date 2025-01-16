@@ -1,4 +1,5 @@
-import Interval.* 
+import Interval.*
+import cats.data.NonEmptySet
 
 class IntervalSuite extends munit.FunSuite:
   test("Interval test"):
@@ -12,6 +13,6 @@ class IntervalSuite extends munit.FunSuite:
       C(1).interval(E(0)),
       Some(MinorSixth)
     )
-  test("Test Map lookups"):
-    val map = Map(Set(DiminishedFifth) -> 1)
-    assertEquals(map(Set(Tritone)), 1)
+  test("Test Map lookups 2"):
+    val map = Map(NonEmptySet.of(MajorSecond.normalizedValue) -> 1)
+    assertEquals(map(NonEmptySet.of(MajorNinth.normalizedValue)), 1)
