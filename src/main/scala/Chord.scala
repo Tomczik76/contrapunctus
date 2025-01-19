@@ -317,7 +317,8 @@ end ChordType
 
 case class Chord(root: NoteType, chordType: ChordType)
 object Chord:
-  def fromNotes(notes: NonEmptySet[Note]): Set[Chord] =
+  def fromNotes(note: Note, rest: Note*): Set[Chord] =
+    val notes = NonEmptySet.of(note, rest*)
     val option = for
       bass <- notes.toList.minByOption(_.midi)
       intervalNoteMap <- notes.toList
@@ -336,4 +337,5 @@ object Chord:
       )
     yield chords
     option.toSet.flatten
+  end fromNotes
 end Chord
