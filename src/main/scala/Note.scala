@@ -28,7 +28,7 @@ enum NoteType(val value: Int):
 end NoteType
 
 case class Note(noteType: NoteType, octave: Int):
-  val midi = noteType.value + (octave + 1) * 12
+  val midi: Int = noteType.value + (octave + 1) * 12
   def interval(note: Note): Option[Interval] =
     if midi < note.midi then Interval((note.midi - this.midi) % 12)
     else Interval((this.midi - note.midi)                     % 12)

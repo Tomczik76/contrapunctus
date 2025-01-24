@@ -1,66 +1,58 @@
-import cats.data.NonEmptySet
+import cats.data.{NonEmptyList, NonEmptySet}
 
 class ChordSuite extends munit.FunSuite:
   test("ChordType.fromNotes test"):
     assertEquals(
       ChordType.fromNotes(NonEmptySet.of(A(0), C(1), E(1))),
-      Set[ChordType](TriadChordType.Minor(TriadChordType.Inversion.Root))
+      Set[ChordType](Triads.Minor.Inversions.Root)
     )
 
     assertEquals(
       ChordType.fromNotes(NonEmptySet.of(A(0), C(0), E(1))),
-      Set[ChordType](TriadChordType.Minor(TriadChordType.Inversion.First))
+      Set[ChordType](Triads.Minor.Inversions.First)
     )
     assertEquals(
       ChordType.fromNotes(NonEmptySet.of(A(0), C(1), E(0))),
-      Set[ChordType](TriadChordType.Minor(TriadChordType.Inversion.Second))
+      Set[ChordType](Triads.Minor.Inversions.Second)
     )
     assertEquals(
       ChordType.fromNotes(NonEmptySet.of(C(1), E(1), G(1))),
-      Set[ChordType](TriadChordType.Major(TriadChordType.Inversion.Root))
+      Set[ChordType](Triads.Major.Inversions.Root)
     )
     assertEquals(
       ChordType.fromNotes(NonEmptySet.of(C(1), E(0), G(1))),
-      Set[ChordType](TriadChordType.Major(TriadChordType.Inversion.First))
+      Set[ChordType](Triads.Major.Inversions.First)
     )
     assertEquals(
       ChordType.fromNotes(NonEmptySet.of(C(1), E(1), G(0))),
-      Set[ChordType](TriadChordType.Major(TriadChordType.Inversion.Second))
+      Set[ChordType](Triads.Major.Inversions.Second)
     )
     assertEquals(
       ChordType.fromNotes(NonEmptySet.of(B(0), D(1), F(1))),
-      Set[ChordType](TriadChordType.Diminished(TriadChordType.Inversion.Root))
+      Set[ChordType](Triads.Diminished.Inversions.Root)
     )
     assertEquals(
       ChordType.fromNotes(NonEmptySet.of(B(0), D(0), F(1))),
-      Set[ChordType](TriadChordType.Diminished(TriadChordType.Inversion.First))
+      Set[ChordType](Triads.Diminished.Inversions.First)
     )
     assertEquals(
       ChordType.fromNotes(NonEmptySet.of(B(0), D(1), F(0))),
-      Set[ChordType](TriadChordType.Diminished(TriadChordType.Inversion.Second))
+      Set[ChordType](Triads.Diminished.Inversions.Second)
     )
     assertEquals(
       ChordType.fromNotes(NonEmptySet.of(B(0), D(1), F(0), Ab(1))),
       Set[ChordType](
-        SeventhChordType.DiminishedSeventh(
-          SeventhChordType.Inversion.Root
-        ),
-        SeventhChordType.DiminishedSeventh(
-          SeventhChordType.Inversion.First
-        ),
-        SeventhChordType.DiminishedSeventh(
-          SeventhChordType.Inversion.Second
-        ),
-        SeventhChordType.DiminishedSeventh(
-          SeventhChordType.Inversion.Third
-        )
+        Sevenths.DiminishedSeventh.Inversions.Root,
+        Sevenths.DiminishedSeventh.Inversions.First,
+        Sevenths.DiminishedSeventh.Inversions.Second,
+        Sevenths.DiminishedSeventh.Inversions.Third
       )
     )
   test("ChordType tests"):
     assertEquals(
       Chord.fromNotes(A(0), C(1), E(1)),
       Set(
-        Chord(NoteType.A, TriadChordType.Minor(TriadChordType.Inversion.Root))
+        Chord(NoteType.A, Triads.Minor.Inversions.Root)
       )
     )
     assertEquals(
@@ -68,23 +60,20 @@ class ChordSuite extends munit.FunSuite:
       Set(
         Chord(
           NoteType.A,
-          TriadChordType.Minor(TriadChordType.Inversion.First)
+          Triads.Minor.Inversions.First
         )
       )
     )
     assertEquals(
       Chord.fromNotes(A(1), C(1), E(0)),
       Set(
-        Chord(
-          NoteType.A,
-          TriadChordType.Minor(TriadChordType.Inversion.Second)
-        )
+        Chord(NoteType.A, Triads.Minor.Inversions.Second)
       )
     )
     assertEquals(
       Chord.fromNotes(C(1), E(1), G(1)),
       Set(
-        Chord(NoteType.C, TriadChordType.Major(TriadChordType.Inversion.Root))
+        Chord(NoteType.C, Triads.Major.Inversions.Root)
       )
     )
     assertEquals(
@@ -92,7 +81,7 @@ class ChordSuite extends munit.FunSuite:
       Set(
         Chord(
           NoteType.C,
-          TriadChordType.Major(TriadChordType.Inversion.First)
+          Triads.Major.Inversions.First
         )
       )
     )
@@ -101,7 +90,7 @@ class ChordSuite extends munit.FunSuite:
       Set(
         Chord(
           NoteType.C,
-          TriadChordType.Major(TriadChordType.Inversion.Second)
+          Triads.Major.Inversions.Second
         )
       )
     )
@@ -110,7 +99,7 @@ class ChordSuite extends munit.FunSuite:
       Set(
         Chord(
           NoteType.B,
-          TriadChordType.Diminished(TriadChordType.Inversion.Root)
+          Triads.Diminished.Inversions.Root
         )
       )
     )
@@ -119,7 +108,7 @@ class ChordSuite extends munit.FunSuite:
       Set(
         Chord(
           NoteType.B,
-          TriadChordType.Diminished(TriadChordType.Inversion.First)
+          Triads.Diminished.Inversions.First
         )
       )
     )
@@ -128,7 +117,7 @@ class ChordSuite extends munit.FunSuite:
       Set(
         Chord(
           NoteType.B,
-          TriadChordType.Diminished(TriadChordType.Inversion.Second)
+          Triads.Diminished.Inversions.Second
         )
       )
     )
@@ -137,7 +126,7 @@ class ChordSuite extends munit.FunSuite:
       Set(
         Chord(
           NoteType.A,
-          SeventhChordType.MinorSeventh(SeventhChordType.Inversion.Root)
+          Sevenths.MinorSeventh.Inversions.Root
         )
       )
     )
@@ -146,7 +135,7 @@ class ChordSuite extends munit.FunSuite:
       Set(
         Chord(
           NoteType.A,
-          SeventhChordType.MinorSeventh(SeventhChordType.Inversion.First)
+          Sevenths.MinorSeventh.Inversions.First
         )
       )
     )
@@ -155,7 +144,7 @@ class ChordSuite extends munit.FunSuite:
       Set(
         Chord(
           NoteType.A,
-          SeventhChordType.MinorSeventh(SeventhChordType.Inversion.Second)
+          Sevenths.MinorSeventh.Inversions.Second
         )
       )
     )
@@ -164,7 +153,7 @@ class ChordSuite extends munit.FunSuite:
       Set(
         Chord(
           NoteType.A,
-          SeventhChordType.MinorSeventh(SeventhChordType.Inversion.Third)
+          Sevenths.MinorSeventh.Inversions.Third
         )
       )
     )
@@ -173,7 +162,7 @@ class ChordSuite extends munit.FunSuite:
       Set(
         Chord(
           NoteType.C,
-          SeventhChordType.MajorSeventh(SeventhChordType.Inversion.Root)
+          Sevenths.MajorSeventh.Inversions.Root
         )
       )
     )
@@ -183,7 +172,7 @@ class ChordSuite extends munit.FunSuite:
       Set(
         Chord(
           NoteType.C,
-          SeventhChordType.MajorSeventh(SeventhChordType.Inversion.First)
+          Sevenths.MajorSeventh.Inversions.First
         )
       )
     )
@@ -192,7 +181,7 @@ class ChordSuite extends munit.FunSuite:
       Set(
         Chord(
           NoteType.C,
-          SeventhChordType.MajorSeventh(SeventhChordType.Inversion.Second)
+          Sevenths.MajorSeventh.Inversions.Second
         )
       )
     )
@@ -201,7 +190,7 @@ class ChordSuite extends munit.FunSuite:
       Set(
         Chord(
           NoteType.C,
-          SeventhChordType.MajorSeventh(SeventhChordType.Inversion.Third)
+          Sevenths.MajorSeventh.Inversions.Third
         )
       )
     )
@@ -210,7 +199,7 @@ class ChordSuite extends munit.FunSuite:
       Set(
         Chord(
           NoteType.C,
-          SeventhChordType.DominantSeventh(SeventhChordType.Inversion.Root)
+          Sevenths.DominantSeventh.Inversions.Root
         )
       )
     )
@@ -219,7 +208,7 @@ class ChordSuite extends munit.FunSuite:
       Set(
         Chord(
           NoteType.C,
-          SeventhChordType.DominantSeventh(SeventhChordType.Inversion.First)
+          Sevenths.DominantSeventh.Inversions.First
         )
       )
     )
@@ -228,7 +217,7 @@ class ChordSuite extends munit.FunSuite:
       Set(
         Chord(
           NoteType.C,
-          SeventhChordType.DominantSeventh(SeventhChordType.Inversion.Second)
+          Sevenths.DominantSeventh.Inversions.Second
         )
       )
     )
@@ -237,7 +226,7 @@ class ChordSuite extends munit.FunSuite:
       Set(
         Chord(
           NoteType.C,
-          SeventhChordType.DominantSeventh(SeventhChordType.Inversion.Third)
+          Sevenths.DominantSeventh.Inversions.Third
         )
       )
     )
@@ -246,21 +235,19 @@ class ChordSuite extends munit.FunSuite:
       Set(
         Chord(
           NoteType.B,
-          SeventhChordType.DiminishedSeventh(SeventhChordType.Inversion.Root)
+          Sevenths.DiminishedSeventh.Inversions.Root
         ),
         Chord(
           NoteType.D,
-          SeventhChordType.DiminishedSeventh(SeventhChordType.Inversion.Third)
+          Sevenths.DiminishedSeventh.Inversions.Third
         ),
         Chord(
           NoteType.F,
-          SeventhChordType.DiminishedSeventh(
-            SeventhChordType.Inversion.Second
-          )
+          Sevenths.DiminishedSeventh.Inversions.Second
         ),
         Chord(
           NoteType.Ab,
-          SeventhChordType.DiminishedSeventh(SeventhChordType.Inversion.First)
+          Sevenths.DiminishedSeventh.Inversions.First
         )
       )
     )
@@ -269,7 +256,7 @@ class ChordSuite extends munit.FunSuite:
       Set(
         Chord(
           NoteType.C,
-          NinthChordType.MajorNinth(NinthChordType.Inversion.Root)
+          Ninths.MajorNinth.Inversions.Root
         )
       )
     )
@@ -278,7 +265,7 @@ class ChordSuite extends munit.FunSuite:
       Set(
         Chord(
           NoteType.C,
-          NinthChordType.MajorNinth(NinthChordType.Inversion.First)
+          Ninths.MajorNinth.Inversions.First
         )
       )
     )
@@ -287,7 +274,7 @@ class ChordSuite extends munit.FunSuite:
       Set(
         Chord(
           NoteType.C,
-          NinthChordType.MajorNinth(NinthChordType.Inversion.Second)
+          Ninths.MajorNinth.Inversions.Second
         )
       )
     )
@@ -296,7 +283,7 @@ class ChordSuite extends munit.FunSuite:
       Set(
         Chord(
           NoteType.C,
-          NinthChordType.MajorNinth(NinthChordType.Inversion.Third)
+          Ninths.MajorNinth.Inversions.Third
         )
       )
     )
@@ -305,7 +292,7 @@ class ChordSuite extends munit.FunSuite:
       Set(
         Chord(
           NoteType.C,
-          NinthChordType.MajorNinth(NinthChordType.Inversion.Fourth)
+          Ninths.MajorNinth.Inversions.Fourth
         )
       )
     )
@@ -314,7 +301,7 @@ class ChordSuite extends munit.FunSuite:
       Set(
         Chord(
           NoteType.C,
-          NinthChordType.DominantNinth(NinthChordType.Inversion.Root)
+          Ninths.DominantNinth.Inversions.Root
         )
       )
     )
@@ -323,7 +310,7 @@ class ChordSuite extends munit.FunSuite:
       Set(
         Chord(
           NoteType.C,
-          NinthChordType.DominantNinth(NinthChordType.Inversion.First)
+          Ninths.DominantNinth.Inversions.First
         )
       )
     )
@@ -332,7 +319,7 @@ class ChordSuite extends munit.FunSuite:
       Set(
         Chord(
           NoteType.C,
-          NinthChordType.DominantNinth(NinthChordType.Inversion.Second)
+          Ninths.DominantNinth.Inversions.Second
         )
       )
     )
@@ -341,7 +328,7 @@ class ChordSuite extends munit.FunSuite:
       Set(
         Chord(
           NoteType.C,
-          NinthChordType.DominantNinth(NinthChordType.Inversion.Third)
+          Ninths.DominantNinth.Inversions.Third
         )
       )
     )
@@ -350,8 +337,89 @@ class ChordSuite extends munit.FunSuite:
       Set(
         Chord(
           NoteType.C,
-          NinthChordType.DominantNinth(NinthChordType.Inversion.Fourth)
+          Ninths.DominantNinth.Inversions.Fourth
         )
       )
     )
+
+  test("Ninth Chord first inversion"):
+    assertEquals(
+      ChordType.invert(
+        NonEmptyList.of(
+          Interval.PerfectUnison, // A
+          Interval.MinorThird,    // C
+          Interval.PerfectFifth,  // E
+          Interval.MinorSeventh,  // G
+          Interval.MajorNinth     // B
+        )
+      ),
+      NonEmptyList.of(
+        Interval.PerfectUnison, // C
+        Interval.MajorThird,    // E
+        Interval.PerfectFifth,  // G
+        Interval.MajorSeventh,  // B
+        Interval.MajorSixth     // A
+      )
+    )
+
+  test("Ninth Chord second inversion"):
+    assertEquals(
+      ChordType.invert(
+        NonEmptyList.of(
+          Interval.PerfectUnison, // C
+          Interval.MajorThird,    // E
+          Interval.PerfectFifth,  // G
+          Interval.MajorSeventh,  // B
+          Interval.MajorSixth     // A
+        )
+      ),
+      NonEmptyList.of(
+        Interval.PerfectUnison, // E
+        Interval.MinorThird,    // G
+        Interval.PerfectFifth,  // B
+        Interval.PerfectFourth, // A
+        Interval.MinorSixth    // C
+      )
+    )
+
+  test("Ninth Chord third inversion"):
+    assertEquals(
+      ChordType.invert(
+        NonEmptyList.of(
+          Interval.PerfectUnison, // E
+          Interval.MinorThird, // G
+          Interval.PerfectFifth, // B
+          Interval.PerfectFourth, // A
+          Interval.MinorSixth // C
+        )
+      ),
+      NonEmptyList.of(
+        Interval.PerfectUnison, // G
+        Interval.MajorThird, // B
+        Interval.MajorSecond, // A
+        Interval.PerfectFourth, // C
+        Interval.MajorSixth // E
+      )
+    )
+
+  test("Ninth Chord fourth inversion"):
+    assertEquals(
+      ChordType.invert(
+        NonEmptyList.of(
+          Interval.PerfectUnison, // G
+          Interval.MajorThird, // B
+          Interval.MajorSecond, // A
+          Interval.PerfectFourth, // C
+          Interval.MajorSixth // E
+        )
+      ),
+      NonEmptyList.of(
+        Interval.PerfectUnison, // B
+        Interval.MinorSeventh, // A
+        Interval.MinorSecond, // C
+        Interval.PerfectFourth, // E
+        Interval.MinorSixth // G
+      )
+    )
+
 end ChordSuite

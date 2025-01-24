@@ -97,9 +97,6 @@ object Interval:
       case DoubleOctave.`value`    => Some(DoubleOctave)
       case _                       => None
 
-  implicit object intervalOrdering extends Ordering[Interval]:
-    override def compare(x: Interval, y: Interval): Int = x.value - y.value
+  given intervalOrder: Order[Interval] = Order.by(_.value)
 
-  implicit object intervalOrder extends Order[Interval]:
-    override def compare(x: Interval, y: Interval): Int = x.value - y.value
 end Interval

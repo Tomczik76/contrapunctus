@@ -1,308 +1,315 @@
-import cats.implicits.*
 import Interval.*
-import cats.data.{NonEmptyList, NonEmptySet}
-import Inversion as GlobalInversion
-
-import SeventhChordType.DiminishedSeventh
+import cats.data.{NonEmptyList, NonEmptyMap, NonEmptySet}
+import cats.implicits.*
+import cats.kernel.Order
 
 import scala.collection.immutable.SortedSet
 
-sealed trait Inversion(val value: Int)
+sealed trait ChordType:
+  val intervals: NonEmptySet[Interval]
+  val rootInterval: Interval
 
-trait ChordType(
-    rootIntervals: NonEmptySet[Interval],
-    val inversion: Inversion
-):
+object Triads:
+  private def generateInversions(
+      triads: Triads
+  ): NonEmptyMap[NonEmptySet[Interval], NonEmptySet[ChordType]] =
+    val inversions = triads.Inversions.values.toList.map(inversion =>
+      NonEmptyMap.of(
+        inversion.intervals ->
+          NonEmptySet.of(inversion: ChordType)
+      )
+    )
+    inversions.tail.foldLeft(inversions.head)(_ |+| _)
 
-  def invert(intervals: List[Interval], times: Int): List[Interval] =
-    (intervals, times) match
-      case (Nil, _)         => Nil
-      case (List(_), _)     => intervals
-      case (_, i) if i <= 0 => intervals
-      case (_ :: head :: tail, times) =>
-        val result =
-          tail
-            .map { interval =>
-              val int = interval.value - head.value
-              if int < 0 then Interval.fromOrdinal(int + 12)
-              else Interval.fromOrdinal(int)
-            }
-            .prepended(PerfectUnison)
-            .appended(head.invert)
-        invert(result, times - 1)
+  val chordTypes: NonEmptyMap[NonEmptySet[Interval], NonEmptySet[ChordType]] =
+    val inversions =
+      Triads.values.toList.map(x => generateInversions(x))
+    inversions.tail.foldLeft(inversions.head)(_ |+| _)
 
-  val intervals: NonEmptySet[Interval] = NonEmptySet.fromSetUnsafe(
-    SortedSet(invert(rootIntervals.toList, inversion.value)*)
-  )
-  val rootInterval: Interval = rootIntervals.toList(inversion.value).invert
-end ChordType
+enum Triads(val rootIntervals: NonEmptySet[Interval]):
+  base =>
 
-object TriadChordType:
-  enum Inversion(value: Int) extends GlobalInversion(value):
-    case Root   extends Inversion(0)
-    case First  extends Inversion(1)
-    case Second extends Inversion(2)
+  private lazy val firstInversion =
+    ChordType.invert(rootIntervals.toNonEmptyList)
+  private lazy val secondInversion = ChordType.invert(firstInversion)
 
-enum TriadChordType(
-    rootIntervals: NonEmptySet[Interval],
-    inversion: TriadChordType.Inversion
-) extends ChordType(rootIntervals, inversion):
-  case Minor(inver: TriadChordType.Inversion)
-      extends TriadChordType(
-        NonEmptySet(PerfectUnison, SortedSet(MinorThird, PerfectFifth)),
-        inver
-      )
-  case Major(inver: TriadChordType.Inversion)
-      extends TriadChordType(
-        NonEmptySet(PerfectUnison, SortedSet(MajorThird, PerfectFifth)),
-        inver
-      )
-  case Diminished(inver: TriadChordType.Inversion)
-      extends TriadChordType(
-        NonEmptySet(PerfectUnison, SortedSet(MinorThird, DiminishedFifth)),
-        inver
-      )
-  case Augmented(inver: TriadChordType.Inversion)
-      extends TriadChordType(
-        NonEmptySet(PerfectUnison, SortedSet(MajorThird, AugmentedFifth)),
-        inver
-      )
-end TriadChordType
+  enum Inversions(
+      val intervals: NonEmptySet[Interval],
+      val rootInterval: Interval
+  ) extends ChordType:
+    case Root extends Inversions(rootIntervals, rootIntervals.head)
+    case First
+        extends Inversions(
+          NonEmptySet.of(firstInversion.head, firstInversion.tail*),
+          firstInversion.last
+        )
+    case Second
+        extends Inversions(
+          NonEmptySet.of(secondInversion.head, secondInversion.tail*),
+          secondInversion.tail.head
+        )
 
-object SeventhChordType:
-  enum Inversion(value: Int) extends GlobalInversion(value):
-    case Root   extends Inversion(0)
-    case First  extends Inversion(1)
-    case Second extends Inversion(2)
-    case Third  extends Inversion(3)
+    override def toString: String =
+      s"${base.productPrefix}-${this.productPrefix}"
 
-enum SeventhChordType(
-    rootIntervals: NonEmptySet[Interval],
-    inversion: SeventhChordType.Inversion
-) extends ChordType(rootIntervals, inversion):
-  case MinorSeventh(inver: SeventhChordType.Inversion)
-      extends SeventhChordType(
-        NonEmptySet(
-          PerfectUnison,
-          SortedSet(MinorThird, PerfectFifth, Interval.MinorSeventh)
-        ),
-        inver
-      )
-  case MinorMajorSeventh(inver: SeventhChordType.Inversion)
-      extends SeventhChordType(
-        NonEmptySet(
-          PerfectUnison,
-          SortedSet(MinorThird, PerfectFifth, Interval.MajorSeventh)
-        ),
-        inver
-      )
-  case DominantSeventh(inver: SeventhChordType.Inversion)
-      extends SeventhChordType(
-        NonEmptySet(
-          PerfectUnison,
-          SortedSet(MajorThird, PerfectFifth, Interval.MinorSeventh)
-        ),
-        inver
-      )
-  case MajorSeventh(inver: SeventhChordType.Inversion)
-      extends SeventhChordType(
-        NonEmptySet(
-          PerfectUnison,
-          SortedSet(MajorThird, PerfectFifth, Interval.MajorSeventh)
-        ),
-        inver
-      )
-  case DiminishedSeventh(inver: SeventhChordType.Inversion)
-      extends SeventhChordType(
-        NonEmptySet(
-          PerfectUnison,
-          SortedSet(MinorThird, DiminishedFifth, Interval.DiminishedSeventh)
-        ),
-        inver
-      )
-end SeventhChordType
+  case Minor
+      extends Triads(NonEmptySet.of(PerfectUnison, MinorThird, PerfectFifth))
 
-object NinthChordType:
-  enum Inversion(value: Int) extends GlobalInversion(value):
-    case Root   extends Inversion(0)
-    case First  extends Inversion(1)
-    case Second extends Inversion(2)
-    case Third  extends Inversion(3)
-    case Fourth extends Inversion(4)
+  case Major
+      extends Triads(NonEmptySet.of(PerfectUnison, MajorThird, PerfectFifth))
 
-enum NinthChordType(
-    rootIntervals: NonEmptySet[Interval],
-    inversion: NinthChordType.Inversion
-) extends ChordType(rootIntervals, inversion):
-  case MinorNinth(inver: NinthChordType.Inversion)
-      extends NinthChordType(
-        NonEmptySet(
-          PerfectUnison,
-          SortedSet(
-            MinorThird,
-            PerfectFifth,
-            Interval.MinorSeventh,
-            Interval.MajorNinth
-          )
-        ),
-        inver
+  case Diminished
+      extends Triads(NonEmptySet.of(PerfectUnison, MinorThird, DiminishedFifth))
+
+  case Augmented
+      extends Triads(NonEmptySet.of(PerfectUnison, MajorThird, AugmentedFifth))
+
+end Triads
+
+object Sevenths:
+  private def generateInversions(
+      sevenths: Sevenths
+  ): NonEmptyMap[NonEmptySet[Interval], NonEmptySet[ChordType]] =
+    val inversions = sevenths.Inversions.values.toList.map(inversion =>
+      NonEmptyMap.of(
+        inversion.intervals ->
+          NonEmptySet.of(inversion: ChordType)
       )
-  case DominantNinth(inver: NinthChordType.Inversion)
-      extends NinthChordType(
-        NonEmptySet(
+    )
+    inversions.tail.foldLeft(inversions.head)(_ |+| _)
+
+  val chordTypes: NonEmptyMap[NonEmptySet[Interval], NonEmptySet[ChordType]] =
+    val inversions =
+      Sevenths.values.toList.map(x => generateInversions(x))
+    inversions.tail.foldLeft(inversions.head)(_ |+| _)
+
+enum Sevenths(val rootIntervals: NonEmptySet[Interval]):
+  base =>
+
+  private lazy val firstInversion =
+    ChordType.invert(rootIntervals.toNonEmptyList)
+  private lazy val secondInversion = ChordType.invert(firstInversion)
+  private lazy val thirdInversion  = ChordType.invert(secondInversion)
+
+  enum Inversions(
+      val intervals: NonEmptySet[Interval],
+      val rootInterval: Interval
+  ) extends ChordType:
+    case Root extends Inversions(rootIntervals, rootIntervals.head)
+    case First
+        extends Inversions(
+          NonEmptySet.of(firstInversion.head, firstInversion.tail*),
+          firstInversion.last
+        )
+    case Second
+        extends Inversions(
+          NonEmptySet.of(secondInversion.head, secondInversion.tail*),
+          secondInversion.tail.tail.head
+        )
+    case Third
+        extends Inversions(
+          NonEmptySet.of(thirdInversion.head, thirdInversion.tail*),
+          thirdInversion.tail.head
+        )
+
+    override def toString: String =
+      s"${base.productPrefix}-${this.productPrefix}"
+  end Inversions
+
+  case MinorSeventh
+      extends Sevenths(
+        NonEmptySet
+          .of(PerfectUnison, MinorThird, PerfectFifth, Interval.MinorSeventh)
+      )
+  case MinorMajorSeventh
+      extends Sevenths(
+        NonEmptySet
+          .of(PerfectUnison, MinorThird, PerfectFifth, Interval.MajorSeventh)
+      )
+  case DominantSeventh
+      extends Sevenths(
+        NonEmptySet
+          .of(PerfectUnison, MajorThird, PerfectFifth, Interval.MinorSeventh)
+      )
+  case MajorSeventh
+      extends Sevenths(
+        NonEmptySet
+          .of(PerfectUnison, MajorThird, PerfectFifth, Interval.MajorSeventh)
+      )
+  case DiminishedSeventh
+      extends Sevenths(
+        NonEmptySet.of(
           PerfectUnison,
-          SortedSet(
-            MajorThird,
-            PerfectFifth,
-            Interval.MinorSeventh,
-            Interval.MajorNinth
-          )
-        ),
-        inver
+          MinorThird,
+          DiminishedFifth,
+          Interval.DiminishedSeventh
+        )
+      )
+end Sevenths
+
+object Ninths:
+  private def generateInversions(
+      ninths: Ninths
+  ): NonEmptyMap[NonEmptySet[Interval], NonEmptySet[ChordType]] =
+    val inversions = ninths.Inversions.values.toList.map(inversion =>
+      NonEmptyMap.of(
+        inversion.intervals ->
+          NonEmptySet.of(inversion: ChordType)
+      )
+    )
+    inversions.tail.foldLeft(inversions.head)(_ |+| _)
+
+  val chordTypes: NonEmptyMap[NonEmptySet[Interval], NonEmptySet[ChordType]] =
+    val inversions =
+      Ninths.values.toList.map(x => generateInversions(x))
+    inversions.tail.foldLeft(inversions.head)(_ |+| _)
+
+enum Ninths(val rootIntervals: NonEmptySet[Interval]):
+  base =>
+
+  private lazy val firstInversion =
+    ChordType.invert(rootIntervals.toNonEmptyList)
+  private lazy val secondInversion = ChordType.invert(firstInversion)
+  private lazy val thirdInversion  = ChordType.invert(secondInversion)
+  private lazy val fourthInversion = ChordType.invert(thirdInversion)
+
+  enum Inversions(
+      val intervals: NonEmptySet[Interval],
+      val rootInterval: Interval
+  ) extends ChordType:
+    case Root extends Inversions(rootIntervals, rootIntervals.head)
+    case First
+        extends Inversions(
+          NonEmptySet.of(firstInversion.head, firstInversion.tail*),
+          firstInversion.last
+        )
+    case Second
+        extends Inversions(
+          NonEmptySet.of(secondInversion.head, secondInversion.tail*),
+          secondInversion.tail.tail.tail.head
+        )
+    case Third
+        extends Inversions(
+          NonEmptySet.of(thirdInversion.head, thirdInversion.tail*),
+          thirdInversion.tail.tail.head
+        )
+    case Fourth
+        extends Inversions(
+          NonEmptySet.of(fourthInversion.head, fourthInversion.tail*),
+          fourthInversion.tail.head
+        )
+    override def toString: String =
+      s"${base.productPrefix}-${this.productPrefix}"
+  end Inversions
+
+  case MinorNinth
+      extends Ninths(
+        NonEmptySet.of(
+          PerfectUnison,
+          MinorThird,
+          PerfectFifth,
+          Interval.MinorSeventh,
+          Interval.MajorNinth
+        )
       )
 
-  case MajorNinth(inver: NinthChordType.Inversion)
-      extends NinthChordType(
-        NonEmptySet(
+  case DominantNinth
+      extends Ninths(
+        NonEmptySet.of(
           PerfectUnison,
-          SortedSet(
-            MajorThird,
-            PerfectFifth,
-            Interval.MajorSeventh,
-            Interval.MajorNinth
-          )
-        ),
-        inver
+          MajorThird,
+          PerfectFifth,
+          Interval.MinorSeventh,
+          Interval.MajorNinth
+        )
       )
-  case MinorMajorNinth(inver: NinthChordType.Inversion)
-      extends NinthChordType(
-        NonEmptySet(
+
+  case MajorNinth
+      extends Ninths(
+        NonEmptySet.of(
           PerfectUnison,
-          SortedSet(
-            MinorThird,
-            PerfectFifth,
-            Interval.MajorSeventh,
-            Interval.MajorNinth
-          )
-        ),
-        inver
+          MajorThird,
+          PerfectFifth,
+          Interval.MajorSeventh,
+          Interval.MajorNinth
+        )
       )
-  case MinorNinthOmit5(inver: NinthChordType.Inversion)
-      extends NinthChordType(
-        NonEmptySet(
+  case MinorMajorNinth
+      extends Ninths(
+        NonEmptySet.of(
           PerfectUnison,
-          SortedSet(
-            MinorThird,
-            Interval.MajorSeventh,
-            Interval.MajorNinth
-          )
-        ),
-        inver
+          MinorThird,
+          PerfectFifth,
+          Interval.MajorSeventh,
+          Interval.MajorNinth
+        )
       )
-  case DominantNinthOmit5(inver: NinthChordType.Inversion)
-      extends NinthChordType(
-        NonEmptySet(
+/*
+  case MinorNinthOmit5
+      extends Ninths(
+        NonEmptySet.of(
           PerfectUnison,
-          SortedSet(
-            MajorThird,
-            Interval.MinorSeventh,
-            Interval.MajorNinth
-          )
-        ),
-        inver
+          MinorThird,
+          Interval.MajorSeventh,
+          Interval.MajorNinth
+        )
       )
-  case MajorNinthOmit5(inver: NinthChordType.Inversion)
-      extends NinthChordType(
-        NonEmptySet(
+
+  case DominantNinthOmit5
+      extends Ninths(
+        NonEmptySet.of(
           PerfectUnison,
-          SortedSet(
-            MajorThird,
-            Interval.MajorSeventh,
-            Interval.MajorNinth
-          )
-        ),
-        inver
+          MajorThird,
+          Interval.MinorSeventh,
+          Interval.MajorNinth
+        )
       )
-  case MinorMajorNinthOmit5(inver: NinthChordType.Inversion)
-      extends NinthChordType(
-        NonEmptySet(
+  case MajorNinthOmit5
+      extends Ninths(
+        NonEmptySet.of(
           PerfectUnison,
-          SortedSet(
-            MinorThird,
-            Interval.MajorSeventh,
-            Interval.MajorNinth
-          )
-        ),
-        inver
+          MajorThird,
+          Interval.MajorSeventh,
+          Interval.MajorNinth
+        )
       )
-end NinthChordType
+
+  case MinorMajorNinthOmit5
+      extends Ninths(
+        NonEmptySet.of(
+          PerfectUnison,
+          MinorThird,
+          Interval.MajorSeventh,
+          Interval.MajorNinth
+        )
+      )*/
+end Ninths
 
 object ChordType:
-  private val triadChordTypes =
-    List(
-      TriadChordType.Minor(_),
-      TriadChordType.Major(_),
-      TriadChordType.Diminished(_)
-    )
+  given Order[ChordType] = Order.by(_.hashCode())
 
-  private val seventhChordTypes =
-    List(
-      SeventhChordType.MinorSeventh(_),
-      SeventhChordType.MajorSeventh(_),
-      SeventhChordType.DominantSeventh(_),
-      SeventhChordType.MinorMajorSeventh(_),
-      SeventhChordType.DiminishedSeventh(_)
-    )
+  def invert(intervals: NonEmptyList[Interval]): NonEmptyList[Interval] =
+    intervals match
+      case _ if intervals.size == 1 => intervals
+      case _ =>
+        val _ :: head :: tail = intervals.toList: @unchecked
+        val middle = tail
+          .map { interval =>
+            val int = interval.value - head.value
+            if int < 0 then Interval.fromOrdinal(int + 12)
+            else Interval.fromOrdinal(int)
+          }
 
-  private val NinthChordTypes = List(
-    NinthChordType.MinorNinth(_),
-    NinthChordType.MajorNinth(_),
-    NinthChordType.DominantNinth(_)
-  )
+        NonEmptyList.of(PerfectUnison, middle :+ head.invert*)
 
-  private val triadPairs: Map[NonEmptySet[Int], NonEmptyList[ChordType]] =
-    val chordTypes = for
-      chordTypeConstructor <- triadChordTypes
-      inversion            <- TriadChordType.Inversion.values
-      chordType = chordTypeConstructor(inversion)
-    yield chordType
-
-    chordTypes.foldMap(chordType =>
-      Map(
-        chordType.intervals.map(_.normalizedValue) -> NonEmptyList.of(chordType)
-      )
-    )
-
-  private val seventhPairs: Map[NonEmptySet[Int], NonEmptyList[ChordType]] =
-    val chordTypes = for
-      chordTypeConstructor <- seventhChordTypes
-      inversion            <- SeventhChordType.Inversion.values
-      chordType = chordTypeConstructor(inversion)
-    yield chordType
-
-    chordTypes.foldMap(chordType =>
-      Map(
-        chordType.intervals.map(_.normalizedValue) -> NonEmptyList.of(chordType)
-      )
-    )
-
-  private val ninthPairs: Map[NonEmptySet[Int], NonEmptyList[ChordType]] =
-    val chordTypes = for
-      chordTypeConstructor <- NinthChordTypes
-      inversion            <- NinthChordType.Inversion.values
-      chordType = chordTypeConstructor(inversion)
-    yield chordType
-
-    chordTypes.foldMap(chordType =>
-      Map(
-        chordType.intervals.map(_.normalizedValue) -> NonEmptyList.of(chordType)
-      )
-    )
-  private val intervalMap = triadPairs |+| seventhPairs |+| ninthPairs
+  private val intervalMap
+      : NonEmptyMap[NonEmptySet[Interval], NonEmptySet[ChordType]] =
+    Triads.chordTypes |+| Sevenths.chordTypes |+| Ninths.chordTypes
 
   def apply(intervals: NonEmptySet[Interval]): Set[ChordType] =
     intervalMap
-      .get(intervals.map(_.normalizedValue))
+      .mapKeys(_.map(_.normalizedValue))
+      .apply(intervals.map(_.normalizedValue))
       .toSet
       .flatMap(_.toList.toSet)
 
