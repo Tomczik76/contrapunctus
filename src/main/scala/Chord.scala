@@ -9,25 +9,35 @@ sealed trait ChordType:
   val intervals: NonEmptySet[Interval]
   val rootInterval: Interval
 
-object Triads:
+trait ChordGroup:
+  def allBaseTypes: List[BaseChordType]
+
   private def generateInversions(
-      triads: Triads
+      baseChordType: BaseChordType
   ): NonEmptyMap[NonEmptySet[Interval], NonEmptySet[ChordType]] =
-    val inversions = triads.Inversions.values.toList.map(inversion =>
+    val inversions = baseChordType.allInversions.map(chordType =>
       NonEmptyMap.of(
-        inversion.intervals ->
-          NonEmptySet.of(inversion: ChordType)
+        chordType.intervals -> NonEmptySet.of(chordType: ChordType)
       )
     )
     inversions.tail.foldLeft(inversions.head)(_ |+| _)
 
-  val chordTypes: NonEmptyMap[NonEmptySet[Interval], NonEmptySet[ChordType]] =
+  lazy val chordTypes
+      : NonEmptyMap[NonEmptySet[Interval], NonEmptySet[ChordType]] =
     val inversions =
-      Triads.values.toList.map(x => generateInversions(x))
+      allBaseTypes.map(x => generateInversions(x))
     inversions.tail.foldLeft(inversions.head)(_ |+| _)
 
-enum Triads(val rootIntervals: NonEmptySet[Interval]):
+trait BaseChordType:
+  def allInversions: List[ChordType]
+
+object Triads extends ChordGroup:
+  override def allBaseTypes: List[BaseChordType] = Triads.values.toList
+
+enum Triads(val rootIntervals: NonEmptySet[Interval]) extends BaseChordType:
   base =>
+
+  override def allInversions: List[ChordType] = Inversions.values.toList
 
   private lazy val firstInversion =
     ChordType.invert(rootIntervals.toNonEmptyList)
@@ -64,27 +74,21 @@ enum Triads(val rootIntervals: NonEmptySet[Interval]):
   case Augmented
       extends Triads(NonEmptySet.of(PerfectUnison, MajorThird, AugmentedFifth))
 
+  case Sus2
+      extends Triads(NonEmptySet.of(PerfectUnison, MajorSecond, PerfectFifth))
+
+  case Sus4
+      extends Triads(NonEmptySet.of(PerfectUnison, PerfectFourth, PerfectFifth))
+
 end Triads
 
-object Sevenths:
-  private def generateInversions(
-      sevenths: Sevenths
-  ): NonEmptyMap[NonEmptySet[Interval], NonEmptySet[ChordType]] =
-    val inversions = sevenths.Inversions.values.toList.map(inversion =>
-      NonEmptyMap.of(
-        inversion.intervals ->
-          NonEmptySet.of(inversion: ChordType)
-      )
-    )
-    inversions.tail.foldLeft(inversions.head)(_ |+| _)
+object Sevenths extends ChordGroup:
+  override def allBaseTypes: List[BaseChordType] = Sevenths.values.toList
 
-  val chordTypes: NonEmptyMap[NonEmptySet[Interval], NonEmptySet[ChordType]] =
-    val inversions =
-      Sevenths.values.toList.map(x => generateInversions(x))
-    inversions.tail.foldLeft(inversions.head)(_ |+| _)
-
-enum Sevenths(val rootIntervals: NonEmptySet[Interval]):
+enum Sevenths(val rootIntervals: NonEmptySet[Interval]) extends BaseChordType:
   base =>
+
+  override def allInversions: List[ChordType] = Inversions.values.toList
 
   private lazy val firstInversion =
     ChordType.invert(rootIntervals.toNonEmptyList)
@@ -147,25 +151,12 @@ enum Sevenths(val rootIntervals: NonEmptySet[Interval]):
       )
 end Sevenths
 
-object Ninths:
-  private def generateInversions(
-      ninths: Ninths
-  ): NonEmptyMap[NonEmptySet[Interval], NonEmptySet[ChordType]] =
-    val inversions = ninths.Inversions.values.toList.map(inversion =>
-      NonEmptyMap.of(
-        inversion.intervals ->
-          NonEmptySet.of(inversion: ChordType)
-      )
-    )
-    inversions.tail.foldLeft(inversions.head)(_ |+| _)
+object Ninths extends ChordGroup:
+  override def allBaseTypes: List[BaseChordType] = Ninths.values.toList
 
-  val chordTypes: NonEmptyMap[NonEmptySet[Interval], NonEmptySet[ChordType]] =
-    val inversions =
-      Ninths.values.toList.map(x => generateInversions(x))
-    inversions.tail.foldLeft(inversions.head)(_ |+| _)
-
-enum Ninths(val rootIntervals: NonEmptySet[Interval]):
+enum Ninths(val rootIntervals: NonEmptySet[Interval]) extends BaseChordType:
   base =>
+  override def allInversions: List[ChordType] = Inversions.values.toList
 
   private lazy val firstInversion =
     ChordType.invert(rootIntervals.toNonEmptyList)
@@ -302,9 +293,11 @@ object ChordType:
 
         NonEmptyList.of(PerfectUnison, middle :+ head.invert*)
 
-  private val intervalMap
-      : NonEmptyMap[NonEmptySet[Interval], NonEmptySet[ChordType]] =
-    Triads.chordTypes |+| Sevenths.chordTypes |+| Ninths.chordTypes
+  private def initializeChordGroups(groups: ChordGroup*
+  ): NonEmptyMap[NonEmptySet[Interval], NonEmptySet[ChordType]] =
+    groups.map(_.chordTypes).reduce(_ |+| _)
+
+  private lazy val intervalMap = initializeChordGroups(Triads, Sevenths, Ninths)
 
   def apply(intervals: NonEmptySet[Interval]): Set[ChordType] =
     intervalMap
