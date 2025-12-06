@@ -1,3 +1,5 @@
+package io.github.tomczik76.contrapunctus
+
 import Interval.*
 import cats.data.NonEmptySet
 

@@ -1,3 +1,5 @@
+package io.github.tomczik76.contrapunctus
+
 import cats.Order
 
 enum NoteType(val value: Int):

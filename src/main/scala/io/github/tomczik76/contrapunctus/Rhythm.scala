@@ -1,3 +1,5 @@
+package io.github.tomczik76.contrapunctus
+
 import Rhythm.TiedNote
 import cats.data.NonEmptyList
 
