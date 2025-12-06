@@ -212,15 +212,6 @@ enum AlteredChords(val rootIntervals: NonEmptySet[Interval])
           Interval.MinorSeventh
         )
       )
-  case SevenSharpFive
-      extends AlteredChords(
-        NonEmptySet.of(
-          PerfectUnison,
-          MajorThird,
-          AugmentedFifth,
-          Interval.MinorSeventh
-        )
-      )
   case SevenFlatFiveFlatNine
       extends AlteredChords(
         NonEmptySet.of(

@@ -684,14 +684,6 @@ class ChordSuite extends munit.FunSuite:
       )
     )
 
-  test("SevenSharpFive tests"):
-    val sevenSharpFive = Chord.fromNotes(C(1), E(1), `G#`(1), Bb(1))
-    assert(
-      sevenSharpFive.contains(
-        Chord(NoteType.C, AlteredChords.SevenSharpFive.Inversions.Root)
-      )
-    )
-
   test("SevenFlatFiveFlatNine tests"):
     val sevenFlatFiveFlatNine =
       Chord.fromNotes(C(1), E(1), `F#`(1), Bb(1), Db(1))
