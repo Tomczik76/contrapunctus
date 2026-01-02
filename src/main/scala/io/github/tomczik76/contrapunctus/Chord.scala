@@ -6,8 +6,10 @@ import scala.collection.immutable.SortedSet
 
 import cats.implicits.*
 
-case class Chord(root: NoteType, chordType: ChordType)
-
+case class Chord(root: NoteType, chordType: ChordType):
+  def alteredScaleDegree(tonicNoteType: NoteType, scale: Scale): NonEmptySet[AlteredScaleDegree] =
+    scale.alteredScaleDegree(tonicNoteType, root)
+    
 object Chord:
   def fromNotes(note: Note, rest: Note*): Set[Chord] =
     val notes = NonEmptySet.of(note, rest*)

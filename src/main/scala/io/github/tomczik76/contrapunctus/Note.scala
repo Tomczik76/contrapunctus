@@ -23,6 +23,12 @@ enum NoteType(val value: Int):
   case `B#` extends NoteType(12)
   case Cb   extends NoteType(12)
 
+  def intervalAbove(that: NoteType): Interval =
+    (if value <= that.value then Interval(that.value - value)
+     else Interval(value - (that.value + 12))) match
+      case Some(value) => value
+      case None        => ??? // Never should be called
+
   override def equals(that: Any): Boolean =
     that match
       case note: NoteType => this.value == note.value
@@ -39,41 +45,42 @@ object Note:
   given Order[Note] with
     def compare(x: Note, y: Note): Int = x.midi - y.midi
 
-object C:
-  def apply(octave: Int) = Note(NoteType.C, octave)
-object `C#`:
-  def apply(octave: Int) = Note(NoteType.`C#`, octave)
-object Db:
-  def apply(octave: Int) = Note(NoteType.Db, octave)
-object D:
-  def apply(octave: Int) = Note(NoteType.D, octave)
-object `D#`:
-  def apply(octave: Int) = Note(NoteType.`D#`, octave)
-object Eb:
-  def apply(octave: Int) = Note(NoteType.Eb, octave)
-object E:
-  def apply(octave: Int) = Note(NoteType.E, octave)
-object F:
-  def apply(octave: Int) = Note(NoteType.F, octave)
-object `F#`:
-  def apply(octave: Int) = Note(NoteType.`F#`, octave)
-object `Gb`:
-  def apply(octave: Int) = Note(NoteType.`Gb`, octave)
-object G:
-  def apply(octave: Int) = Note(NoteType.G, octave)
-object `G#`:
-  def apply(octave: Int) = Note(NoteType.`G#`, octave)
-object Ab:
-  def apply(octave: Int) = Note(NoteType.Ab, octave)
-object A:
-  def apply(octave: Int) = Note(NoteType.A, octave)
-object `A#`:
-  def apply(octave: Int) = Note(NoteType.`A#`, octave)
-object Bb:
-  def apply(octave: Int) = Note(NoteType.Bb, octave)
-object B:
-  def apply(octave: Int) = Note(NoteType.B, octave)
-object `B#`:
-  def apply(octave: Int) = Note(NoteType.`B#`, octave)
-object Cb:
-  def apply(octave: Int) = Note(NoteType.Cb, octave)
+  object C:
+    def apply(octave: Int): Note = Note(NoteType.C, octave)
+  object `C#`:
+    def apply(octave: Int): Note = Note(NoteType.`C#`, octave)
+  object Db:
+    def apply(octave: Int): Note = Note(NoteType.Db, octave)
+  object D:
+    def apply(octave: Int): Note = Note(NoteType.D, octave)
+  object `D#`:
+    def apply(octave: Int): Note = Note(NoteType.`D#`, octave)
+  object Eb:
+    def apply(octave: Int): Note = Note(NoteType.Eb, octave)
+  object E:
+    def apply(octave: Int): Note = Note(NoteType.E, octave)
+  object F:
+    def apply(octave: Int): Note = Note(NoteType.F, octave)
+  object `F#`:
+    def apply(octave: Int): Note = Note(NoteType.`F#`, octave)
+  object `Gb`:
+    def apply(octave: Int): Note = Note(NoteType.`Gb`, octave)
+  object G:
+    def apply(octave: Int): Note = Note(NoteType.G, octave)
+  object `G#`:
+    def apply(octave: Int): Note = Note(NoteType.`G#`, octave)
+  object Ab:
+    def apply(octave: Int): Note = Note(NoteType.Ab, octave)
+  object A:
+    def apply(octave: Int): Note = Note(NoteType.A, octave)
+  object `A#`:
+    def apply(octave: Int): Note = Note(NoteType.`A#`, octave)
+  object Bb:
+    def apply(octave: Int): Note = Note(NoteType.Bb, octave)
+  object B:
+    def apply(octave: Int): Note = Note(NoteType.B, octave)
+  object `B#`:
+    def apply(octave: Int): Note = Note(NoteType.`B#`, octave)
+  object Cb:
+    def apply(octave: Int): Note = Note(NoteType.Cb, octave)
+end Note

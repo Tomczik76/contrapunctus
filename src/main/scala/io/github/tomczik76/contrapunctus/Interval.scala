@@ -70,7 +70,6 @@ enum Interval(val value: Int):
 end Interval
 
 object Interval:
-
   def apply(value: Int): Option[Interval] =
     value match
       case PerfectUnison.`value`   => Some(PerfectUnison)
@@ -100,5 +99,5 @@ object Interval:
       case _                       => None
 
   given intervalOrder: Order[Interval] = Order.by(_.value)
-
+  given intervalOrdering: Ordering[Interval] = Ordering.by(_.value)
 end Interval

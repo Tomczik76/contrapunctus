@@ -17,6 +17,7 @@ import Interval.{
 sealed trait ChordType:
   val intervals: NonEmptySet[Interval]
   val rootInterval: Interval
+  def ordinal: Int
 
 trait ChordGroup:
   def allBaseTypes: List[BaseChordType]

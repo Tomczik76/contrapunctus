@@ -1,6 +1,7 @@
 package io.github.tomczik76.contrapunctus
 
 import cats.data.{NonEmptyList, NonEmptySet}
+import Note.*
 
 class ChordSuite extends munit.FunSuite:
   test("ChordType.fromNotes test"):
