@@ -49,9 +49,19 @@ enum Scale(intervals: NonEmptyList[Interval]):
     val index    = intervals.toList.indexOf(interval)
 
     intervals.toList.indexWhere(_.value >= interval.value) match
-      case index if intervals.toList(index) == interval =>
+      case index if index >= 0 && intervals.toList(index) == interval =>
         NonEmptySet.of(
           AlteredScaleDegree(ScaleDegree.fromOrdinal(index), Natural)
+        )
+      case -1 =>
+        // Note exceeds scale's highest interval — treat as sharp of the last degree
+        val last = intervals.toList.last
+        val lastIndex = intervals.toList.size - 1
+        NonEmptySet.of(
+          AlteredScaleDegree(
+            ScaleDegree.fromOrdinal(lastIndex),
+            Alteration.unsafeApply(interval.value - last.value)
+          )
         )
       case index =>
         val closestBelow = intervals.toList(index - 1)

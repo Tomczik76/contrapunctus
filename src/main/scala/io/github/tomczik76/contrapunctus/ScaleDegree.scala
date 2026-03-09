@@ -29,7 +29,7 @@ enum Alteration(val semitones: Int):
 
   override def toString: String =
     this match
-      case Alteration.DoubleFlat  => "♭"
+      case Alteration.DoubleFlat  => "𝄫"
       case Alteration.Flat        => "♭"
       case Alteration.Natural     => "♮"
       case Alteration.Sharp       => "♯"

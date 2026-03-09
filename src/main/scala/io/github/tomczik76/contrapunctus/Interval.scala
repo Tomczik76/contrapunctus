@@ -53,8 +53,8 @@ enum Interval(val value: Int):
   case AugmentedNinth       extends Interval(MinorTenth.value)
   case DiminishedEleventh   extends Interval(MajorTenth.value)
   case AugmentedTenth       extends Interval(PerfectEleventh.value)
-  case DiminishedTwelfth    extends Interval(PerfectOctave.value)
-  case AugmentedEleventh    extends Interval(PerfectOctave.value)
+  case DiminishedTwelfth    extends Interval(PerfectTwelfth.value)
+  case AugmentedEleventh    extends Interval(PerfectEleventh.value)
   case DiminishedThirteenth extends Interval(PerfectTwelfth.value)
   case AugmentedTwelfth     extends Interval(MinorThirteenth.value)
   case DiminishedFourteenth extends Interval(MajorThirteenth.value)
@@ -65,8 +65,23 @@ enum Interval(val value: Int):
   val normalizedValue: Int = value % 12
 
   def invert: Interval =
-    if this == PerfectUnison then PerfectUnison
-    else Interval.fromOrdinal(12 - normalizedValue)
+    this match
+      case PerfectUnison    => PerfectUnison
+      case DiminishedSecond => AugmentedSeventh
+      case AugmentedUnison  => DiminishedOctave
+      case DiminishedThird  => AugmentedSixth
+      case AugmentedSecond  => DiminishedSeventh
+      case DiminishedFourth => AugmentedFifth
+      case AugmentedThird   => DiminishedSixth
+      case DiminishedFifth  => AugmentedFourth
+      case AugmentedFourth  => DiminishedFifth
+      case DiminishedSixth  => AugmentedThird
+      case AugmentedFifth   => DiminishedFourth
+      case DiminishedSeventh => AugmentedSecond
+      case AugmentedSixth    => DiminishedThird
+      case DiminishedOctave  => AugmentedUnison
+      case AugmentedSeventh  => DiminishedSecond
+      case _ => Interval(12 - normalizedValue).get
 end Interval
 
 object Interval:

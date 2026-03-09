@@ -52,8 +52,9 @@ object ChordType:
         val middle = tail
           .map { interval =>
             val int = interval.value - head.value
-            if int < 0 then Interval.fromOrdinal(int + 12)
-            else Interval.fromOrdinal(int)
+            val semitones = if int < 0 then int + 12 else int
+            Interval(semitones % 12)
+              .getOrElse(Interval.fromOrdinal(semitones % 12))
           }
 
         NonEmptyList.of(PerfectUnison, middle :+ head.invert*)
