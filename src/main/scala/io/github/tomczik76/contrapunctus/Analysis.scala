@@ -4,10 +4,14 @@ import cats.data.{NonEmptyList, NonEmptySet}
 
 case class AnalyzedChord(
     chord: Chord,
-    alteredScaleDegree: NonEmptySet[AlteredScaleDegree]
+    tonic: NoteType,
+    scale: Scale
 ):
+  val alteredScaleDegrees: NonEmptySet[AlteredScaleDegree] =
+    scale.alteredScaleDegree(tonic, chord.root)
+
   def romanNumerals: NonEmptyList[String] =
-    alteredScaleDegree.toNonEmptyList.map { asd =>
+    alteredScaleDegrees.toNonEmptyList.map { asd =>
       val numeral =
         if chord.chordType.isMinorQuality
         then asd.degree.romanNumeral.toLowerCase
@@ -44,7 +48,7 @@ object Analysis:
           val analysis = Analysis(
             nextChord
               .map(c =>
-                AnalyzedChord(c, scale.alteredScaleDegree(tonic, c.root))
+                AnalyzedChord(c, tonic, scale)
               )
           )
           (NonEmptyList.one(analysis), Some(AnalysisState(nextChord)))
