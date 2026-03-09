@@ -41,6 +41,25 @@ trait ChordGroup:
 trait BaseChordType:
   def allInversions: List[ChordType]
 
+trait InvertibleChordType extends BaseChordType:
+  val rootIntervals: NonEmptySet[Interval]
+  protected def numInversions: Int
+
+  private lazy val inversionsList: List[NonEmptyList[Interval]] =
+    Iterator
+      .iterate(rootIntervals.toNonEmptyList)(ChordType.invert)
+      .take(numInversions)
+      .toList
+
+  protected def inversionIntervals(k: Int): NonEmptySet[Interval] =
+    val inv = inversionsList(k)
+    NonEmptySet.of(inv.head, inv.tail*)
+
+  protected def inversionRootInterval(k: Int): Interval =
+    if k == 0 then inversionsList(0).head
+    else if k == 1 then inversionsList(1).last
+    else inversionsList(k).toList(numInversions - k)
+
 object ChordType:
   given Order[ChordType] = Order.by(_.hashCode())
 
@@ -51,7 +70,7 @@ object ChordType:
         val _ :: head :: tail = intervals.toList: @unchecked
         val middle = tail
           .map { interval =>
-            val int = interval.value - head.value
+            val int       = interval.value - head.value
             val semitones = if int < 0 then int + 12 else int
             Interval(semitones % 12)
               .getOrElse(Interval.fromOrdinal(semitones % 12))
@@ -92,187 +111,63 @@ end ChordType
 object Triads extends ChordGroup:
   override def allBaseTypes: List[BaseChordType] = Triads.values.toList
 
-enum Triads(val rootIntervals: NonEmptySet[Interval]) extends BaseChordType:
+enum Triads(val rootIntervals: NonEmptySet[Interval])
+    extends InvertibleChordType:
   base =>
-
+  protected def numInversions: Int            = 3
   override def allInversions: List[ChordType] = Inversions.values.toList
-
-  private lazy val firstInversion =
-    ChordType.invert(rootIntervals.toNonEmptyList)
-  private lazy val secondInversion = ChordType.invert(firstInversion)
 
   enum Inversions(
       val intervals: NonEmptySet[Interval],
       val rootInterval: Interval
   ) extends ChordType:
-    case Root extends Inversions(rootIntervals, rootIntervals.head)
+    case Root
+        extends Inversions(inversionIntervals(0), inversionRootInterval(0))
     case First
-        extends Inversions(
-          NonEmptySet.of(firstInversion.head, firstInversion.tail*),
-          firstInversion.last
-        )
+        extends Inversions(inversionIntervals(1), inversionRootInterval(1))
     case Second
-        extends Inversions(
-          NonEmptySet.of(secondInversion.head, secondInversion.tail*),
-          secondInversion.tail.head
-        )
-
+        extends Inversions(inversionIntervals(2), inversionRootInterval(2))
     override def toString: String =
       s"${base.productPrefix}-${this.productPrefix}"
 
   case Minor
       extends Triads(NonEmptySet.of(PerfectUnison, MinorThird, PerfectFifth))
-
   case Major
       extends Triads(NonEmptySet.of(PerfectUnison, MajorThird, PerfectFifth))
-
   case Diminished
       extends Triads(NonEmptySet.of(PerfectUnison, MinorThird, DiminishedFifth))
-
   case Augmented
       extends Triads(NonEmptySet.of(PerfectUnison, MajorThird, AugmentedFifth))
-
   case Sus2
       extends Triads(NonEmptySet.of(PerfectUnison, MajorSecond, PerfectFifth))
-
   case Sus4
       extends Triads(NonEmptySet.of(PerfectUnison, PerfectFourth, PerfectFifth))
-
   case PowerChord extends Triads(NonEmptySet.of(PerfectUnison, PerfectFifth))
-
 end Triads
-
-object AlteredChords extends ChordGroup:
-  override def allBaseTypes: List[BaseChordType] = AlteredChords.values.toList
-
-enum AlteredChords(val rootIntervals: NonEmptySet[Interval])
-    extends BaseChordType:
-  base =>
-  override def allInversions: List[ChordType] = Inversions.values.toList
-
-  private lazy val firstInversion =
-    ChordType.invert(rootIntervals.toNonEmptyList)
-  private lazy val secondInversion = ChordType.invert(firstInversion)
-  private lazy val thirdInversion  = ChordType.invert(secondInversion)
-  private lazy val fourthInversion = ChordType.invert(thirdInversion)
-
-  enum Inversions(
-      val intervals: NonEmptySet[Interval],
-      val rootInterval: Interval
-  ) extends ChordType:
-    case Root extends Inversions(rootIntervals, rootIntervals.head)
-    case First
-        extends Inversions(
-          NonEmptySet.of(firstInversion.head, firstInversion.tail*),
-          firstInversion.last
-        )
-    case Second
-        extends Inversions(
-          NonEmptySet.of(secondInversion.head, secondInversion.tail*),
-          secondInversion.tail.tail.tail.head
-        )
-    case Third
-        extends Inversions(
-          NonEmptySet.of(thirdInversion.head, thirdInversion.tail*),
-          thirdInversion.tail.tail.head
-        )
-    case Fourth
-        extends Inversions(
-          NonEmptySet.of(fourthInversion.head, fourthInversion.tail*),
-          fourthInversion.tail.head
-        )
-    override def toString: String =
-      s"${base.productPrefix}-${this.productPrefix}"
-  end Inversions
-
-  case SevenFlatNine
-      extends AlteredChords(
-        NonEmptySet.of(
-          PerfectUnison,
-          MajorThird,
-          PerfectFifth,
-          Interval.MinorSeventh,
-          Interval.MinorNinth
-        )
-      )
-  case SevenSharpNine
-      extends AlteredChords(
-        NonEmptySet.of(
-          PerfectUnison,
-          MajorThird,
-          PerfectFifth,
-          Interval.MinorSeventh,
-          Interval.MinorTenth
-        )
-      )
-  case SevenFlatFive
-      extends AlteredChords(
-        NonEmptySet.of(
-          PerfectUnison,
-          MajorThird,
-          DiminishedFifth,
-          Interval.MinorSeventh
-        )
-      )
-  case SevenFlatFiveFlatNine
-      extends AlteredChords(
-        NonEmptySet.of(
-          PerfectUnison,
-          MajorThird,
-          DiminishedFifth,
-          Interval.MinorSeventh,
-          Interval.MinorNinth
-        )
-      )
-  case SevenSharpFiveSharpNine
-      extends AlteredChords(
-        NonEmptySet.of(
-          PerfectUnison,
-          MajorThird,
-          AugmentedFifth,
-          Interval.MinorSeventh,
-          Interval.MinorTenth
-        )
-      )
-end AlteredChords
 
 object Sevenths extends ChordGroup:
   override def allBaseTypes: List[BaseChordType] = Sevenths.values.toList
 
-enum Sevenths(val rootIntervals: NonEmptySet[Interval]) extends BaseChordType:
+enum Sevenths(val rootIntervals: NonEmptySet[Interval])
+    extends InvertibleChordType:
   base =>
-
+  protected def numInversions: Int            = 4
   override def allInversions: List[ChordType] = Inversions.values.toList
-
-  private lazy val firstInversion =
-    ChordType.invert(rootIntervals.toNonEmptyList)
-  private lazy val secondInversion = ChordType.invert(firstInversion)
-  private lazy val thirdInversion  = ChordType.invert(secondInversion)
 
   enum Inversions(
       val intervals: NonEmptySet[Interval],
       val rootInterval: Interval
   ) extends ChordType:
-    case Root extends Inversions(rootIntervals, rootIntervals.head)
+    case Root
+        extends Inversions(inversionIntervals(0), inversionRootInterval(0))
     case First
-        extends Inversions(
-          NonEmptySet.of(firstInversion.head, firstInversion.tail*),
-          firstInversion.last
-        )
+        extends Inversions(inversionIntervals(1), inversionRootInterval(1))
     case Second
-        extends Inversions(
-          NonEmptySet.of(secondInversion.head, secondInversion.tail*),
-          secondInversion.tail.tail.head
-        )
+        extends Inversions(inversionIntervals(2), inversionRootInterval(2))
     case Third
-        extends Inversions(
-          NonEmptySet.of(thirdInversion.head, thirdInversion.tail*),
-          thirdInversion.tail.head
-        )
-
+        extends Inversions(inversionIntervals(3), inversionRootInterval(3))
     override def toString: String =
       s"${base.productPrefix}-${this.productPrefix}"
-  end Inversions
 
   case MinorSeventh
       extends Sevenths(
@@ -353,45 +248,28 @@ end Sevenths
 object Ninths extends ChordGroup:
   override def allBaseTypes: List[BaseChordType] = Ninths.values.toList
 
-enum Ninths(val rootIntervals: NonEmptySet[Interval]) extends BaseChordType:
+enum Ninths(val rootIntervals: NonEmptySet[Interval])
+    extends InvertibleChordType:
   base =>
+  protected def numInversions: Int            = 5
   override def allInversions: List[ChordType] = Inversions.values.toList
-
-  private lazy val firstInversion =
-    ChordType.invert(rootIntervals.toNonEmptyList)
-  private lazy val secondInversion = ChordType.invert(firstInversion)
-  private lazy val thirdInversion  = ChordType.invert(secondInversion)
-  private lazy val fourthInversion = ChordType.invert(thirdInversion)
 
   enum Inversions(
       val intervals: NonEmptySet[Interval],
       val rootInterval: Interval
   ) extends ChordType:
-    case Root extends Inversions(rootIntervals, rootIntervals.head)
+    case Root
+        extends Inversions(inversionIntervals(0), inversionRootInterval(0))
     case First
-        extends Inversions(
-          NonEmptySet.of(firstInversion.head, firstInversion.tail*),
-          firstInversion.last
-        )
+        extends Inversions(inversionIntervals(1), inversionRootInterval(1))
     case Second
-        extends Inversions(
-          NonEmptySet.of(secondInversion.head, secondInversion.tail*),
-          secondInversion.tail.tail.tail.head
-        )
+        extends Inversions(inversionIntervals(2), inversionRootInterval(2))
     case Third
-        extends Inversions(
-          NonEmptySet.of(thirdInversion.head, thirdInversion.tail*),
-          thirdInversion.tail.tail.head
-        )
+        extends Inversions(inversionIntervals(3), inversionRootInterval(3))
     case Fourth
-        extends Inversions(
-          NonEmptySet.of(fourthInversion.head, fourthInversion.tail*),
-          fourthInversion.tail.head
-        )
-
+        extends Inversions(inversionIntervals(4), inversionRootInterval(4))
     override def toString: String =
       s"${base.productPrefix}-${this.productPrefix}"
-  end Inversions
 
   case MinorNinth
       extends Ninths(
@@ -403,7 +281,6 @@ enum Ninths(val rootIntervals: NonEmptySet[Interval]) extends BaseChordType:
           Interval.MajorNinth
         )
       )
-
   case DominantNinth
       extends Ninths(
         NonEmptySet.of(
@@ -414,7 +291,6 @@ enum Ninths(val rootIntervals: NonEmptySet[Interval]) extends BaseChordType:
           Interval.MajorNinth
         )
       )
-
   case MajorNinth
       extends Ninths(
         NonEmptySet.of(
@@ -435,7 +311,6 @@ enum Ninths(val rootIntervals: NonEmptySet[Interval]) extends BaseChordType:
           Interval.MajorNinth
         )
       )
-
   case MinorNinthOmit5
       extends Ninths(
         NonEmptySet.of(
@@ -445,7 +320,6 @@ enum Ninths(val rootIntervals: NonEmptySet[Interval]) extends BaseChordType:
           Interval.MajorNinth
         )
       )
-
   case DominantNinthOmit5
       extends Ninths(
         NonEmptySet.of(
@@ -464,7 +338,6 @@ enum Ninths(val rootIntervals: NonEmptySet[Interval]) extends BaseChordType:
           Interval.MajorNinth
         )
       )
-
   case MinorMajorNinthOmit5
       extends Ninths(
         NonEmptySet.of(
@@ -479,50 +352,30 @@ end Ninths
 object Elevenths extends ChordGroup:
   override def allBaseTypes: List[BaseChordType] = Elevenths.values.toList
 
-enum Elevenths(val rootIntervals: NonEmptySet[Interval]) extends BaseChordType:
+enum Elevenths(val rootIntervals: NonEmptySet[Interval])
+    extends InvertibleChordType:
   base =>
+  protected def numInversions: Int            = 6
   override def allInversions: List[ChordType] = Inversions.values.toList
-
-  private lazy val firstInversion =
-    ChordType.invert(rootIntervals.toNonEmptyList)
-  private lazy val secondInversion = ChordType.invert(firstInversion)
-  private lazy val thirdInversion  = ChordType.invert(secondInversion)
-  private lazy val fourthInversion = ChordType.invert(thirdInversion)
-  private lazy val fifthInversion  = ChordType.invert(fourthInversion)
 
   enum Inversions(
       val intervals: NonEmptySet[Interval],
       val rootInterval: Interval
   ) extends ChordType:
-    case Root extends Inversions(rootIntervals, rootIntervals.head)
+    case Root
+        extends Inversions(inversionIntervals(0), inversionRootInterval(0))
     case First
-        extends Inversions(
-          NonEmptySet.of(firstInversion.head, firstInversion.tail*),
-          firstInversion.last
-        )
+        extends Inversions(inversionIntervals(1), inversionRootInterval(1))
     case Second
-        extends Inversions(
-          NonEmptySet.of(secondInversion.head, secondInversion.tail*),
-          secondInversion.tail.tail.tail.tail.head
-        )
+        extends Inversions(inversionIntervals(2), inversionRootInterval(2))
     case Third
-        extends Inversions(
-          NonEmptySet.of(thirdInversion.head, thirdInversion.tail*),
-          thirdInversion.tail.tail.tail.head
-        )
+        extends Inversions(inversionIntervals(3), inversionRootInterval(3))
     case Fourth
-        extends Inversions(
-          NonEmptySet.of(fourthInversion.head, fourthInversion.tail*),
-          fourthInversion.tail.tail.head
-        )
+        extends Inversions(inversionIntervals(4), inversionRootInterval(4))
     case Fifth
-        extends Inversions(
-          NonEmptySet.of(fifthInversion.head, fifthInversion.tail*),
-          fifthInversion.tail.head
-        )
+        extends Inversions(inversionIntervals(5), inversionRootInterval(5))
     override def toString: String =
       s"${base.productPrefix}-${this.productPrefix}"
-  end Inversions
 
   case MajorEleventh
       extends Elevenths(
@@ -563,53 +416,29 @@ object Thirteenths extends ChordGroup:
   override def allBaseTypes: List[BaseChordType] = Thirteenths.values.toList
 
 enum Thirteenths(val rootIntervals: NonEmptySet[Interval])
-    extends BaseChordType:
+    extends InvertibleChordType:
   base =>
+  protected def numInversions: Int            = 7
   override def allInversions: List[ChordType] = Inversions.values.toList
-
-  private lazy val firstInversion =
-    ChordType.invert(rootIntervals.toNonEmptyList)
-  private lazy val secondInversion = ChordType.invert(firstInversion)
-  private lazy val thirdInversion  = ChordType.invert(secondInversion)
-  private lazy val fourthInversion = ChordType.invert(thirdInversion)
-  private lazy val fifthInversion  = ChordType.invert(fourthInversion)
-  private lazy val sixthInversion  = ChordType.invert(fifthInversion)
 
   enum Inversions(
       val intervals: NonEmptySet[Interval],
       val rootInterval: Interval
   ) extends ChordType:
-    case Root extends Inversions(rootIntervals, rootIntervals.head)
+    case Root
+        extends Inversions(inversionIntervals(0), inversionRootInterval(0))
     case First
-        extends Inversions(
-          NonEmptySet.of(firstInversion.head, firstInversion.tail*),
-          firstInversion.last
-        )
+        extends Inversions(inversionIntervals(1), inversionRootInterval(1))
     case Second
-        extends Inversions(
-          NonEmptySet.of(secondInversion.head, secondInversion.tail*),
-          secondInversion.tail.tail.tail.tail.tail.head
-        )
+        extends Inversions(inversionIntervals(2), inversionRootInterval(2))
     case Third
-        extends Inversions(
-          NonEmptySet.of(thirdInversion.head, thirdInversion.tail*),
-          thirdInversion.tail.tail.tail.tail.head
-        )
+        extends Inversions(inversionIntervals(3), inversionRootInterval(3))
     case Fourth
-        extends Inversions(
-          NonEmptySet.of(fourthInversion.head, fourthInversion.tail*),
-          fourthInversion.tail.tail.tail.head
-        )
+        extends Inversions(inversionIntervals(4), inversionRootInterval(4))
     case Fifth
-        extends Inversions(
-          NonEmptySet.of(fifthInversion.head, fifthInversion.tail*),
-          fifthInversion.tail.tail.head
-        )
+        extends Inversions(inversionIntervals(5), inversionRootInterval(5))
     case Sixth
-        extends Inversions(
-          NonEmptySet.of(sixthInversion.head, sixthInversion.tail*),
-          sixthInversion.tail.head
-        )
+        extends Inversions(inversionIntervals(6), inversionRootInterval(6))
     override def toString: String =
       s"${base.productPrefix}-${this.productPrefix}"
   end Inversions
@@ -651,3 +480,80 @@ enum Thirteenths(val rootIntervals: NonEmptySet[Interval])
         )
       )
 end Thirteenths
+
+object AlteredChords extends ChordGroup:
+  override def allBaseTypes: List[BaseChordType] = AlteredChords.values.toList
+
+enum AlteredChords(val rootIntervals: NonEmptySet[Interval])
+    extends InvertibleChordType:
+  base =>
+  protected def numInversions: Int            = 5
+  override def allInversions: List[ChordType] = Inversions.values.toList
+
+  enum Inversions(
+      val intervals: NonEmptySet[Interval],
+      val rootInterval: Interval
+  ) extends ChordType:
+    case Root
+        extends Inversions(inversionIntervals(0), inversionRootInterval(0))
+    case First
+        extends Inversions(inversionIntervals(1), inversionRootInterval(1))
+    case Second
+        extends Inversions(inversionIntervals(2), inversionRootInterval(2))
+    case Third
+        extends Inversions(inversionIntervals(3), inversionRootInterval(3))
+    case Fourth
+        extends Inversions(inversionIntervals(4), inversionRootInterval(4))
+    override def toString: String =
+      s"${base.productPrefix}-${this.productPrefix}"
+
+  case SevenFlatNine
+      extends AlteredChords(
+        NonEmptySet.of(
+          PerfectUnison,
+          MajorThird,
+          PerfectFifth,
+          Interval.MinorSeventh,
+          Interval.MinorNinth
+        )
+      )
+  case SevenSharpNine
+      extends AlteredChords(
+        NonEmptySet.of(
+          PerfectUnison,
+          MajorThird,
+          PerfectFifth,
+          Interval.MinorSeventh,
+          Interval.MinorTenth
+        )
+      )
+  case SevenFlatFive
+      extends AlteredChords(
+        NonEmptySet.of(
+          PerfectUnison,
+          MajorThird,
+          DiminishedFifth,
+          Interval.MinorSeventh
+        )
+      )
+  case SevenFlatFiveFlatNine
+      extends AlteredChords(
+        NonEmptySet.of(
+          PerfectUnison,
+          MajorThird,
+          DiminishedFifth,
+          Interval.MinorSeventh,
+          Interval.MinorNinth
+        )
+      )
+  case SevenSharpFiveSharpNine
+      extends AlteredChords(
+        NonEmptySet.of(
+          PerfectUnison,
+          MajorThird,
+          AugmentedFifth,
+          Interval.MinorSeventh,
+          Interval.MinorTenth
+        )
+      )
+end AlteredChords
