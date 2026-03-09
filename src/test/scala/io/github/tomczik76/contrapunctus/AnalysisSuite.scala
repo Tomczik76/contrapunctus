@@ -303,6 +303,56 @@ class AnalysisSuite extends munit.FunSuite:
       )
     )
 
+  test("sustained tones are transparent to roman numeral analysis"):
+    import Note.*
+    import Sounding.*
+    // I → V with C and E sustained into beat 2 while G moves to B.
+    // All notes in beat 2 are chord tones of C major (C, E) or G major (B, G held in bass).
+    val beat1 = Pulse.Atom(Attack(C(3)), Attack(E(3)), Attack(G(3)))
+    val beat2 = Pulse.Atom(Attack(G(3)), Attack(B(3)), Attack(D(4)))
+    val beat3 = Pulse.Atom(Sustain(G(3)), Sustain(B(3)), Sustain(D(4)))
+    val beat4 = Pulse.Atom(Attack(C(3)), Attack(E(3)), Attack(G(3)))
+
+    val results = Analysis.fromSounding(NoteType.C, Scale.Major, beat1, beat2, beat3, beat4)
+    val analyses = results.toList.collect { case Pulse.Atom(nel) =>
+      nel.head
+    }
+
+    def allNumerals(a: Analysis): Set[String] =
+      a.chords.flatMap(_.romanNumerals.toList)
+
+    assertEquals(analyses.size, 4)
+    assert(allNumerals(analyses(0)).contains("I"))
+    assert(allNumerals(analyses(1)).contains("V"))
+    // Beat 3 is all sustains — same notes as beat 2, still V
+    assert(allNumerals(analyses(2)).contains("V"))
+    assert(allNumerals(analyses(3)).contains("I"))
+
+  test("suspension 4-3 with Sounding.Sustain as preparation"):
+    import Note.*
+    import Sounding.*
+    // Classic 4-3 suspension: F major (preparation) → C major with F sustained (suspension) → resolution to E.
+    // The sustained F over C major is a 4-3 suspension.
+    val beat1 = Pulse.Atom(Attack(F(3)), Attack(A(3)), Attack(C(4)), Attack(F(4)))
+    val beat2 = Pulse.Atom(Attack(C(3)), Attack(E(3)), Attack(G(3)), Sustain(F(4)))
+    val beat3 = Pulse.Atom(Sustain(C(3)), Sustain(E(3)), Sustain(G(3)), Attack(E(4)))
+
+    val results = Analysis.fromSounding(NoteType.C, Scale.Major, beat1, beat2, beat3)
+    val analyses = results.toList.collect { case Pulse.Atom(nel) =>
+      nel.head
+    }
+
+    assertEquals(analyses.size, 3)
+
+    val fNote = analyses(1).notes.find(n =>
+      n.note.noteType == NoteType.F && n.note.octave == 4
+    )
+    assert(
+      fNote.exists(
+        _.nonChordToneType.contains(NonChordToneType.Suspension(4, 3))
+      )
+    )
+
   test("ScaleDegree.romanNumeral is accessible"):
     assertEquals(ScaleDegree.Tonic.romanNumeral, "I")
     assertEquals(ScaleDegree.Dominant.romanNumeral, "V")

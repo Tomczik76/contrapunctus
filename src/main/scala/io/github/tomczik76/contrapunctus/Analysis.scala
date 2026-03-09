@@ -36,6 +36,17 @@ object Analysis:
       NonEmptyList(measures.head, measures.tail.toList)
     )
 
+  def fromSounding(
+      tonic: NoteType,
+      scale: Scale,
+      measures: Pulse[Sounding]*
+  ): NonEmptyList[Pulse[Analysis]] =
+    apply(
+      tonic,
+      scale,
+      NonEmptyList(measures.head, measures.tail.toList).map(_.map(_.note))
+    )
+
   def apply(
       tonic: NoteType,
       scale: Scale,
@@ -75,7 +86,6 @@ object Analysis:
   private def flattenPulse[A](pulse: Pulse[A]): List[NonEmptyList[A]] =
     pulse match
       case Pulse.Atom(v) => List(v)
-      case Pulse.Tie(v)  => List(v)
       case Pulse.Rest    => Nil
       case Pulse.Duplet(a, b) =>
         flattenPulse(a) ++ flattenPulse(b)

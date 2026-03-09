@@ -52,4 +52,24 @@ class PulseSuite extends munit.FunSuite:
       )
 
     assertEquals(mapped, expected)
+
+  test("Pulse[Sounding] represents keyboard music with partial ties"):
+    import Sounding.*
+    // Piano: C major chord, then C and G tied while E moves to F
+    val beat1: Pulse[Sounding] =
+      Atom(Attack(C(3)), Attack(E(3)), Attack(G(3)))
+    val beat2: Pulse[Sounding] =
+      Atom(Sustain(C(3)), Attack(F(3)), Sustain(G(3)))
+
+    // Extract notes from beat2 — all three pitches are sounding
+    val sounding = beat2 match
+      case Atom(nel) => nel.toList
+      case _         => Nil
+    assertEquals(sounding.map(_.note), List(C(3), F(3), G(3)))
+
+    // Sustained vs attacked is preserved
+    assert(sounding(0).isInstanceOf[Sounding.Sustain])
+    assert(sounding(1).isInstanceOf[Sounding.Attack])
+    assert(sounding(2).isInstanceOf[Sounding.Sustain])
+
 end PulseSuite

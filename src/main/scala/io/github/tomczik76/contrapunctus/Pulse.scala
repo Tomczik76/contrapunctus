@@ -30,8 +30,15 @@ enum Pulse[+A]:
       g: Pulse[A]
   )                                 extends Pulse[A]
   case Atom(value: NonEmptyList[A]) extends Pulse[A]
-  case Tie(value: NonEmptyList[A])  extends Pulse[A]
   case Rest                         extends Pulse[Nothing]
+
+  def map[B](f: A => B): Pulse[B] = this match
+    case Duplet(a, b)                    => Duplet(a.map(f), b.map(f))
+    case Triplet(a, b, c)                => Triplet(a.map(f), b.map(f), c.map(f))
+    case Quintuplet(a, b, c, d, e)       => Quintuplet(a.map(f), b.map(f), c.map(f), d.map(f), e.map(f))
+    case Septuplet(a, b, c, d, e, f0, g) => Septuplet(a.map(f), b.map(f), c.map(f), d.map(f), e.map(f), f0.map(f), g.map(f))
+    case Atom(nel)                       => Atom(nel.map(f))
+    case Rest                            => Rest
 
 end Pulse
 
@@ -51,9 +58,6 @@ case class VoiceId(value: String) extends AnyVal
 object Pulse:
   object Atom:
     def apply[A](as: A*): Pulse[A] = Atom(NonEmptyList(as.head, as.tail.toList))
-
-  object Tie:
-    def apply[A](a: A): Pulse[A] = Tie(NonEmptyList.one(a))
 
   object Duplet:
     def apply[A](a: A, b: A): Pulse[A] = Duplet(Atom(a), Atom(b))
@@ -116,7 +120,6 @@ enum PulseF[+A, +R]:
       g: R
   )
   case AtomF(value: NonEmptyList[A])
-  case TieF(value: NonEmptyList[A])
   case RestF
 end PulseF
 
@@ -140,7 +143,6 @@ object PulseF:
             f(g)
           )
         case PulseF.AtomF(v) => PulseF.AtomF(v)
-        case PulseF.TieF(v)  => PulseF.TieF(v)
         case PulseF.RestF    => PulseF.RestF
   end given
 
@@ -175,7 +177,6 @@ object PulseF:
           )
             .mapN(PulseF.SeptupletF(_, _, _, _, _, _, _))
         case PulseF.AtomF(v) => (PulseF.AtomF(v): PulseF[A, C]).pure[G]
-        case PulseF.TieF(v)  => (PulseF.TieF(v): PulseF[A, C]).pure[G]
         case PulseF.RestF    => (PulseF.RestF: PulseF[A, C]).pure[G]
 
     def foldLeft[B, C](fa: PulseF[A, B], c: C)(f: (C, B) => C): C =
@@ -188,7 +189,6 @@ object PulseF:
         case PulseF.SeptupletF(a, b, c1, d, e, f0, g) =>
           f(f(f(f(f(f(f(c, a), b), c1), d), e), f0), g)
         case PulseF.AtomF(_) => c
-        case PulseF.TieF(_)  => c
         case PulseF.RestF    => c
 
     def foldRight[B, C](fa: PulseF[A, B], lc: Eval[C])(
@@ -204,7 +204,6 @@ object PulseF:
         case PulseF.SeptupletF(a, b, c1, d, e, f0, g) =>
           f(a, f(b, f(c1, f(d, f(e, f(f0, f(g, lc)))))))
         case PulseF.AtomF(_) => lc
-        case PulseF.TieF(_)  => lc
         case PulseF.RestF    => lc
   end given
 
@@ -217,7 +216,6 @@ object PulseF:
       case Pulse.Septuplet(a, b, c, d, e, f, g) =>
         PulseF.SeptupletF(a, b, c, d, e, f, g)
       case Pulse.Atom(v) => PulseF.AtomF(v)
-      case Pulse.Tie(v)  => PulseF.TieF(v)
       case Pulse.Rest    => PulseF.RestF
 
   def algebra[A]: Algebra[[r] =>> PulseF[A, r], Pulse[A]] =
@@ -229,7 +227,6 @@ object PulseF:
       case PulseF.SeptupletF(a, b, c, d, e, f, g) =>
         Pulse.Septuplet(a, b, c, d, e, f, g)
       case PulseF.AtomF(v) => Pulse.Atom(v)
-      case PulseF.TieF(v)  => Pulse.Tie(v)
       case PulseF.RestF    => Pulse.Rest
 
 end PulseF
@@ -253,11 +250,6 @@ object PulseTransform:
         State { s =>
           val (b, s2) = f(v, s)
           (s2, Pulse.Atom(b))
-        }
-      case PulseF.TieF(v) =>
-        State { s =>
-          val (b, s2) = f(v, s)
-          (s2, Pulse.Tie(b))
         }
       case PulseF.RestF =>
         State.pure(Pulse.Rest)
