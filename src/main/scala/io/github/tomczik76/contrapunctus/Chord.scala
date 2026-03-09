@@ -13,6 +13,13 @@ case class Chord(root: NoteType, chordType: ChordType):
   ): NonEmptySet[AlteredScaleDegree] =
     scale.alteredScaleDegree(tonicNoteType, root)
 
+  def isChordTone(noteType: NoteType): Boolean =
+    val intervalFromRoot = root.intervalAbove(noteType).normalizedValue
+    val rootOffset       = chordType.rootInterval.normalizedValue
+    chordType.intervals.exists { i =>
+      (i.normalizedValue - rootOffset + 12) % 12 == intervalFromRoot
+    }
+
 object Chord:
   def fromNotes(note: Note, rest: Note*): Set[Chord] =
     val notes = NonEmptySet.of(note, rest*)
