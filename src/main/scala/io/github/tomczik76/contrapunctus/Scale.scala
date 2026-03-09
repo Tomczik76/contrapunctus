@@ -4,7 +4,7 @@ import cats.data.{NonEmptyList, NonEmptySet}
 import io.github.tomczik76.contrapunctus.Alteration.Natural
 import io.github.tomczik76.contrapunctus.Interval.*
 
-enum Scale(intervals: NonEmptyList[Interval]):
+enum Scale(val intervals: NonEmptyList[Interval]):
   case Major
       extends Scale(
         NonEmptyList.of(

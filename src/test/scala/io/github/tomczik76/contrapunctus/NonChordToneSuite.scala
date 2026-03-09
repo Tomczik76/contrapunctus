@@ -63,12 +63,24 @@ class NonChordToneSuite extends munit.FunSuite:
 
   test("suspension — held over, resolves down by step"):
     // E over C major becomes E over G major (non-chord tone), resolves to D
+    // With bass G: E is a 6th above G, D is a 5th → 6-5 suspension
     val result = NonChordToneAnalysis.classify(
       prev = Some((E(4), cMajor)),
       current = (E(4), gMajor),
-      next = Some((D(4), gMajor))
+      next = Some((D(4), gMajor)),
+      bass = Some(G(3))
     )
-    assertEquals(result, Some(NonChordToneType.Suspension))
+    assertEquals(result, Some(NonChordToneType.Suspension(6, 5)))
+
+  test("suspension 4-3 — fourth resolves to third"):
+    // F held over C major, resolves to E. Bass = C.
+    val result = NonChordToneAnalysis.classify(
+      prev = Some((F(4), Chord(NoteType.F, Triads.Major.Inversions.Root))),
+      current = (F(4), cMajor),
+      next = Some((E(4), cMajor)),
+      bass = Some(C(4))
+    )
+    assertEquals(result, Some(NonChordToneType.Suspension(4, 3)))
 
   test("retardation — held over, resolves up by step"):
     // F# over G major is a chord tone, but let's use F over C major -> F over G major resolving to G
