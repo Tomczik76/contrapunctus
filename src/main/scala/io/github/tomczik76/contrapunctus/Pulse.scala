@@ -74,6 +74,15 @@ object Pulse:
     def apply[A](a: A, b: A, c: A, d: A, e: A, f: A, g: A): Pulse[A] =
       Septuplet(Atom(a), Atom(b), Atom(c), Atom(d), Atom(e), Atom(f), Atom(g))
 
+  def flatten[A](pulse: Pulse[A]): List[NonEmptyList[A]] =
+    pulse match
+      case Atom(v)                         => List(v)
+      case Rest                            => Nil
+      case Duplet(a, b)                    => flatten(a) ++ flatten(b)
+      case Triplet(a, b, c)                => flatten(a) ++ flatten(b) ++ flatten(c)
+      case Quintuplet(a, b, c, d, e)       => flatten(a) ++ flatten(b) ++ flatten(c) ++ flatten(d) ++ flatten(e)
+      case Septuplet(a, b, c, d, e, f, g)  => flatten(a) ++ flatten(b) ++ flatten(c) ++ flatten(d) ++ flatten(e) ++ flatten(f) ++ flatten(g)
+
   def duplet[A](a: Pulse[A], b: Pulse[A]): Pulse[A] = Duplet(a, b)
   def triplet[A](a: Pulse[A], b: Pulse[A], c: Pulse[A]): Pulse[A] =
     Triplet(a, b, c)

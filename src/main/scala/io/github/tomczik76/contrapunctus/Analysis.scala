@@ -1,6 +1,6 @@
 package io.github.tomczik76.contrapunctus
 
-import cats.data.{NonEmptyList, NonEmptySet}
+import cats.data.{NonEmptyList, NonEmptySet, ValidatedNel}
 
 case class AnalyzedChord(
     chord: Chord,
@@ -24,6 +24,11 @@ case class AnalyzedChord(
 
 case class Analysis(chords: Set[AnalyzedChord], notes: List[AnalyzedNote])
 
+case class VoiceAnalysis(
+    harmonicAnalysis: NonEmptyList[Pulse[Analysis]],
+    partWriting: ValidatedNel[PartWritingError, Unit]
+)
+
 object Analysis:
   def apply(
       tonic: NoteType,
@@ -34,6 +39,31 @@ object Analysis:
       tonic,
       scale,
       NonEmptyList(measures.head, measures.tail.toList)
+    )
+
+  /** Analyze multiple independent voices: runs harmonic analysis on the
+    * combined vertical sonorities and validates part-writing rules.
+    * Voices should be ordered from highest (index 0) to lowest.
+    */
+  def fromVoices(
+      tonic: NoteType,
+      scale: Scale,
+      voices: List[NonEmptyList[Pulse[Note]]]
+  ): VoiceAnalysis =
+    val flatVoices: List[List[Note]] =
+      voices.map(_.toList.flatMap(Pulse.flatten).map(_.head))
+    val numBeats = flatVoices.head.size
+    val combined: NonEmptyList[Pulse[Note]] =
+      NonEmptyList.fromListUnsafe(
+        (0 until numBeats).toList.map { beat =>
+          val notes =
+            NonEmptyList.fromListUnsafe(flatVoices.map(_(beat)).sortBy(_.midi))
+          Pulse.Atom(notes): Pulse[Note]
+        }
+      )
+    VoiceAnalysis(
+      harmonicAnalysis = apply(tonic, scale, combined),
+      partWriting = PartWriting.check(voices, tonic, scale)
     )
 
   def fromSounding(
@@ -54,7 +84,7 @@ object Analysis:
   ): NonEmptyList[Pulse[Analysis]] =
     // Phase 1: Flatten to ordered beats
     val beats: List[NonEmptyList[Note]] =
-      measures.toList.flatMap(flattenPulse)
+      measures.toList.flatMap(Pulse.flatten)
 
     // Phase 2: Identify chords, trying subsets if all notes don't match
     val chordsPerBeat: List[Set[Chord]] =
@@ -82,22 +112,6 @@ object Analysis:
           )
       ._1
   end apply
-
-  private def flattenPulse[A](pulse: Pulse[A]): List[NonEmptyList[A]] =
-    pulse match
-      case Pulse.Atom(v) => List(v)
-      case Pulse.Rest    => Nil
-      case Pulse.Duplet(a, b) =>
-        flattenPulse(a) ++ flattenPulse(b)
-      case Pulse.Triplet(a, b, c) =>
-        flattenPulse(a) ++ flattenPulse(b) ++ flattenPulse(c)
-      case Pulse.Quintuplet(a, b, c, d, e) =>
-        flattenPulse(a) ++ flattenPulse(b) ++ flattenPulse(c) ++
-          flattenPulse(d) ++ flattenPulse(e)
-      case Pulse.Septuplet(a, b, c, d, e, f, g) =>
-        flattenPulse(a) ++ flattenPulse(b) ++ flattenPulse(c) ++
-          flattenPulse(d) ++ flattenPulse(e) ++ flattenPulse(f) ++
-          flattenPulse(g)
 
   private def identifyChords(
       notes: NonEmptyList[Note],
