@@ -41,7 +41,7 @@ enum Scale(intervals: NonEmptyList[Interval]):
           MajorSeventh
         )
       )
-  
+
   def alteredScaleDegree(
       tonic: NoteType,
       noteType: NoteType
@@ -55,7 +55,7 @@ enum Scale(intervals: NonEmptyList[Interval]):
         )
       case -1 =>
         // Note exceeds scale's highest interval — treat as sharp of the last degree
-        val last = intervals.toList.last
+        val last      = intervals.toList.last
         val lastIndex = intervals.toList.size - 1
         NonEmptySet.of(
           AlteredScaleDegree(
@@ -73,9 +73,10 @@ enum Scale(intervals: NonEmptyList[Interval]):
           ),
           AlteredScaleDegree(
             ScaleDegree.fromOrdinal(index),
-            Alteration.unsafeApply(interval.value - closestAbove.value )
+            Alteration.unsafeApply(interval.value - closestAbove.value)
           )
         )
+    end match
   end alteredScaleDegree
 
 end Scale

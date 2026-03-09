@@ -47,9 +47,7 @@ object Analysis:
           val nextChord: Set[Chord] = Chord.fromNotes(chord.head, chord.tail*)
           val analysis = Analysis(
             nextChord
-              .map(c =>
-                AnalyzedChord(c, tonic, scale)
-              )
+              .map(c => AnalyzedChord(c, tonic, scale))
           )
           (NonEmptyList.one(analysis), Some(AnalysisState(nextChord)))
       ._1

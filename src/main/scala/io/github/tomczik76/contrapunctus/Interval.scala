@@ -66,17 +66,17 @@ enum Interval(val value: Int):
 
   def invert: Interval =
     this match
-      case PerfectUnison    => PerfectUnison
-      case DiminishedSecond => AugmentedSeventh
-      case AugmentedUnison  => DiminishedOctave
-      case DiminishedThird  => AugmentedSixth
-      case AugmentedSecond  => DiminishedSeventh
-      case DiminishedFourth => AugmentedFifth
-      case AugmentedThird   => DiminishedSixth
-      case DiminishedFifth  => AugmentedFourth
-      case AugmentedFourth  => DiminishedFifth
-      case DiminishedSixth  => AugmentedThird
-      case AugmentedFifth   => DiminishedFourth
+      case PerfectUnison     => PerfectUnison
+      case DiminishedSecond  => AugmentedSeventh
+      case AugmentedUnison   => DiminishedOctave
+      case DiminishedThird   => AugmentedSixth
+      case AugmentedSecond   => DiminishedSeventh
+      case DiminishedFourth  => AugmentedFifth
+      case AugmentedThird    => DiminishedSixth
+      case DiminishedFifth   => AugmentedFourth
+      case AugmentedFourth   => DiminishedFifth
+      case DiminishedSixth   => AugmentedThird
+      case AugmentedFifth    => DiminishedFourth
       case DiminishedSeventh => AugmentedSecond
       case AugmentedSixth    => DiminishedThird
       case DiminishedOctave  => AugmentedUnison
@@ -118,6 +118,6 @@ object Interval:
       case DoubleOctave.`value`    => Some(DoubleOctave)
       case _                       => None
 
-  given intervalOrder: Order[Interval] = Order.by(_.value)
+  given intervalOrder: Order[Interval]       = Order.by(_.value)
   given intervalOrdering: Ordering[Interval] = Ordering.by(_.value)
 end Interval

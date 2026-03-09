@@ -120,17 +120,19 @@ enum Triads(val rootIntervals: NonEmptySet[Interval])
   protected def numInversions: Int            = 3
   override def allInversions: List[ChordType] = Inversions.values.toList
 
-  def isMinorQuality: Boolean = this match
-    case Minor | Diminished => true
-    case _                  => false
+  def isMinorQuality: Boolean =
+    this match
+      case Minor | Diminished => true
+      case _                  => false
 
-  def qualitySymbol: String = this match
-    case Diminished => "°"
-    case Augmented  => "+"
-    case Sus2       => "sus2"
-    case Sus4       => "sus4"
-    case PowerChord => "⁵"
-    case _          => ""
+  def qualitySymbol: String =
+    this match
+      case Diminished => "°"
+      case Augmented  => "+"
+      case Sus2       => "sus2"
+      case Sus4       => "sus4"
+      case PowerChord => "⁵"
+      case _          => ""
 
   enum Inversions(
       val intervals: NonEmptySet[Interval],
@@ -144,10 +146,11 @@ enum Triads(val rootIntervals: NonEmptySet[Interval])
         extends Inversions(inversionIntervals(2), inversionRootInterval(2))
     def isMinorQuality: Boolean = base.isMinorQuality
     def qualitySymbol: String   = base.qualitySymbol
-    def figuredBass: String = this match
-      case Root   => ""
-      case First  => "⁶"
-      case Second => "⁶₄"
+    def figuredBass: String =
+      this match
+        case Root   => ""
+        case First  => "⁶"
+        case Second => "⁶₄"
     override def toString: String =
       s"${base.productPrefix}-${this.productPrefix}"
 
@@ -175,19 +178,21 @@ enum Sevenths(val rootIntervals: NonEmptySet[Interval])
   protected def numInversions: Int            = 4
   override def allInversions: List[ChordType] = Inversions.values.toList
 
-  def isMinorQuality: Boolean = this match
-    case MinorSeventh | MinorMajorSeventh | DiminishedSeventh |
-        HalfDiminishedSeventh | MinorSixth =>
-      true
-    case _ => false
+  def isMinorQuality: Boolean =
+    this match
+      case MinorSeventh | MinorMajorSeventh | DiminishedSeventh |
+          HalfDiminishedSeventh | MinorSixth =>
+        true
+      case _ => false
 
-  def qualitySymbol: String = this match
-    case DiminishedSeventh                  => "°"
-    case HalfDiminishedSeventh              => "ø"
-    case AugmentedSeventh                   => "+"
-    case AugmentedMajorSeventh              => "+Δ"
-    case MajorSeventh | MinorMajorSeventh   => "Δ"
-    case _                                  => ""
+  def qualitySymbol: String =
+    this match
+      case DiminishedSeventh                => "°"
+      case HalfDiminishedSeventh            => "ø"
+      case AugmentedSeventh                 => "+"
+      case AugmentedMajorSeventh            => "+Δ"
+      case MajorSeventh | MinorMajorSeventh => "Δ"
+      case _                                => ""
 
   enum Inversions(
       val intervals: NonEmptySet[Interval],
@@ -215,6 +220,7 @@ enum Sevenths(val rootIntervals: NonEmptySet[Interval])
         case (_, Third)    => "⁴₂"
     override def toString: String =
       s"${base.productPrefix}-${this.productPrefix}"
+  end Inversions
 
   case MinorSeventh
       extends Sevenths(
@@ -301,17 +307,19 @@ enum Ninths(val rootIntervals: NonEmptySet[Interval])
   protected def numInversions: Int            = 5
   override def allInversions: List[ChordType] = Inversions.values.toList
 
-  def isMinorQuality: Boolean = this match
-    case MinorNinth | MinorMajorNinth | MinorNinthOmit5 |
-        MinorMajorNinthOmit5 =>
-      true
-    case _ => false
+  def isMinorQuality: Boolean =
+    this match
+      case MinorNinth | MinorMajorNinth | MinorNinthOmit5 |
+          MinorMajorNinthOmit5 =>
+        true
+      case _ => false
 
-  def qualitySymbol: String = this match
-    case MajorNinth | MinorMajorNinth | MajorNinthOmit5 |
-        MinorMajorNinthOmit5 =>
-      "Δ"
-    case _ => ""
+  def qualitySymbol: String =
+    this match
+      case MajorNinth | MinorMajorNinth | MajorNinthOmit5 |
+          MinorMajorNinthOmit5 =>
+        "Δ"
+      case _ => ""
 
   enum Inversions(
       val intervals: NonEmptySet[Interval],
@@ -420,13 +428,15 @@ enum Elevenths(val rootIntervals: NonEmptySet[Interval])
   protected def numInversions: Int            = 6
   override def allInversions: List[ChordType] = Inversions.values.toList
 
-  def isMinorQuality: Boolean = this match
-    case MinorEleventh => true
-    case _             => false
+  def isMinorQuality: Boolean =
+    this match
+      case MinorEleventh => true
+      case _             => false
 
-  def qualitySymbol: String = this match
-    case MajorEleventh => "Δ"
-    case _             => ""
+  def qualitySymbol: String =
+    this match
+      case MajorEleventh => "Δ"
+      case _             => ""
 
   enum Inversions(
       val intervals: NonEmptySet[Interval],
@@ -449,6 +459,7 @@ enum Elevenths(val rootIntervals: NonEmptySet[Interval])
     def figuredBass: String     = "¹¹"
     override def toString: String =
       s"${base.productPrefix}-${this.productPrefix}"
+  end Inversions
 
   case MajorEleventh
       extends Elevenths(
@@ -494,13 +505,15 @@ enum Thirteenths(val rootIntervals: NonEmptySet[Interval])
   protected def numInversions: Int            = 7
   override def allInversions: List[ChordType] = Inversions.values.toList
 
-  def isMinorQuality: Boolean = this match
-    case MinorThirteenth => true
-    case _               => false
+  def isMinorQuality: Boolean =
+    this match
+      case MinorThirteenth => true
+      case _               => false
 
-  def qualitySymbol: String = this match
-    case MajorThirteenth => "Δ"
-    case _               => ""
+  def qualitySymbol: String =
+    this match
+      case MajorThirteenth => "Δ"
+      case _               => ""
 
   enum Inversions(
       val intervals: NonEmptySet[Interval],
@@ -576,9 +589,10 @@ enum AlteredChords(val rootIntervals: NonEmptySet[Interval])
 
   def isMinorQuality: Boolean = false
 
-  def qualitySymbol: String = this match
-    case SevenSharpFiveSharpNine => "+"
-    case _                      => ""
+  def qualitySymbol: String =
+    this match
+      case SevenSharpFiveSharpNine => "+"
+      case _                       => ""
 
   enum Inversions(
       val intervals: NonEmptySet[Interval],
@@ -596,14 +610,16 @@ enum AlteredChords(val rootIntervals: NonEmptySet[Interval])
         extends Inversions(inversionIntervals(4), inversionRootInterval(4))
     def isMinorQuality: Boolean = base.isMinorQuality
     def qualitySymbol: String   = base.qualitySymbol
-    def figuredBass: String = base match
-      case SevenFlatNine            => "⁷♭⁹"
-      case SevenSharpNine           => "⁷♯⁹"
-      case SevenFlatFive            => "⁷♭⁵"
-      case SevenFlatFiveFlatNine    => "⁷♭⁵♭⁹"
-      case SevenSharpFiveSharpNine  => "⁷♯⁹"
+    def figuredBass: String =
+      base match
+        case SevenFlatNine           => "⁷♭⁹"
+        case SevenSharpNine          => "⁷♯⁹"
+        case SevenFlatFive           => "⁷♭⁵"
+        case SevenFlatFiveFlatNine   => "⁷♭⁵♭⁹"
+        case SevenSharpFiveSharpNine => "⁷♯⁹"
     override def toString: String =
       s"${base.productPrefix}-${this.productPrefix}"
+  end Inversions
 
   case SevenFlatNine
       extends AlteredChords(

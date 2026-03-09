@@ -129,15 +129,15 @@ object PulseF:
           PulseF.TripletF(f(a), f(b), f(c))
         case PulseF.QuintupletF(a, b, c, d, e) =>
           PulseF.QuintupletF(f(a), f(b), f(c), f(d), f(e))
-        case PulseF.SeptupletF(a, b, c, d, e, g, h) =>
+        case PulseF.SeptupletF(a, b, c, d, e, f0, g) =>
           PulseF.SeptupletF(
             f(a),
             f(b),
             f(c),
             f(d),
             f(e),
-            f(g),
-            f(h)
+            f(f0),
+            f(g)
           )
         case PulseF.AtomF(v) => PulseF.AtomF(v)
         case PulseF.TieF(v)  => PulseF.TieF(v)
@@ -163,15 +163,15 @@ object PulseF:
             f(e)
           )
             .mapN(PulseF.QuintupletF(_, _, _, _, _))
-        case PulseF.SeptupletF(a, b, c, d, e, g, h) =>
+        case PulseF.SeptupletF(a, b, c, d, e, f0, g) =>
           (
             f(a),
             f(b),
             f(c),
             f(d),
             f(e),
-            f(g),
-            f(h)
+            f(f0),
+            f(g)
           )
             .mapN(PulseF.SeptupletF(_, _, _, _, _, _, _))
         case PulseF.AtomF(v) => (PulseF.AtomF(v): PulseF[A, C]).pure[G]
@@ -185,8 +185,8 @@ object PulseF:
           f(f(f(c, a), b), c1)
         case PulseF.QuintupletF(a, b, c1, d, e) =>
           f(f(f(f(f(c, a), b), c1), d), e)
-        case PulseF.SeptupletF(a, b, c1, d, e, g, h) =>
-          f(f(f(f(f(f(f(c, a), b), c1), d), e), g), h)
+        case PulseF.SeptupletF(a, b, c1, d, e, f0, g) =>
+          f(f(f(f(f(f(f(c, a), b), c1), d), e), f0), g)
         case PulseF.AtomF(_) => c
         case PulseF.TieF(_)  => c
         case PulseF.RestF    => c
@@ -201,8 +201,8 @@ object PulseF:
           f(a, f(b, f(c1, lc)))
         case PulseF.QuintupletF(a, b, c1, d, e) =>
           f(a, f(b, f(c1, f(d, f(e, lc)))))
-        case PulseF.SeptupletF(a, b, c1, d, e, g, h) =>
-          f(a, f(b, f(c1, f(d, f(e, f(g, f(h, lc)))))))
+        case PulseF.SeptupletF(a, b, c1, d, e, f0, g) =>
+          f(a, f(b, f(c1, f(d, f(e, f(f0, f(g, lc)))))))
         case PulseF.AtomF(_) => lc
         case PulseF.TieF(_)  => lc
         case PulseF.RestF    => lc
