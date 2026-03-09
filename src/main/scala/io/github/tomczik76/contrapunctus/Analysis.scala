@@ -50,12 +50,15 @@ object Analysis:
       beats.map(identifyChords(_, tonic, scale))
 
     // Phase 3: Classify each note as chord tone or NCT using melodic context
-    val analyses: List[Analysis] = beats.indices.toList.map { i =>
+    val classified: List[Analysis] = beats.indices.toList.map { i =>
       val analyzedNotes = classifyBeatNotes(i, beats, chordsPerBeat)
       val analyzedChords =
         chordsPerBeat(i).map(c => AnalyzedChord(c, tonic, scale))
       Analysis(analyzedChords, analyzedNotes)
     }
+
+    // Phase 3.5: Reclassify escape tone + appoggiatura pairs as changing tones
+    val analyses = reclassifyChangingTones(classified)
 
     // Phase 4: Map back into Pulse structure
     PulseTransform
@@ -167,4 +170,43 @@ object Analysis:
         }
     end match
   end classifyBeatNotes
+
+  private def reclassifyChangingTones(
+      analyses: List[Analysis]
+  ): List[Analysis] =
+    if analyses.size < 2 then analyses
+    else
+      val arr = analyses.toArray
+      for i <- 0 until arr.length - 1 do
+        val pairs = for
+          (esc, ei) <- arr(i).notes.zipWithIndex
+          if esc.nonChordToneType.contains(NonChordToneType.EscapeTone)
+          (app, ai) <- arr(i + 1).notes.zipWithIndex
+          if app.nonChordToneType.contains(NonChordToneType.Appoggiatura)
+          if Math.abs(esc.note.midi - app.note.midi) <= 5
+        yield (ei, ai, esc, app)
+        pairs
+          .minByOption((_, _, e, a) =>
+            Math.abs(e.note.midi - a.note.midi)
+          )
+          .foreach { (ei, ai, esc, app) =>
+            arr(i) = arr(i).copy(notes =
+              arr(i).notes.updated(
+                ei,
+                esc.copy(nonChordToneType =
+                  Some(NonChordToneType.ChangingTone)
+                )
+              )
+            )
+            arr(i + 1) = arr(i + 1).copy(notes =
+              arr(i + 1).notes.updated(
+                ai,
+                app.copy(nonChordToneType =
+                  Some(NonChordToneType.ChangingTone)
+                )
+              )
+            )
+          }
+      arr.toList
+  end reclassifyChangingTones
 end Analysis

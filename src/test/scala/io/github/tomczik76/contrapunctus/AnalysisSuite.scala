@@ -122,6 +122,48 @@ class AnalysisSuite extends munit.FunSuite:
         .forall(_.isChordTone)
     )
 
+  test("neighbor tone — diatonic whole step upper neighbor"):
+    import Note.*
+    // In G major. Soprano: G→A→G over G major. A is a whole step upper neighbor.
+    val beat1 = Pulse.Atom(G(3), B(3), D(4), G(4))
+    val beat2 = Pulse.Atom(G(3), B(3), D(4), A(4))
+    val beat3 = Pulse.Atom(G(3), B(3), D(4), G(4))
+
+    val results = Analysis(NoteType.G, Scale.Major, beat1, beat2, beat3)
+    val analyses = results.toList.collect { case Pulse.Atom(nel) =>
+      nel.head
+    }
+
+    val aNote = analyses(1).notes.find(n =>
+      n.note.noteType == NoteType.A && n.note.octave == 4
+    )
+    assert(
+      aNote.exists(
+        _.nonChordToneType.contains(NonChordToneType.NeighborTone)
+      )
+    )
+
+  test("passing tone — diatonic whole step ascending"):
+    import Note.*
+    // In G major. Soprano: G→A→B over G major. A is a whole step from both.
+    val beat1 = Pulse.Atom(G(3), B(3), D(4), G(4))
+    val beat2 = Pulse.Atom(G(3), B(3), D(4), A(4))
+    val beat3 = Pulse.Atom(G(3), B(3), D(4), B(4))
+
+    val results = Analysis(NoteType.G, Scale.Major, beat1, beat2, beat3)
+    val analyses = results.toList.collect { case Pulse.Atom(nel) =>
+      nel.head
+    }
+
+    val aNote = analyses(1).notes.find(n =>
+      n.note.noteType == NoteType.A && n.note.octave == 4
+    )
+    assert(
+      aNote.exists(
+        _.nonChordToneType.contains(NonChordToneType.PassingTone)
+      )
+    )
+
   test("passing tone — chromatic ascending through analysis pipeline"):
     import Note.*
     // In G major. Soprano: G→Ab→A (chromatic ascending passing tone).
@@ -224,6 +266,40 @@ class AnalysisSuite extends munit.FunSuite:
     assert(
       dNote.exists(
         _.nonChordToneType.contains(NonChordToneType.Suspension(2, 1))
+      )
+    )
+
+  test("changing tone — double neighbor E→F→D→E"):
+    import Note.*
+    // In C major. Soprano: E→F→D→E (upper neighbor, then lower neighbor of E).
+    // F is step from E, leap to D → escape tone; D is leap from F, step to E → appoggiatura.
+    // Post-processing reclassifies both as ChangingTone.
+    val beat1 = Pulse.Atom(C(3), E(3), G(3), E(4))
+    val beat2 = Pulse.Atom(C(3), E(3), G(3), F(4))
+    val beat3 = Pulse.Atom(C(3), E(3), G(3), D(4))
+    val beat4 = Pulse.Atom(C(3), E(3), G(3), E(4))
+
+    val results =
+      Analysis(NoteType.C, Scale.Major, beat1, beat2, beat3, beat4)
+    val analyses = results.toList.collect { case Pulse.Atom(nel) =>
+      nel.head
+    }
+
+    val fNote = analyses(1).notes.find(n =>
+      n.note.noteType == NoteType.F && n.note.octave == 4
+    )
+    assert(
+      fNote.exists(
+        _.nonChordToneType.contains(NonChordToneType.ChangingTone)
+      )
+    )
+
+    val dNote = analyses(2).notes.find(n =>
+      n.note.noteType == NoteType.D && n.note.octave == 4
+    )
+    assert(
+      dNote.exists(
+        _.nonChordToneType.contains(NonChordToneType.ChangingTone)
       )
     )
 

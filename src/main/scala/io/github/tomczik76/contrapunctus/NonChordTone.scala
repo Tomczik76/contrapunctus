@@ -5,6 +5,7 @@ enum NonChordToneType:
   case NeighborTone
   case Appoggiatura
   case EscapeTone
+  case ChangingTone
   case Suspension(from: Int, to: Int)
   case Retardation
   case Anticipation
