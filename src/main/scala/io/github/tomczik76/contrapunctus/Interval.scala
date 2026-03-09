@@ -81,7 +81,12 @@ enum Interval(val value: Int):
       case AugmentedSixth    => DiminishedThird
       case DiminishedOctave  => AugmentedUnison
       case AugmentedSeventh  => DiminishedSecond
-      case _ => Interval(12 - normalizedValue).get
+      case _ =>
+        Interval(12 - normalizedValue).getOrElse(
+          throw AssertionError(
+            s"Unexpected inverted interval value: ${12 - normalizedValue}"
+          )
+        )
 end Interval
 
 object Interval:

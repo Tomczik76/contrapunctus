@@ -64,7 +64,7 @@ trait InvertibleChordType extends BaseChordType:
     else inversionsList(k).toList(numInversions - k)
 
 object ChordType:
-  given Order[ChordType] = Order.by(_.hashCode())
+  given Order[ChordType] = Order.by(_.toString)
 
   def invert(intervals: NonEmptyList[Interval]): NonEmptyList[Interval] =
     intervals match

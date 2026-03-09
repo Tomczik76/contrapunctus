@@ -52,10 +52,12 @@ enum NoteType(val value: Int, alteration: Alteration):
   case Cb    extends NoteType(11, Flat)
 
   def intervalAbove(that: NoteType): Interval =
-    (if value <= that.value then Interval(that.value - value)
-     else Interval(that.value - value + 12)) match
-      case Some(value) => value
-      case None        => ??? // Never should be called
+    val semitones =
+      if value <= that.value then that.value - value
+      else that.value - value + 12
+    Interval(semitones).getOrElse(
+      throw AssertionError(s"Unexpected interval value: $semitones")
+    )
 
   override def equals(that: Any): Boolean =
     that match

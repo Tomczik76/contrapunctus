@@ -47,7 +47,6 @@ enum Scale(intervals: NonEmptyList[Interval]):
       noteType: NoteType
   ): NonEmptySet[AlteredScaleDegree] =
     val interval = tonic.intervalAbove(noteType)
-    val index    = intervals.toList.indexOf(interval)
 
     intervals.toList.indexWhere(_.value >= interval.value) match
       case index if index >= 0 && intervals.toList(index) == interval =>
