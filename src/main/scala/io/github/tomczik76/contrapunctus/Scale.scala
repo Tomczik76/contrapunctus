@@ -41,6 +41,7 @@ enum Scale(intervals: NonEmptyList[Interval]):
           MajorSeventh
         )
       )
+  
   def alteredScaleDegree(
       tonic: NoteType,
       noteType: NoteType

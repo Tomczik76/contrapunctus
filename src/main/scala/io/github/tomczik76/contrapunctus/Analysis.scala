@@ -5,7 +5,19 @@ import cats.data.{NonEmptyList, NonEmptySet}
 case class AnalyzedChord(
     chord: Chord,
     alteredScaleDegree: NonEmptySet[AlteredScaleDegree]
-)
+):
+  def romanNumerals: NonEmptyList[String] =
+    alteredScaleDegree.toNonEmptyList.map { asd =>
+      val numeral =
+        if chord.chordType.isMinorQuality
+        then asd.degree.romanNumeral.toLowerCase
+        else asd.degree.romanNumeral
+      val alteration =
+        if asd.alteration == Alteration.Natural then ""
+        else asd.alteration.toString
+      s"$alteration$numeral${chord.chordType.qualitySymbol}${chord.chordType.figuredBass}"
+    }
+
 case class Analysis(chords: Set[AnalyzedChord])
 object Analysis:
   private case class AnalysisState(lastChords: Set[Chord])
@@ -28,7 +40,7 @@ object Analysis:
     PulseTransform
       .mapWithStateList(measures, Option.empty[AnalysisState]):
         case (chord, state) =>
-          val nextChord = Chord.fromNotes(chord.head, chord.tail*)
+          val nextChord: Set[Chord] = Chord.fromNotes(chord.head, chord.tail*)
           val analysis = Analysis(
             nextChord
               .map(c =>

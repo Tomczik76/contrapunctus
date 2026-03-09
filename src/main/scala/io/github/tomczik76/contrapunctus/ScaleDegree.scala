@@ -2,7 +2,7 @@ package io.github.tomczik76.contrapunctus
 
 import cats.Order
 
-enum ScaleDegree(value: Int, romanNumeral: String):
+enum ScaleDegree(value: Int, val romanNumeral: String):
   case Tonic       extends ScaleDegree(1, "I")
   case Supertonic  extends ScaleDegree(2, "II")
   case Mediant     extends ScaleDegree(3, "III")
