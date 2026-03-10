@@ -91,9 +91,8 @@ trait InvertibleChordType extends BaseChordType with Product:
     else inversionsList(k).toList(numInversions - k)
 
   override lazy val allInversions: List[ChordType] =
-    (0 until numInversions).toList.map { i =>
+    (0 until numInversions).toList.map: i =>
       Inversion(this, i, inversionIntervals(i), inversionRootInterval(i))
-    }
 
   /** Named accessors for inversions, replacing the former inner Inversions
     * enum. Usage: `Triads.Minor.Inversions.Root` becomes
@@ -139,12 +138,11 @@ object ChordType:
       case _ =>
         val _ :: head :: tail = intervals.toList: @unchecked
         val middle = tail
-          .map { interval =>
+          .map: interval =>
             val int       = interval.value - head.value
             val semitones = if int < 0 then int + 12 else int
             Interval(semitones % 12)
               .getOrElse(Interval.fromOrdinal(semitones % 12))
-          }
 
         NonEmptyList.of(PerfectUnison, middle :+ head.invert*)
 

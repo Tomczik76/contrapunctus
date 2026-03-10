@@ -26,7 +26,7 @@ case class AnalyzedChord(
     scale.alteredScaleDegree(tonic, chord.root)
 
   def romanNumerals: NonEmptyList[String] =
-    alteredScaleDegrees.toNonEmptyList.map { asd =>
+    alteredScaleDegrees.toNonEmptyList.map: asd =>
       val numeral =
         if chord.chordType.isMinorQuality
         then asd.degree.romanNumeral.toLowerCase
@@ -35,7 +35,6 @@ case class AnalyzedChord(
         if asd.alteration == Alteration.Natural then ""
         else asd.alteration.toString
       s"$alteration$numeral${chord.chordType.qualitySymbol}${chord.chordType.figuredBass}"
-    }
 
 case class Analysis(
     chords: Set[AnalyzedChord],
@@ -70,12 +69,11 @@ object Analysis:
     val columns = PartWriting.alignVoices(voices)
     val combined: NonEmptyList[Pulse[Note]] =
       NonEmptyList.fromListUnsafe(
-        columns.map { col =>
+        columns.map: col =>
           val notes = NonEmptyList.fromListUnsafe(
             col.values.flatten.flatMap(_.toList).sortBy(_.midi).toList
           )
           Pulse.Atom(notes): Pulse[Note]
-        }
       )
     val harmonic = apply(tonic, scale, combined)
     val beatAnalyses =
@@ -106,7 +104,7 @@ object Analysis:
       harmonic.toList.flatMap(Pulse.flatten).map(_.head)
     val beats: List[NonEmptyList[Note]] =
       measures.toList.flatMap(Pulse.flatten)
-    val columns = beats.zipWithIndex.map { (notes, _) =>
+    val columns = beats.zipWithIndex.map: (notes, _) =>
       AlignedColumn(
         Rational(0),
         notes.toList
@@ -114,7 +112,6 @@ object Analysis:
           .map(n => Some(NonEmptyList.one(n)))
           .toIndexedSeq
       )
-    }
     val voices = PartWriting.inferVoices(columns)
     val annotated =
       PartWriting.annotateAnalyses(beatAnalyses, columns, voices, tonic, scale)
@@ -146,12 +143,11 @@ object Analysis:
       beats.map(identifyChords(_, tonic, scale))
 
     // Phase 3: Classify each note as chord tone or NCT using melodic context
-    val classified: List[Analysis] = beats.indices.toList.map { i =>
+    val classified: List[Analysis] = beats.indices.toList.map: i =>
       val analyzedNotes = classifyBeatNotes(i, beats, chordsPerBeat)
       val analyzedChords =
         chordsPerBeat(i).map(c => AnalyzedChord(c, tonic, scale))
       Analysis(analyzedChords, analyzedNotes)
-    }
 
     // Phase 3.5: Reclassify escape tone + appoggiatura pairs as changing tones
     val analyses = reclassifyChangingTones(classified)
@@ -178,11 +174,10 @@ object Analysis:
 
     def isDiatonic(chord: Chord): Boolean =
       val rootOffset = chord.chordType.rootInterval.normalizedValue
-      chord.chordType.intervals.toSortedSet.forall { i =>
+      chord.chordType.intervals.toSortedSet.forall: i =>
         val pc =
           (chord.root.value + (i.normalizedValue - rootOffset + 12) % 12) % 12
         scalePitchClasses.contains(pc)
-      }
 
     def preferNonSus(chords: Set[Chord]): Set[Chord] =
       val nonSus =
@@ -240,7 +235,7 @@ object Analysis:
       case None =>
         notes.toList.map(n => AnalyzedNote(n, None))
       case Some(chord) =>
-        notes.toList.map { note =>
+        notes.toList.map: note =>
           if primaryChord.isDefined && chord.isChordTone(note.noteType) then
             AnalyzedNote(note, None)
           else
@@ -261,7 +256,6 @@ object Analysis:
               bass
             )
             AnalyzedNote(note, nctType)
-        }
     end match
   end classifyBeatNotes
 
@@ -281,7 +275,7 @@ object Analysis:
         yield (ei, ai, esc, app)
         pairs
           .minByOption((_, _, e, a) => Math.abs(e.note.midi - a.note.midi))
-          .foreach { (ei, ai, esc, app) =>
+          .foreach: (ei, ai, esc, app) =>
             arr(i) = arr(i).copy(notes =
               arr(i).notes.updated(
                 ei,
@@ -294,7 +288,6 @@ object Analysis:
                 app.copy(nonChordToneType = Some(NonChordToneType.ChangingTone))
               )
             )
-          }
       end for
       arr.toList
   end reclassifyChangingTones

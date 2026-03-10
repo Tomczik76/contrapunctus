@@ -104,10 +104,10 @@ class PartWritingSuite extends munit.FunSuite:
     val result =
       Analysis.fromVoices(NoteType.C, Scale.Major, List(soprano, alto, bass))
     val analyses = flatAnalyses(result)
-    assert(analyses.exists(_.notes.exists(_.errors.exists {
+    assert(analyses.exists(_.notes.exists(_.errors.exists:
       case NoteError.SpacingError(_) => true
       case _                         => false
-    })))
+    )))
 
   test("tenor-bass spacing up to two octaves is allowed"):
     val soprano = voice(G(4))
@@ -116,10 +116,10 @@ class PartWritingSuite extends munit.FunSuite:
     val result =
       Analysis.fromVoices(NoteType.C, Scale.Major, List(soprano, tenor, bass))
     val analyses = flatAnalyses(result)
-    assert(!analyses.exists(_.notes.exists(_.errors.exists {
+    assert(!analyses.exists(_.notes.exists(_.errors.exists:
       case NoteError.SpacingError(_) => true
       case _                         => false
-    })))
+    )))
 
   test("doubled leading tone detected"):
     // B is leading tone in C major. Two voices on B.

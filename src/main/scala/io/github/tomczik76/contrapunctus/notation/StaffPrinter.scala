@@ -134,12 +134,11 @@ object StaffPrinter:
       totalWidth: Int,
       items: List[(Int, String)]
   ): String =
-    val charMap = items.flatMap { (offset, text) =>
-      text.zipWithIndex.collect {
+    val charMap = items.flatMap: (offset, text) =>
+      text.zipWithIndex.collect:
         case (ch, i) if offset + i >= 0 && offset + i < totalWidth =>
           (offset + i) -> ch
-      }
-    }.toMap
+    .toMap
     (0 until totalWidth)
       .map(i => charMap.getOrElse(i, ' '))
       .mkString
@@ -167,20 +166,17 @@ object StaffPrinter:
     col.notes match
       case None => Map.empty
       case Some(notes) =>
-        val ledgerChars = notes.toList.flatMap { n =>
-          ledgerLinePositions(diatonicPos(n), staffLines).toList.flatMap {
+        val ledgerChars = notes.toList.flatMap: n =>
+          ledgerLinePositions(diatonicPos(n), staffLines).toList.flatMap:
             ldp =>
               val lrow = gridMax - ldp
               if lrow >= 0 && lrow < numRows then
-                (1 to 3).collect {
+                (1 to 3).collect:
                   case k if col.colOffset + k < musicEnd =>
                     (lrow, col.colOffset + k) -> '─'
-                }
               else Nil
-          }
-        }
 
-        val noteChars = notes.toList.flatMap { note =>
+        val noteChars = notes.toList.flatMap: note =>
           val dp  = diatonicPos(note)
           val row = gridMax - dp
           if row < 0 || row >= numRows then Nil
@@ -201,16 +197,15 @@ object StaffPrinter:
             val accChars =
               if acc.nonEmpty then
                 val start = 2 - acc.length
-                acc.zipWithIndex.collect {
+                acc.zipWithIndex.collect:
                   case (ch, i)
                       if col.colOffset + start + i >= 0 &&
                         col.colOffset + start + i < musicEnd =>
                     (row, col.colOffset + start + i) -> ch
-                }.toList
+                .toList
               else Nil
             head ++ dot ++ accChars
           end if
-        }
 
         // Ledger lines first, noteheads second so noteheads override
         (ledgerChars ++ noteChars).toMap
@@ -224,13 +219,12 @@ object StaffPrinter:
       nctNotesByBeat: List[Set[Note]] = Nil
   ): (String, List[List[BeatColumn]], Int, Int, List[Int]) =
     // Extract leaves with durations from each measure
-    val measLeaves: List[List[LeafInfo]] = measures.toList.map { m =>
+    val measLeaves: List[List[LeafInfo]] = measures.toList.map: m =>
       val ts = m.timeSignature
-      Pulse.timed(m.pulses).map { case (start, end, value) =>
-        val dur = end - start
-        LeafInfo(dur, value, dur * Rational(ts.top.toLong, ts.bottom.toLong))
-      }
-    }
+      Pulse.timed(m.pulses).map:
+        case (start, end, value) =>
+          val dur = end - start
+          LeafInfo(dur, value, dur * Rational(ts.top.toLong, ts.bottom.toLong))
 
     val allNotes = measLeaves.flatten
       .flatMap(_.notes.toList.flatMap(_.toList))
@@ -260,27 +254,27 @@ object StaffPrinter:
       .zip(measColWidths)
       .foldLeft(
         (List.empty[List[BeatColumn]], marginWidth)
-      ) { case ((acc, offset), (leaves, widths)) =>
-        val (columns, nextOffset) = leaves
-          .zip(widths)
-          .foldLeft(
-            (List.empty[BeatColumn], offset)
-          ) { case ((cols, off), (leaf, w)) =>
-            (
-              cols :+ BeatColumn(off, w, leaf.notes, leaf.noteValueFrac),
-              off + w
-            )
-          }
-        (acc :+ columns, nextOffset + 1) // +1 for barline gap
-      }
+      ):
+        case ((acc, offset), (leaves, widths)) =>
+          val (columns, nextOffset) = leaves
+            .zip(widths)
+            .foldLeft(
+              (List.empty[BeatColumn], offset)
+            ):
+              case ((cols, off), (leaf, w)) =>
+                (
+                  cols :+ BeatColumn(off, w, leaf.notes, leaf.noteValueFrac),
+                  off + w
+                )
+          (acc :+ columns, nextOffset + 1) // +1 for barline gap
 
     // Layer 1: Staff lines
-    val staffLineChars: Placements = staffLines.flatMap { dp =>
+    val staffLineChars: Placements = staffLines.flatMap: dp =>
       val row = gridMax - dp
       if row >= 0 && row < numRows then
         (marginWidth until musicEnd).map(col => (row, col) -> '─')
       else Nil
-    }.toMap
+    .toMap
 
     // Layer 2: Time signature
     val ts = measures.head.timeSignature
@@ -289,22 +283,21 @@ object StaffPrinter:
         numberPlacements(gridMax - (staffLines(1) - 1), numRows, ts.bottom)
 
     // Layer 3: Barlines
-    val barlineChars: Placements = beatColumns.init.flatMap { cols =>
+    val barlineChars: Placements = beatColumns.init.flatMap: cols =>
       val barCol = cols.last.colOffset + cols.last.colWidth
-      (0 until numRows).collect {
+      (0 until numRows).collect:
         case row
             if gridMax - row >= staffMin &&
               gridMax - row <= staffMax &&
               barCol < musicEnd =>
           val dp = gridMax - row
           (row, barCol) -> (if staffLines.contains(dp) then '┼' else '│')
-      }
-    }.toMap
+    .toMap
 
     // Layer 4: Notes (ledger lines, accidentals, noteheads, dots)
     val flatCols = beatColumns.flatten
     val allNoteChars: Placements =
-      flatCols.zipWithIndex.foldLeft(Map.empty: Placements) {
+      flatCols.zipWithIndex.foldLeft(Map.empty: Placements):
         case (acc, (col, beatIdx)) =>
           val nctNotes = nctNotesByBeat.lift(beatIdx).getOrElse(Set.empty)
           acc ++ beatPlacements(
@@ -315,30 +308,27 @@ object StaffPrinter:
             numRows,
             musicEnd
           )
-      }
 
     // Layer 5: Right-margin labels
-    val labelChars: Placements = staffLines.flatMap { dp =>
+    val labelChars: Placements = staffLines.flatMap: dp =>
       val row = gridMax - dp
       if row >= 0 && row < numRows then
-        s" ${posToName(dp)}".zipWithIndex.collect {
+        s" ${posToName(dp)}".zipWithIndex.collect:
           case (ch, i) if musicEnd + i < totalWidth =>
             (row, musicEnd + i) -> ch
-        }
       else Nil
-    }.toMap
+    .toMap
 
     // Merge layers (later layers override earlier)
     val allChars =
       staffLineChars ++ tsChars ++ barlineChars ++ allNoteChars ++ labelChars
 
     val gridStr = (0 until numRows)
-      .map { row =>
+      .map: row =>
         (0 until totalWidth)
           .map(col => allChars.getOrElse((row, col), ' '))
           .mkString
           .stripTrailing()
-      }
       .mkString("\n")
 
     (gridStr, beatColumns, musicWidth, gridMax, staffLines)
@@ -374,9 +364,8 @@ object StaffPrinter:
       analysisPulses.toList.flatMap(Pulse.flatten).map(_.head)
 
     // Collect NCT notes per beat for rendering with ◇
-    val nctNotesByBeat: List[Set[Note]] = analyses.map { a =>
+    val nctNotesByBeat: List[Set[Note]] = analyses.map: a =>
       a.notes.filter(_.nonChordToneType.isDefined).map(_.note).toSet
-    }
 
     val (gridStr, beatColumns, musicWidth, _, _) =
       buildGrid(measures, nctNotesByBeat)
@@ -388,12 +377,11 @@ object StaffPrinter:
     // Roman numeral row
     val rnLine = annotationLine(
       totalWidth,
-      flatCols.zip(analyses).map { (col, analysis) =>
+      flatCols.zip(analyses).map: (col, analysis) =>
         val rn = analysis.chords.headOption
           .flatMap(_.romanNumerals.toList.headOption)
           .getOrElse("?")
         (col.colOffset + 1, rn)
-      }
     )
 
     // NCT label row (only if any NCTs exist)
@@ -402,7 +390,7 @@ object StaffPrinter:
         Some(
           annotationLine(
             totalWidth,
-            flatCols.zip(analyses).flatMap { (col, analysis) =>
+            flatCols.zip(analyses).flatMap: (col, analysis) =>
               val nctLabels = analysis.notes
                 .filter(_.nonChordToneType.isDefined)
                 .map(an => nctAbbrev(an.nonChordToneType.get))
@@ -410,7 +398,6 @@ object StaffPrinter:
               if nctLabels.nonEmpty then
                 List((col.colOffset + 1, nctLabels.mkString(",")))
               else Nil
-            }
           )
         )
       else None
@@ -424,14 +411,13 @@ object StaffPrinter:
         Some(
           annotationLine(
             totalWidth,
-            flatCols.zip(analyses).flatMap { (col, analysis) =>
+            flatCols.zip(analyses).flatMap: (col, analysis) =>
               val noteErrs  = analysis.notes.flatMap(_.errors).map(errAbbrev)
               val chordErrs = analysis.errors.map(chordErrAbbrev)
               val allErrs   = (noteErrs ++ chordErrs).distinct
               if allErrs.nonEmpty then
                 List((col.colOffset + 1, allErrs.mkString(",")))
               else Nil
-            }
           )
         )
       else None

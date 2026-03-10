@@ -151,16 +151,14 @@ object Pulse:
           timed(c, start + s * Rational(2), s)
       case Quintuplet(a, b, c, d, e) =>
         val s = span / Rational(5)
-        (0 until 5).toList.flatMap { i =>
+        (0 until 5).toList.flatMap: i =>
           val child = List(a, b, c, d, e)(i)
           timed(child, start + s * Rational(i), s)
-        }
       case Septuplet(a, b, c, d, e, f, g) =>
         val s = span / Rational(7)
-        (0 until 7).toList.flatMap { i =>
+        (0 until 7).toList.flatMap: i =>
           val child = List(a, b, c, d, e, f, g)(i)
           timed(child, start + s * Rational(i), s)
-        }
 
   /** Align multiple Pulse trees by computing their shared time grid.
     *
@@ -187,14 +185,12 @@ object Pulse:
       scala.collection.immutable.SortedSet.from(
         timedVoices.flatMap(_.map(_._1))
       )
-    allStarts.toList.map { time =>
-      val values = timedVoices.map { spans =>
+    allStarts.toList.map: time =>
+      val values = timedVoices.map: spans =>
         spans
           .find { case (s, e, _) => s <= time && time < e }
           .flatMap(_._3)
-      }
       AlignedColumn(time, values)
-    }
 
   def duplet[A](a: Pulse[A], b: Pulse[A]): Pulse[A] = Duplet(a, b)
   def triplet[A](a: Pulse[A], b: Pulse[A], c: Pulse[A]): Pulse[A] =
@@ -367,12 +363,11 @@ object PulseTransform:
       f: (NonEmptyList[A], S) => (NonEmptyList[B], S)
   ): (Pulse[B], S) =
     type StateS[X] = State[S, X]
-    val alg: AlgebraM[StateS, [r] =>> PulseF[A, r], Pulse[B]] = AlgebraM {
+    val alg: AlgebraM[StateS, [r] =>> PulseF[A, r], Pulse[B]] = AlgebraM:
       case PulseF.AtomF(v) =>
-        State { s =>
+        State: s =>
           val (b, s2) = f(v, s)
           (s2, Pulse.Atom(b))
-        }
       case PulseF.RestF =>
         State.pure(Pulse.Rest)
       case PulseF.DupletF(a, b) =>
@@ -383,7 +378,6 @@ object PulseTransform:
         State.pure(Pulse.Quintuplet(a, b, c, d, e))
       case PulseF.SeptupletF(a, b, c, d, e, f, g) =>
         State.pure(Pulse.Septuplet(a, b, c, d, e, f, g))
-    }
 
     val toFix    = scheme.ana(PulseF.coalgebra[A])
     val pulseFix = toFix(pulse)
@@ -399,13 +393,13 @@ object PulseTransform:
   )(
       f: (NonEmptyList[A], S) => (NonEmptyList[B], S)
   ): (NonEmptyList[Pulse[B]], S) =
+    val seed =
+      val (mappedHead, s1) = mapWithState(pulses.head, init)(f)
+      (List(mappedHead), s1)
     val (revMapped, finalState) =
-      pulses.tail.foldLeft {
-        val (mappedHead, s1) = mapWithState(pulses.head, init)(f)
-        (List(mappedHead), s1)
-      } { case ((acc, state), pulse) =>
-        val (mapped, nextState) = mapWithState(pulse, state)(f)
-        (mapped :: acc, nextState)
-      }
+      pulses.tail.foldLeft(seed):
+        case ((acc, state), pulse) =>
+          val (mapped, nextState) = mapWithState(pulse, state)(f)
+          (mapped :: acc, nextState)
     (NonEmptyList.fromListUnsafe(revMapped.reverse), finalState)
 end PulseTransform

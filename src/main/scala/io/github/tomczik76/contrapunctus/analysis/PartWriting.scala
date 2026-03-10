@@ -55,19 +55,16 @@ object PartWriting:
       .mapValues(_.map(_._2))
       .toMap
 
-    analyses.zipWithIndex.map { (analysis, beat) =>
+    analyses.zipWithIndex.map: (analysis, beat) =>
       val beatNoteErrs = noteErrsByBeat.getOrElse(beat, Nil)
-      val updatedNotes = analysis.notes.map { an =>
-        val errs = beatNoteErrs.collect {
+      val updatedNotes = analysis.notes.map: an =>
+        val errs = beatNoteErrs.collect:
           case (note, err) if note == an.note => err
-        }
         if errs.nonEmpty then an.copy(errors = an.errors ++ errs) else an
-      }
       analysis.copy(
         notes = updatedNotes,
         errors = analysis.errors ++ chordErrsByBeat.getOrElse(beat, Nil)
       )
-    }
   end annotateAnalyses
 
   /** Infer voice assignment from a sequence of aligned columns. Sorts notes by
@@ -84,7 +81,8 @@ object PartWriting:
       val initial =
         beats.head.sortBy(-_.midi).padTo(numVoices, beats.head.last)
       val voiceArrays = Array.fill(numVoices)(List.newBuilder[Note])
-      initial.zipWithIndex.foreach { (n, i) => voiceArrays(i) += n }
+      initial.zipWithIndex.foreach: (n, i) =>
+        voiceArrays(i) += n
       var prev = initial
       for notes <- beats.tail do
         val sorted  = notes.sortBy(-_.midi).padTo(numVoices, notes.last)
@@ -110,13 +108,11 @@ object PartWriting:
   ): List[AlignedColumn[Note]] =
     if voices.isEmpty then Nil
     else
-      val pulses = voices.map { nel =>
+      val pulses = voices.map: nel =>
         if nel.tail.isEmpty then nel.head
         else
-          nel.tail.foldLeft(nel.head) { (acc, p) =>
+          nel.tail.foldLeft(nel.head): (acc, p) =>
             Pulse.Duplet(acc, p): Pulse[Note]
-          }
-      }
       Pulse.align(pulses.toIndexedSeq)
 
   /** Extract per-voice note lists from aligned columns. */
@@ -126,9 +122,8 @@ object PartWriting:
     if columns.isEmpty then Nil
     else
       val numVoices = columns.head.values.size
-      (0 until numVoices).toList.map { i =>
+      (0 until numVoices).toList.map: i =>
         columns.flatMap(_.values(i).map(_.head))
-      }
 
   /** Extract sorted note lists per beat from aligned columns. */
   private def columnNotes(

@@ -89,9 +89,9 @@ class AnalysisSuite extends munit.FunSuite:
     val gmaj7 = Pulse.Atom(G(3), B(3), D(4), `F#`(4))
 
     val results = Analysis(NoteType.G, Scale.Major, am7, d7, gmaj7)
-    val analyses = results.toList.collect { case Pulse.Atom(nel) =>
-      nel.head
-    }
+
+    val analyses = results.toList.collect:
+      case Pulse.Atom(nel) => nel.head
     assert(analyses.forall(_.notes.forall(_.isChordTone)))
 
   test("neighbor tone excluded from chord identification"):
@@ -104,9 +104,8 @@ class AnalysisSuite extends munit.FunSuite:
     val beat3 = Pulse.Atom(G(3), B(3), D(4), G(4))
 
     val results = Analysis(NoteType.G, Scale.Major, beat1, beat2, beat3)
-    val analyses = results.toList.collect { case Pulse.Atom(nel) =>
-      nel.head
-    }
+    val analyses = results.toList.collect:
+      case Pulse.Atom(nel) => nel.head
 
     val beat2Analysis = analyses(1)
     // Ab should be classified as a neighbor tone
@@ -133,9 +132,8 @@ class AnalysisSuite extends munit.FunSuite:
     val beat3 = Pulse.Atom(G(3), B(3), D(4), G(4))
 
     val results = Analysis(NoteType.G, Scale.Major, beat1, beat2, beat3)
-    val analyses = results.toList.collect { case Pulse.Atom(nel) =>
-      nel.head
-    }
+    val analyses = results.toList.collect:
+      case Pulse.Atom(nel) => nel.head
 
     val aNote = analyses(1).notes.find(n =>
       n.note.noteType == NoteType.A && n.note.octave == 4
@@ -154,9 +152,8 @@ class AnalysisSuite extends munit.FunSuite:
     val beat3 = Pulse.Atom(G(3), B(3), D(4), B(4))
 
     val results = Analysis(NoteType.G, Scale.Major, beat1, beat2, beat3)
-    val analyses = results.toList.collect { case Pulse.Atom(nel) =>
-      nel.head
-    }
+    val analyses = results.toList.collect:
+      case Pulse.Atom(nel) => nel.head
 
     val aNote = analyses(1).notes.find(n =>
       n.note.noteType == NoteType.A && n.note.octave == 4
@@ -175,9 +172,8 @@ class AnalysisSuite extends munit.FunSuite:
     val beat3 = Pulse.Atom(A(3), C(4), E(4), A(4))
 
     val results = Analysis(NoteType.G, Scale.Major, beat1, beat2, beat3)
-    val analyses = results.toList.collect { case Pulse.Atom(nel) =>
-      nel.head
-    }
+    val analyses = results.toList.collect:
+      case Pulse.Atom(nel) => nel.head
 
     val abNote = analyses(1).notes.find(n =>
       n.note.noteType == NoteType.Ab && n.note.octave == 4
@@ -196,9 +192,8 @@ class AnalysisSuite extends munit.FunSuite:
     val beat3 = Pulse.Atom(C(3), E(3), G(3), C(5))
 
     val results = Analysis(NoteType.C, Scale.Major, beat1, beat2, beat3)
-    val analyses = results.toList.collect { case Pulse.Atom(nel) =>
-      nel.head
-    }
+    val analyses = results.toList.collect:
+      case Pulse.Atom(nel) => nel.head
 
     val dbNote = analyses(1).notes.find(n =>
       n.note.noteType == NoteType.Db && n.note.octave == 5
@@ -217,9 +212,8 @@ class AnalysisSuite extends munit.FunSuite:
     val beat3 = Pulse.Atom(G(3), B(3), D(4), B(4))
 
     val results = Analysis(NoteType.G, Scale.Major, beat1, beat2, beat3)
-    val analyses = results.toList.collect { case Pulse.Atom(nel) =>
-      nel.head
-    }
+    val analyses = results.toList.collect:
+      case Pulse.Atom(nel) => nel.head
 
     val ebNote = analyses(1).notes.find(n =>
       n.note.noteType == NoteType.Eb && n.note.octave == 5
@@ -238,9 +232,8 @@ class AnalysisSuite extends munit.FunSuite:
     val beat3 = Pulse.Atom(C(3), E(3), G(3), E(4))
 
     val results = Analysis(NoteType.C, Scale.Major, beat1, beat2, beat3)
-    val analyses = results.toList.collect { case Pulse.Atom(nel) =>
-      nel.head
-    }
+    val analyses = results.toList.collect:
+      case Pulse.Atom(nel) => nel.head
 
     val fNote = analyses(1).notes.find(n =>
       n.note.noteType == NoteType.F && n.note.octave == 4
@@ -259,9 +252,8 @@ class AnalysisSuite extends munit.FunSuite:
     val beat3 = Pulse.Atom(C(3), E(3), G(3), C(4))
 
     val results = Analysis(NoteType.C, Scale.Major, beat1, beat2, beat3)
-    val analyses = results.toList.collect { case Pulse.Atom(nel) =>
-      nel.head
-    }
+    val analyses = results.toList.collect:
+      case Pulse.Atom(nel) => nel.head
 
     val dNote = analyses(1).notes.find(n =>
       n.note.noteType == NoteType.D && n.note.octave == 4
@@ -284,9 +276,8 @@ class AnalysisSuite extends munit.FunSuite:
 
     val results =
       Analysis(NoteType.C, Scale.Major, beat1, beat2, beat3, beat4)
-    val analyses = results.toList.collect { case Pulse.Atom(nel) =>
-      nel.head
-    }
+    val analyses = results.toList.collect:
+      case Pulse.Atom(nel) => nel.head
 
     val fNote = analyses(1).notes.find(n =>
       n.note.noteType == NoteType.F && n.note.octave == 4
@@ -318,9 +309,8 @@ class AnalysisSuite extends munit.FunSuite:
 
     val results =
       Analysis.fromSounding(NoteType.C, Scale.Major, beat1, beat2, beat3, beat4)
-    val analyses = results.toList.collect { case Pulse.Atom(nel) =>
-      nel.head
-    }
+    val analyses = results.toList.collect:
+      case Pulse.Atom(nel) => nel.head
 
     def allNumerals(a: Analysis): Set[String] =
       a.chords.flatMap(_.romanNumerals.toList)
@@ -346,9 +336,8 @@ class AnalysisSuite extends munit.FunSuite:
 
     val results =
       Analysis.fromSounding(NoteType.C, Scale.Major, beat1, beat2, beat3)
-    val analyses = results.toList.collect { case Pulse.Atom(nel) =>
-      nel.head
-    }
+    val analyses = results.toList.collect:
+      case Pulse.Atom(nel) => nel.head
 
     assertEquals(analyses.size, 3)
 

@@ -36,9 +36,9 @@ object Chord:
       chordTypes = ChordType(
         NonEmptySet.fromSetUnsafe(SortedSet.from(intervalNoteMap.keySet))
       )
-      normalizedNoteMap = intervalNoteMap.map { case (interval, note) =>
-        interval.normalizedValue -> note
-      }
+      normalizedNoteMap = intervalNoteMap.map:
+        case (interval, note) =>
+          interval.normalizedValue -> note
       chords <- chordTypes.toList.traverse(chordType =>
         normalizedNoteMap
           .get(chordType.rootInterval.normalizedValue)
