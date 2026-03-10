@@ -201,6 +201,49 @@ class PartWritingSuite extends munit.FunSuite:
       )
     )
 
+  test("mixed subdivisions — duplet soprano against atom bass detects parallel fifths"):
+    // Soprano: Duplet(C4, D4), Bass: Atom(F3)
+    // At t=0: C4+F3 = P5, at t=1/2: D4+F3 = M6 — no parallel fifths
+    // Now: Soprano: Duplet(C4, D4), Bass: Duplet(F3, G3) — parallel fifths
+    val soprano = NonEmptyList.one(Pulse.Duplet(C(4), D(4)): Pulse[Note])
+    val bass    = NonEmptyList.one(Pulse.Duplet(F(3), G(3)): Pulse[Note])
+    val errors  = PartWriting.check(List(soprano, bass), NoteType.C, Scale.Major)
+    assert(errors.contains(PartWritingError.ParallelFifths(0, 1, 1)))
+
+  test("mixed subdivisions — atom held against duplet does not produce false parallels"):
+    // Soprano: Duplet(C4, D4), Bass: Atom(F3)
+    // Bass holds F3 throughout — both columns share the same bass, so no voice motion
+    val soprano = NonEmptyList.one(Pulse.Duplet(C(4), D(4)): Pulse[Note])
+    val bass    = NonEmptyList.one(Pulse.Atom(F(3)): Pulse[Note])
+    val errors  = PartWriting.check(List(soprano, bass), NoteType.C, Scale.Major)
+    assert(!errors.exists(_.isInstanceOf[PartWritingError.ParallelFifths]))
+    assert(!errors.exists(_.isInstanceOf[PartWritingError.ParallelOctaves]))
+
+  test("analyzeWithPartWriting — parallel fifths detected via inferred voices"):
+    import cats.data.NonEmptyList as NEL
+    // Two consecutive chords with parallel fifths: C4+F3 → D4+G3 (both P5)
+    val beat1: Pulse[Note] = Pulse.Atom(C(4), F(3))
+    val beat2: Pulse[Note] = Pulse.Atom(D(4), G(3))
+    val result = Analysis.analyzeWithPartWriting(
+      NoteType.C,
+      Scale.Major,
+      NEL.of(beat1, beat2)
+    )
+    assert(result.partWritingErrors.exists(_.isInstanceOf[PartWritingError.ParallelFifths]))
+
+  test("analyzeWithPartWriting — correct voice leading has no errors"):
+    import cats.data.NonEmptyList as NEL
+    // I → V: C-E-G-C → B-D-G-G (no parallels)
+    val beat1: Pulse[Note] = Pulse.Atom(C(5), G(4), E(4), C(3))
+    val beat2: Pulse[Note] = Pulse.Atom(D(5), G(4), B(3), G(2))
+    val result = Analysis.analyzeWithPartWriting(
+      NoteType.C,
+      Scale.Major,
+      NEL.of(beat1, beat2)
+    )
+    assert(!result.partWritingErrors.exists(_.isInstanceOf[PartWritingError.ParallelFifths]))
+    assert(!result.partWritingErrors.exists(_.isInstanceOf[PartWritingError.ParallelOctaves]))
+
   // --- Integration with Analysis.fromVoices ---
 
   private def allNumerals(a: Analysis): Set[String] =

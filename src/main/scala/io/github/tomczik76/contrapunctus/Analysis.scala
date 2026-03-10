@@ -44,32 +44,62 @@ object Analysis:
   /** Analyze multiple independent voices: runs harmonic analysis on the
     * combined vertical sonorities and validates part-writing rules.
     * Voices should be ordered from highest (index 0) to lowest.
+    *
+    * Uses Pulse.align to correctly handle voices with different
+    * rhythmic subdivisions.
     */
   def fromVoices(
       tonic: NoteType,
       scale: Scale,
       voices: List[NonEmptyList[Pulse[Note]]]
   ): VoiceAnalysis =
-    val flatVoices: List[List[Note]] =
-      voices.map(_.toList.flatMap(Pulse.flatten).map(_.head))
-    val numBeats = flatVoices.head.size
+    val columns = PartWriting.alignVoices(voices)
     val combined: NonEmptyList[Pulse[Note]] =
       NonEmptyList.fromListUnsafe(
-        (0 until numBeats).toList.map { beat =>
-          val notes =
-            NonEmptyList.fromListUnsafe(flatVoices.map(_(beat)).sortBy(_.midi))
+        columns.map { col =>
+          val notes = NonEmptyList.fromListUnsafe(
+            col.values.flatten.flatMap(_.toList).sortBy(_.midi).toList
+          )
           Pulse.Atom(notes): Pulse[Note]
         }
       )
     val harmonic = apply(tonic, scale, combined)
     val beatAnalyses =
       harmonic.toList.flatMap(Pulse.flatten).map(_.head)
-    val doublingErrors =
-      PartWriting.checkDoublings(flatVoices, beatAnalyses)
     VoiceAnalysis(
       harmonicAnalysis = harmonic,
       partWritingErrors =
-        PartWriting.check(voices, tonic, scale) ++ doublingErrors
+        PartWriting.check(voices, tonic, scale) ++
+          PartWriting.checkDoublings(columns, beatAnalyses)
+    )
+
+  /** Analyze a sequence of pulses and run part-writing checks using
+    * inferred voice leading. Works on any Pulse[Note] input — voices
+    * are inferred from the vertical sonorities via nearest-note matching.
+    */
+  def analyzeWithPartWriting(
+      tonic: NoteType,
+      scale: Scale,
+      measures: NonEmptyList[Pulse[Note]]
+  ): VoiceAnalysis =
+    val harmonic = apply(tonic, scale, measures)
+    val beatAnalyses =
+      harmonic.toList.flatMap(Pulse.flatten).map(_.head)
+    val beats: List[NonEmptyList[Note]] =
+      measures.toList.flatMap(Pulse.flatten)
+    val columns = beats.zipWithIndex.map { (notes, _) =>
+      AlignedColumn(
+        Rational(0),
+        notes.toList.sortBy(-_.midi).map(n => Some(NonEmptyList.one(n))).toIndexedSeq
+      )
+    }
+    val voices = PartWriting.inferVoices(columns)
+    VoiceAnalysis(
+      harmonicAnalysis = harmonic,
+      partWritingErrors =
+        PartWriting.checkVertical(columns, tonic, scale) ++
+          PartWriting.checkHorizontal(voices) ++
+          PartWriting.checkDoublings(columns, beatAnalyses)
     )
 
   def fromSounding(
