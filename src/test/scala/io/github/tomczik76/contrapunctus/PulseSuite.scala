@@ -145,5 +145,177 @@ class PulseSuite extends munit.FunSuite:
     assertEquals(spans(3)._1, Rational(2, 3))
     assertEquals(spans(3)._2, Rational(1))
 
+  // --- flatten ---
+
+  test("flatten — Atom returns single element list"):
+    val pulse: Pulse[Int] = Pulse.Atom(42)
+    assertEquals(Pulse.flatten(pulse), List(cats.data.NonEmptyList.one(42)))
+
+  test("flatten — Rest returns empty list"):
+    assertEquals(Pulse.flatten(Pulse.Rest), Nil)
+
+  test("flatten — Duplet flattens to two elements"):
+    val pulse: Pulse[Int] = Pulse.Duplet(1, 2)
+    assertEquals(Pulse.flatten(pulse).size, 2)
+
+  test("flatten — Triplet flattens to three elements"):
+    val pulse: Pulse[Int] = Pulse.Triplet(1, 2, 3)
+    assertEquals(Pulse.flatten(pulse).size, 3)
+
+  test("flatten — Quintuplet flattens to five elements"):
+    val pulse: Pulse[Int] = Pulse.Quintuplet(1, 2, 3, 4, 5)
+    assertEquals(Pulse.flatten(pulse).size, 5)
+
+  test("flatten — Septuplet flattens to seven elements"):
+    val pulse: Pulse[Int] = Pulse.Septuplet(1, 2, 3, 4, 5, 6, 7)
+    assertEquals(Pulse.flatten(pulse).size, 7)
+
+  test("flatten — nested structure flattens all leaves"):
+    val pulse: Pulse[Int] =
+      Pulse.Duplet(Pulse.Triplet(1, 2, 3), Pulse.Atom(4))
+    assertEquals(Pulse.flatten(pulse).size, 4)
+
+  test("flatten — Rest inside Duplet is skipped"):
+    val pulse: Pulse[Int] = Pulse.Duplet(Pulse.Atom(1), Pulse.Rest)
+    assertEquals(Pulse.flatten(pulse).size, 1)
+
+  // --- map ---
+
+  test("map over Atom doubles value"):
+    val pulse: Pulse[Int] = Pulse.Atom(5)
+    assertEquals(pulse.map(_ * 2), Pulse.Atom(10))
+
+  test("map over Duplet transforms both children"):
+    val pulse: Pulse[Int] = Pulse.Duplet(1, 2)
+    val mapped = pulse.map(_ + 10)
+    assertEquals(
+      Pulse.flatten(mapped).flatMap(_.toList),
+      List(11, 12)
+    )
+
+  test("map over Triplet transforms all children"):
+    val pulse: Pulse[Int] = Pulse.Triplet(1, 2, 3)
+    val mapped = pulse.map(_.toString)
+    assertEquals(
+      Pulse.flatten(mapped).flatMap(_.toList),
+      List("1", "2", "3")
+    )
+
+  test("map over Quintuplet transforms all children"):
+    val pulse: Pulse[Int] = Pulse.Quintuplet(1, 2, 3, 4, 5)
+    val mapped = pulse.map(_ * 2)
+    assertEquals(
+      Pulse.flatten(mapped).flatMap(_.toList),
+      List(2, 4, 6, 8, 10)
+    )
+
+  test("map over Septuplet transforms all children"):
+    val pulse: Pulse[Int] = Pulse.Septuplet(1, 2, 3, 4, 5, 6, 7)
+    val mapped = pulse.map(_ * 3)
+    assertEquals(
+      Pulse.flatten(mapped).flatMap(_.toList),
+      List(3, 6, 9, 12, 15, 18, 21)
+    )
+
+  test("map over Rest returns Rest"):
+    val pulse: Pulse[Int] = Pulse.Rest
+    assertEquals(pulse.map(_ + 1), Pulse.Rest)
+
+  // --- timed: quintuplet and septuplet ---
+
+  test("timed — quintuplet produces 1/5 spans"):
+    val pulse: Pulse[Int] = Pulse.Quintuplet(1, 2, 3, 4, 5)
+    val spans = Pulse.timed(pulse)
+    assertEquals(spans.size, 5)
+    assertEquals(spans(0)._1, Rational(0))
+    assertEquals(spans(0)._2, Rational(1, 5))
+    assertEquals(spans(4)._1, Rational(4, 5))
+    assertEquals(spans(4)._2, Rational(1))
+
+  test("timed — septuplet produces 1/7 spans"):
+    val pulse: Pulse[Int] = Pulse.Septuplet(1, 2, 3, 4, 5, 6, 7)
+    val spans = Pulse.timed(pulse)
+    assertEquals(spans.size, 7)
+    assertEquals(spans(0)._1, Rational(0))
+    assertEquals(spans(0)._2, Rational(1, 7))
+    assertEquals(spans(6)._1, Rational(6, 7))
+    assertEquals(spans(6)._2, Rational(1))
+
+  test("timed — Rest produces None value"):
+    val spans = Pulse.timed(Pulse.Rest: Pulse[Int])
+    assertEquals(spans.size, 1)
+    assertEquals(spans(0)._3, None)
+
+  // --- Atom variadic constructor ---
+
+  test("Atom variadic constructor creates chord"):
+    val chord = Pulse.Atom(C(4), E(4), G(4))
+    chord match
+      case Pulse.Atom(nel) => assertEquals(nel.size, 3)
+      case _               => fail("Expected Atom")
+
+  // --- mapWithState with counting state ---
+
+  test("mapWithState threads state across leaves"):
+    val pulse: Pulse[String] = Pulse.Triplet("a", "b", "c")
+    val (mapped, finalCount) = PulseTransform.mapWithState(pulse, 0):
+      (notes, count) =>
+        (notes.map(s => s"$s$count"), count + 1)
+    assertEquals(
+      Pulse.flatten(mapped).flatMap(_.toList),
+      List("a0", "b1", "c2")
+    )
+    assertEquals(finalCount, 3)
+
+  // --- mapWithState with Quintuplet and Septuplet (exercises PulseF Functor/Traverse) ---
+
+  test("mapWithState over Quintuplet transforms all leaves"):
+    val pulse: Pulse[Int] = Pulse.Quintuplet(1, 2, 3, 4, 5)
+    val (mapped, count) = PulseTransform.mapWithState(pulse, 0):
+      (notes, c) => (notes.map(_ + c), c + 1)
+    assertEquals(
+      Pulse.flatten(mapped).flatMap(_.toList),
+      List(1, 3, 5, 7, 9)
+    )
+    assertEquals(count, 5)
+
+  test("mapWithState over Septuplet transforms all leaves"):
+    val pulse: Pulse[Int] = Pulse.Septuplet(10, 20, 30, 40, 50, 60, 70)
+    val (mapped, count) = PulseTransform.mapWithState(pulse, 0):
+      (notes, c) => (notes.map(_ => c), c + 1)
+    assertEquals(
+      Pulse.flatten(mapped).flatMap(_.toList),
+      List(0, 1, 2, 3, 4, 5, 6)
+    )
+    assertEquals(count, 7)
+
+  test("mapWithState over Rest preserves Rest"):
+    val pulse: Pulse[Int] = Pulse.Duplet(Pulse.Atom(1), Pulse.Rest)
+    val (mapped, count) = PulseTransform.mapWithState(pulse, 0):
+      (notes, c) => (notes.map(_ + c), c + 1)
+    assertEquals(count, 1)
+    Pulse.flatten(mapped) match
+      case List(nel) => assertEquals(nel.head, 1)
+      case _         => fail("Expected one leaf")
+
+  // --- mapWithStateList ---
+
+  test("mapWithStateList threads state across multiple pulses"):
+    import cats.data.NonEmptyList
+    val pulses = NonEmptyList.of(
+      Pulse.Atom(1): Pulse[Int],
+      Pulse.Atom(2): Pulse[Int],
+      Pulse.Atom(3): Pulse[Int]
+    )
+    val (mapped, finalSum) = PulseTransform.mapWithStateList(pulses, 0):
+      (notes, sum) =>
+        val newSum = sum + notes.head
+        (notes.map(_ => newSum), newSum)
+    assertEquals(
+      mapped.toList.flatMap(Pulse.flatten).flatMap(_.toList),
+      List(1, 3, 6)
+    )
+    assertEquals(finalSum, 6)
+
 end PulseSuite
 
