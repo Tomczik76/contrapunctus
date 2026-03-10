@@ -1,6 +1,6 @@
 package io.github.tomczik76.contrapunctus
 
-import cats.data.{NonEmptyList, NonEmptySet, ValidatedNel}
+import cats.data.{NonEmptyList, NonEmptySet}
 
 case class AnalyzedChord(
     chord: Chord,
@@ -26,7 +26,7 @@ case class Analysis(chords: Set[AnalyzedChord], notes: List[AnalyzedNote])
 
 case class VoiceAnalysis(
     harmonicAnalysis: NonEmptyList[Pulse[Analysis]],
-    partWriting: ValidatedNel[PartWritingError, Unit]
+    partWritingErrors: List[PartWritingError]
 )
 
 object Analysis:
@@ -61,9 +61,15 @@ object Analysis:
           Pulse.Atom(notes): Pulse[Note]
         }
       )
+    val harmonic = apply(tonic, scale, combined)
+    val beatAnalyses =
+      harmonic.toList.flatMap(Pulse.flatten).map(_.head)
+    val doublingErrors =
+      PartWriting.checkDoublings(flatVoices, beatAnalyses)
     VoiceAnalysis(
-      harmonicAnalysis = apply(tonic, scale, combined),
-      partWriting = PartWriting.check(voices, tonic, scale)
+      harmonicAnalysis = harmonic,
+      partWritingErrors =
+        PartWriting.check(voices, tonic, scale) ++ doublingErrors
     )
 
   def fromSounding(

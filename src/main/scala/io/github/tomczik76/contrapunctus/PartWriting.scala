@@ -1,7 +1,6 @@
 package io.github.tomczik76.contrapunctus
 
-import cats.data.{NonEmptyList, ValidatedNel}
-import cats.syntax.all.*
+import cats.data.NonEmptyList
 
 enum PartWritingError:
   case ParallelFifths(voice1: Int, voice2: Int, beatIndex: Int)
@@ -11,6 +10,8 @@ enum PartWritingError:
   case VoiceCrossing(voice1: Int, voice2: Int, beatIndex: Int)
   case SpacingError(voice1: Int, voice2: Int, beatIndex: Int, semitones: Int)
   case DoubledLeadingTone(beatIndex: Int)
+  case RootNotDoubledInRootPosition(beatIndex: Int)
+  case FifthNotDoubledInSecondInversion(beatIndex: Int)
 
 object PartWriting:
 
@@ -22,33 +23,24 @@ object PartWriting:
       voices: List[NonEmptyList[Pulse[Note]]],
       tonic: NoteType,
       scale: Scale
-  ): ValidatedNel[PartWritingError, Unit] =
+  ): List[PartWritingError] =
     val flatVoices: List[List[Note]] =
       voices.map(_.toList.flatMap(Pulse.flatten).map(_.head))
-    (
-      checkParallels(flatVoices),
-      checkDirectMotion(flatVoices),
-      checkSpacing(flatVoices),
-      checkVoiceCrossing(flatVoices),
+    checkParallels(flatVoices) ++
+      checkDirectMotion(flatVoices) ++
+      checkSpacing(flatVoices) ++
+      checkVoiceCrossing(flatVoices) ++
       checkDoubledLeadingTone(flatVoices, tonic, scale)
-    ).mapN((_, _, _, _, _) => ())
-
-  private def toValidated(
-      errors: List[PartWritingError]
-  ): ValidatedNel[PartWritingError, Unit] =
-    NonEmptyList.fromList(errors) match
-      case Some(nel) => nel.invalid
-      case None      => ().validNel
 
   private def intervalClass(a: Note, b: Note): Int =
     Math.abs(a.midi - b.midi) % 12
 
   private def checkParallels(
       voices: List[List[Note]]
-  ): ValidatedNel[PartWritingError, Unit] =
+  ): List[PartWritingError] =
     val numVoices = voices.size
     val numBeats  = if voices.nonEmpty then voices.head.size else 0
-    val errors = for
+    for
       beat <- (1 until numBeats).toList
       i    <- (0 until numVoices).toList
       j    <- (i + 1 until numVoices).toList
@@ -65,17 +57,16 @@ object PartWriting:
         case 0 => List(PartWritingError.ParallelOctaves(i, j, beat))
         case _ => Nil
     yield error
-    toValidated(errors)
 
   private def checkDirectMotion(
       voices: List[List[Note]]
-  ): ValidatedNel[PartWritingError, Unit] =
-    if voices.size < 2 then ().validNel
+  ): List[PartWritingError] =
+    if voices.size < 2 then Nil
     else
       val soprano  = 0
       val bass     = voices.size - 1
       val numBeats = voices.head.size
-      val errors = for
+      for
         beat <- (1 until numBeats).toList
         sPrev = voices(soprano)(beat - 1)
         sCurr = voices(soprano)(beat)
@@ -92,49 +83,73 @@ object PartWriting:
           case 0 => List(PartWritingError.DirectOctaves(soprano, bass, beat))
           case _ => Nil
       yield error
-      toValidated(errors)
 
   private def checkSpacing(
       voices: List[List[Note]]
-  ): ValidatedNel[PartWritingError, Unit] =
+  ): List[PartWritingError] =
     val numVoices = voices.size
     val numBeats  = if voices.nonEmpty then voices.head.size else 0
-    val errors = for
+    for
       beat <- (0 until numBeats).toList
       i    <- (0 until numVoices - 1).toList
       gap    = Math.abs(voices(i)(beat).midi - voices(i + 1)(beat).midi)
       maxGap = if i == numVoices - 2 then 24 else 12
       if gap > maxGap
     yield PartWritingError.SpacingError(i, i + 1, beat, gap)
-    toValidated(errors)
 
   private def checkVoiceCrossing(
       voices: List[List[Note]]
-  ): ValidatedNel[PartWritingError, Unit] =
+  ): List[PartWritingError] =
     val numVoices = voices.size
     val numBeats  = if voices.nonEmpty then voices.head.size else 0
-    val errors = for
+    for
       beat <- (0 until numBeats).toList
       i    <- (0 until numVoices - 1).toList
       if voices(i)(beat).midi < voices(i + 1)(beat).midi
     yield PartWritingError.VoiceCrossing(i, i + 1, beat)
-    toValidated(errors)
 
   private def checkDoubledLeadingTone(
       voices: List[List[Note]],
       tonic: NoteType,
       scale: Scale
-  ): ValidatedNel[PartWritingError, Unit] =
+  ): List[PartWritingError] =
     val hasLeadingTone = scale.intervals.toList.exists(_.value == 11)
-    if !hasLeadingTone then ().validNel
+    if !hasLeadingTone then Nil
     else
       val leadingTonePc = (tonic.value + 11) % 12
       val numBeats      = if voices.nonEmpty then voices.head.size else 0
-      val errors = for
+      for
         beat <- (0 until numBeats).toList
         pitchClasses = voices.map(_(beat).noteType.value % 12)
         if pitchClasses.count(_ == leadingTonePc) > 1
       yield PartWritingError.DoubledLeadingTone(beat)
-      toValidated(errors)
+
+  def checkDoublings(
+      flatVoices: List[List[Note]],
+      analyses: List[Analysis]
+  ): List[PartWritingError] =
+    val numVoices = flatVoices.size
+    if numVoices < 4 then Nil
+    else
+      val numBeats = if flatVoices.nonEmpty then flatVoices.head.size else 0
+      for
+        beat <- (0 until numBeats).toList
+        chord <- analyses.lift(beat).flatMap(_.chords.headOption).toList
+        bassNote = flatVoices.last(beat)
+        bassIntervalFromRoot =
+          chord.chord.root.intervalAbove(bassNote.noteType).normalizedValue
+        pitchClasses = flatVoices.map(_(beat).noteType.value % 12)
+        if pitchClasses.toSet.size < pitchClasses.size // something is doubled
+        error <- bassIntervalFromRoot match
+          case 0 => // root position — root should be doubled
+            val rootPc = chord.chord.root.value % 12
+            if pitchClasses.count(_ == rootPc) >= 2 then Nil
+            else List(PartWritingError.RootNotDoubledInRootPosition(beat))
+          case v if v >= 5 && v <= 8 => // second inversion — fifth (bass) should be doubled
+            val bassPc = bassNote.noteType.value % 12
+            if pitchClasses.count(_ == bassPc) >= 2 then Nil
+            else List(PartWritingError.FifthNotDoubledInSecondInversion(beat))
+          case _ => Nil
+      yield error
 
 end PartWriting
