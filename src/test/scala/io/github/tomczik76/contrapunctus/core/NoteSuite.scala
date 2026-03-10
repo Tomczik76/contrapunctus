@@ -1,6 +1,7 @@
-package io.github.tomczik76.contrapunctus
+package io.github.tomczik76.contrapunctus.core
 
 import Interval.*
+import io.github.tomczik76.contrapunctus.harmony.{Chord, Triads}
 
 class NoteSuite extends munit.FunSuite:
   test("Note test"):

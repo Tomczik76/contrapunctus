@@ -1,8 +1,10 @@
-package io.github.tomczik76.contrapunctus
+package io.github.tomczik76.contrapunctus.core
 
 import Interval.*
 import cats.data.NonEmptySet
 import Note.*
+import io.github.tomczik76.contrapunctus.harmony.ChordType
+
 class IntervalSuite extends munit.FunSuite:
   test("Interval test"):
     assertEquals(

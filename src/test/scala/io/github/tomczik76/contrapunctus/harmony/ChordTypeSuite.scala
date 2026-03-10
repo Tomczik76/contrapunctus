@@ -1,6 +1,7 @@
-package io.github.tomczik76.contrapunctus
+package io.github.tomczik76.contrapunctus.harmony
 
 import cats.data.NonEmptySet
+import io.github.tomczik76.contrapunctus.core.{Interval, Note}
 import Note.*
 
 class ChordTypeSuite extends munit.FunSuite:

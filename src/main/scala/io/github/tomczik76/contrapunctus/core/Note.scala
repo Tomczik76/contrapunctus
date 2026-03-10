@@ -1,7 +1,7 @@
-package io.github.tomczik76.contrapunctus
+package io.github.tomczik76.contrapunctus.core
 
 import cats.Order
-import io.github.tomczik76.contrapunctus.Alteration.*
+import io.github.tomczik76.contrapunctus.core.Alteration.*
 
 enum NoteType(val value: Int, alteration: Alteration):
   case C    extends NoteType(0, Natural)

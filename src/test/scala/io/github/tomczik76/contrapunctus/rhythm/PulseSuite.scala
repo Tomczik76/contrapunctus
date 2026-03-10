@@ -1,7 +1,9 @@
-package io.github.tomczik76.contrapunctus
+package io.github.tomczik76.contrapunctus.rhythm
 
+import io.github.tomczik76.contrapunctus.core.{Note, NoteType}
 import Note.*
 import Pulse.*
+
 class PulseSuite extends munit.FunSuite:
 
   private def transpose(note: Note, semitones: Int): Note =
@@ -318,4 +320,3 @@ class PulseSuite extends munit.FunSuite:
     assertEquals(finalSum, 6)
 
 end PulseSuite
-

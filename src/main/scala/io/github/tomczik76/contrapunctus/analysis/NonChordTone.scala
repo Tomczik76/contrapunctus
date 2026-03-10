@@ -1,4 +1,7 @@
-package io.github.tomczik76.contrapunctus
+package io.github.tomczik76.contrapunctus.analysis
+
+import io.github.tomczik76.contrapunctus.core.Note
+import io.github.tomczik76.contrapunctus.harmony.Chord
 
 enum NonChordToneType:
   case PassingTone
@@ -26,7 +29,7 @@ object NonChordToneAnalysis:
   private def sameDirection(a: Note, b: Note, c: Note): Boolean =
     (b.midi - a.midi > 0) == (c.midi - b.midi > 0)
 
-  private[contrapunctus] def genericInterval(semitones: Int): Int =
+  private[analysis] def genericInterval(semitones: Int): Int =
     val normalized = ((semitones % 12) + 12) % 12
     normalized match
       case 0       => 1

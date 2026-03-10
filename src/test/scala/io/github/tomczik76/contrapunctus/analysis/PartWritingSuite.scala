@@ -1,6 +1,8 @@
-package io.github.tomczik76.contrapunctus
+package io.github.tomczik76.contrapunctus.analysis
 
 import cats.data.NonEmptyList
+import io.github.tomczik76.contrapunctus.core.{Note, NoteType, Scale}
+import io.github.tomczik76.contrapunctus.rhythm.Pulse
 
 class PartWritingSuite extends munit.FunSuite:
   import Note.*

@@ -1,6 +1,21 @@
-package io.github.tomczik76.contrapunctus
+package io.github.tomczik76.contrapunctus.analysis
 
 import cats.data.{NonEmptyList, NonEmptySet}
+import io.github.tomczik76.contrapunctus.core.{
+  Alteration,
+  AlteredScaleDegree,
+  Note,
+  NoteType,
+  Scale
+}
+import io.github.tomczik76.contrapunctus.harmony.Chord
+import io.github.tomczik76.contrapunctus.rhythm.{
+  AlignedColumn,
+  Pulse,
+  PulseTransform,
+  Rational,
+  Sounding
+}
 
 case class AnalyzedChord(
     chord: Chord,
@@ -210,8 +225,16 @@ object Analysis:
     // When the current beat has no identifiable chord (e.g. a single passing
     // tone), fall back to a neighboring chord so NCT classification can proceed.
     val effectiveChord = primaryChord
-      .orElse(Option.when(beatIndex > 0)(beatIndex - 1).flatMap(chordsPerBeat(_).headOption))
-      .orElse(Option.when(beatIndex < chordsPerBeat.size - 1)(beatIndex + 1).flatMap(chordsPerBeat(_).headOption))
+      .orElse(
+        Option
+          .when(beatIndex > 0)(beatIndex - 1)
+          .flatMap(chordsPerBeat(_).headOption)
+      )
+      .orElse(
+        Option
+          .when(beatIndex < chordsPerBeat.size - 1)(beatIndex + 1)
+          .flatMap(chordsPerBeat(_).headOption)
+      )
 
     effectiveChord match
       case None =>

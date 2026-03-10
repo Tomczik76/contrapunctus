@@ -1,6 +1,8 @@
-package io.github.tomczik76.contrapunctus
+package io.github.tomczik76.contrapunctus.analysis
 
 import cats.data.NonEmptyList
+import io.github.tomczik76.contrapunctus.core.{Note, NoteType, Scale}
+import io.github.tomczik76.contrapunctus.rhythm.{AlignedColumn, Pulse}
 
 /** Note-level part-writing errors, embedded on individual AnalyzedNotes. */
 enum NoteError:
@@ -23,7 +25,7 @@ object PartWriting:
     * errors are embedded on the relevant AnalyzedNotes; chord-level errors are
     * embedded on the Analysis itself.
     */
-  private[contrapunctus] def annotateAnalyses(
+  private[analysis] def annotateAnalyses(
       analyses: List[Analysis],
       columns: List[AlignedColumn[Note]],
       voices: List[List[Note]],
@@ -103,7 +105,7 @@ object PartWriting:
   // --- Internal helpers ---
 
   /** Align voices using Pulse.align for correct rhythmic alignment. */
-  private[contrapunctus] def alignVoices(
+  private[analysis] def alignVoices(
       voices: List[NonEmptyList[Pulse[Note]]]
   ): List[AlignedColumn[Note]] =
     if voices.isEmpty then Nil
@@ -118,7 +120,7 @@ object PartWriting:
       Pulse.align(pulses.toIndexedSeq)
 
   /** Extract per-voice note lists from aligned columns. */
-  private[contrapunctus] def extractVoiceLists(
+  private[analysis] def extractVoiceLists(
       columns: List[AlignedColumn[Note]]
   ): List[List[Note]] =
     if columns.isEmpty then Nil

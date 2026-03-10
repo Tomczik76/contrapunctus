@@ -1,6 +1,8 @@
-package io.github.tomczik76.contrapunctus
+package io.github.tomczik76.contrapunctus.notation
 
 import cats.data.NonEmptyList
+import io.github.tomczik76.contrapunctus.core.Note
+import io.github.tomczik76.contrapunctus.rhythm.{Measure, Pulse, TimeSignature}
 import Note.*
 
 class StaffPrinterSuite extends munit.FunSuite:

@@ -1,10 +1,16 @@
-package io.github.tomczik76.contrapunctus
+package io.github.tomczik76.contrapunctus.harmony
 
 import cats.data.NonEmptySet
 
 import scala.collection.immutable.SortedSet
 
 import cats.implicits.*
+import io.github.tomczik76.contrapunctus.core.{
+  AlteredScaleDegree,
+  Note,
+  NoteType,
+  Scale
+}
 
 case class Chord(root: NoteType, chordType: ChordType):
   def alteredScaleDegree(

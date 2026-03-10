@@ -1,4 +1,8 @@
-package io.github.tomczik76.contrapunctus
+package io.github.tomczik76.contrapunctus.analysis
+
+import io.github.tomczik76.contrapunctus.core.{Note, NoteType, Scale, ScaleDegree}
+import io.github.tomczik76.contrapunctus.harmony.{Chord, Triads, Sevenths}
+import io.github.tomczik76.contrapunctus.rhythm.{Pulse, Sounding}
 
 class AnalysisSuite extends munit.FunSuite:
 

@@ -1,6 +1,15 @@
-package io.github.tomczik76.contrapunctus
+package io.github.tomczik76.contrapunctus.notation
 
 import cats.data.NonEmptyList
+import io.github.tomczik76.contrapunctus.analysis.{
+  Analysis,
+  AnalyzedChord,
+  ChordError,
+  NonChordToneType,
+  NoteError
+}
+import io.github.tomczik76.contrapunctus.core.{Note, NoteType, Scale}
+import io.github.tomczik76.contrapunctus.rhythm.{Measure, Pulse, Rational}
 
 object StaffPrinter:
   private val letterIdx =
@@ -13,12 +22,12 @@ object StaffPrinter:
   private val bassStaffLines = List(18, 20, 22, 24, 26)
 
   private val marginWidth = 3
-  private val labelWidth = 4
+  private val labelWidth  = 4
 
   private type Placements = Map[(Int, Int), Char]
 
-  /** Diatonic position: octave * 7 + letter index. Determines vertical placement
-    * on the staff. C4 = 28, D4 = 29, E4 = 30, etc.
+  /** Diatonic position: octave * 7 + letter index. Determines vertical
+    * placement on the staff. C4 = 28, D4 = 29, E4 = 30, etc.
     */
   private def diatonicPos(note: Note): Int =
     val letter = note.noteType.toString.head
@@ -43,9 +52,9 @@ object StaffPrinter:
       pulse: Pulse[A]
   ): List[Option[NonEmptyList[A]]] =
     pulse match
-      case Pulse.Atom(v)          => List(Some(v))
-      case Pulse.Rest             => List(None)
-      case Pulse.Duplet(a, b)     => extractLeaves(a) ++ extractLeaves(b)
+      case Pulse.Atom(v)      => List(Some(v))
+      case Pulse.Rest         => List(None)
+      case Pulse.Duplet(a, b) => extractLeaves(a) ++ extractLeaves(b)
       case Pulse.Triplet(a, b, c) =>
         extractLeaves(a) ++ extractLeaves(b) ++ extractLeaves(c)
       case Pulse.Quintuplet(a, b, c, d, e) =>
@@ -78,15 +87,15 @@ object StaffPrinter:
   /** Abbreviation for NonChordToneType labels. */
   private def nctAbbrev(nct: NonChordToneType): String =
     nct match
-      case NonChordToneType.PassingTone       => "PT"
-      case NonChordToneType.NeighborTone      => "NT"
-      case NonChordToneType.Appoggiatura      => "App"
-      case NonChordToneType.EscapeTone        => "ET"
-      case NonChordToneType.ChangingTone      => "CT"
-      case NonChordToneType.Suspension(f, t)  => s"S$f-$t"
-      case NonChordToneType.Retardation       => "Ret"
-      case NonChordToneType.Anticipation      => "Ant"
-      case NonChordToneType.PedalTone         => "Ped"
+      case NonChordToneType.PassingTone      => "PT"
+      case NonChordToneType.NeighborTone     => "NT"
+      case NonChordToneType.Appoggiatura     => "App"
+      case NonChordToneType.EscapeTone       => "ET"
+      case NonChordToneType.ChangingTone     => "CT"
+      case NonChordToneType.Suspension(f, t) => s"S$f-$t"
+      case NonChordToneType.Retardation      => "Ret"
+      case NonChordToneType.Anticipation     => "Ant"
+      case NonChordToneType.PedalTone        => "Ped"
 
   /** Leaf data extracted from a Pulse tree with duration information. */
   private case class LeafInfo(
@@ -107,21 +116,24 @@ object StaffPrinter:
     * Quarter note = 6 chars; other values scale proportionally.
     */
   private def columnWidthFor(nvf: Rational): Int =
-    if nvf >= Rational(1) then 14          // whole note
-    else if nvf >= Rational(3, 4) then 12  // dotted half
-    else if nvf >= Rational(1, 2) then 10  // half note
-    else if nvf >= Rational(3, 8) then 8   // dotted quarter
-    else if nvf >= Rational(1, 4) then 6   // quarter note
-    else if nvf >= Rational(3, 16) then 5  // dotted eighth
-    else 4                                 // eighth note and smaller
+    if nvf >= Rational(1) then 14         // whole note
+    else if nvf >= Rational(3, 4) then 12 // dotted half
+    else if nvf >= Rational(1, 2) then 10 // half note
+    else if nvf >= Rational(3, 8) then 8  // dotted quarter
+    else if nvf >= Rational(1, 4) then 6  // quarter note
+    else if nvf >= Rational(3, 16) then 5 // dotted eighth
+    else 4                                // eighth note and smaller
 
   /** Whether a note-value fraction represents a dotted duration. */
   private def isDotted(nvf: Rational): Boolean =
     nvf == Rational(3, 2) || nvf == Rational(3, 4) ||
-    nvf == Rational(3, 8) || nvf == Rational(3, 16)
+      nvf == Rational(3, 8) || nvf == Rational(3, 16)
 
   /** Build a text line with strings placed at specific column offsets. */
-  private def annotationLine(totalWidth: Int, items: List[(Int, String)]): String =
+  private def annotationLine(
+      totalWidth: Int,
+      items: List[(Int, String)]
+  ): String =
     val charMap = items.flatMap { (offset, text) =>
       text.zipWithIndex.collect {
         case (ch, i) if offset + i >= 0 && offset + i < totalWidth =>
@@ -156,14 +168,15 @@ object StaffPrinter:
       case None => Map.empty
       case Some(notes) =>
         val ledgerChars = notes.toList.flatMap { n =>
-          ledgerLinePositions(diatonicPos(n), staffLines).toList.flatMap { ldp =>
-            val lrow = gridMax - ldp
-            if lrow >= 0 && lrow < numRows then
-              (1 to 3).collect {
-                case k if col.colOffset + k < musicEnd =>
-                  (lrow, col.colOffset + k) -> '─'
-              }
-            else Nil
+          ledgerLinePositions(diatonicPos(n), staffLines).toList.flatMap {
+            ldp =>
+              val lrow = gridMax - ldp
+              if lrow >= 0 && lrow < numRows then
+                (1 to 3).collect {
+                  case k if col.colOffset + k < musicEnd =>
+                    (lrow, col.colOffset + k) -> '─'
+                }
+              else Nil
           }
         }
 
@@ -196,6 +209,7 @@ object StaffPrinter:
                 }.toList
               else Nil
             head ++ dot ++ accChars
+          end if
         }
 
         // Ledger lines first, noteheads second so noteheads override
@@ -242,16 +256,23 @@ object StaffPrinter:
     val musicEnd    = marginWidth + musicWidth
 
     // Compute BeatColumn layout with offsets via fold
-    val (beatColumns, _) = measLeaves.zip(measColWidths).foldLeft(
-      (List.empty[List[BeatColumn]], marginWidth)
-    ) { case ((acc, offset), (leaves, widths)) =>
-      val (columns, nextOffset) = leaves.zip(widths).foldLeft(
-        (List.empty[BeatColumn], offset)
-      ) { case ((cols, off), (leaf, w)) =>
-        (cols :+ BeatColumn(off, w, leaf.notes, leaf.noteValueFrac), off + w)
+    val (beatColumns, _) = measLeaves
+      .zip(measColWidths)
+      .foldLeft(
+        (List.empty[List[BeatColumn]], marginWidth)
+      ) { case ((acc, offset), (leaves, widths)) =>
+        val (columns, nextOffset) = leaves
+          .zip(widths)
+          .foldLeft(
+            (List.empty[BeatColumn], offset)
+          ) { case ((cols, off), (leaf, w)) =>
+            (
+              cols :+ BeatColumn(off, w, leaf.notes, leaf.noteValueFrac),
+              off + w
+            )
+          }
+        (acc :+ columns, nextOffset + 1) // +1 for barline gap
       }
-      (acc :+ columns, nextOffset + 1) // +1 for barline gap
-    }
 
     // Layer 1: Staff lines
     val staffLineChars: Placements = staffLines.flatMap { dp =>
@@ -282,11 +303,19 @@ object StaffPrinter:
 
     // Layer 4: Notes (ledger lines, accidentals, noteheads, dots)
     val flatCols = beatColumns.flatten
-    val allNoteChars: Placements = flatCols.zipWithIndex.foldLeft(Map.empty: Placements) {
-      case (acc, (col, beatIdx)) =>
-        val nctNotes = nctNotesByBeat.lift(beatIdx).getOrElse(Set.empty)
-        acc ++ beatPlacements(col, nctNotes, staffLines, gridMax, numRows, musicEnd)
-    }
+    val allNoteChars: Placements =
+      flatCols.zipWithIndex.foldLeft(Map.empty: Placements) {
+        case (acc, (col, beatIdx)) =>
+          val nctNotes = nctNotesByBeat.lift(beatIdx).getOrElse(Set.empty)
+          acc ++ beatPlacements(
+            col,
+            nctNotes,
+            staffLines,
+            gridMax,
+            numRows,
+            musicEnd
+          )
+      }
 
     // Layer 5: Right-margin labels
     val labelChars: Placements = staffLines.flatMap { dp =>
@@ -300,7 +329,8 @@ object StaffPrinter:
     }.toMap
 
     // Merge layers (later layers override earlier)
-    val allChars = staffLineChars ++ tsChars ++ barlineChars ++ allNoteChars ++ labelChars
+    val allChars =
+      staffLineChars ++ tsChars ++ barlineChars ++ allNoteChars ++ labelChars
 
     val gridStr = (0 until numRows)
       .map { row =>
@@ -338,7 +368,7 @@ object StaffPrinter:
     if allNotes.isEmpty then return "(empty)"
 
     // Run analysis on the pulse sequence extracted from measures
-    val pulses = measures.map(_.pulses)
+    val pulses         = measures.map(_.pulses)
     val analysisPulses = Analysis(tonic, scale, pulses)
     val analyses: List[Analysis] =
       analysisPulses.toList.flatMap(Pulse.flatten).map(_.head)
@@ -369,32 +399,41 @@ object StaffPrinter:
     // NCT label row (only if any NCTs exist)
     val nctLine =
       if analyses.exists(_.notes.exists(_.nonChordToneType.isDefined)) then
-        Some(annotationLine(
-          totalWidth,
-          flatCols.zip(analyses).flatMap { (col, analysis) =>
-            val nctLabels = analysis.notes
-              .filter(_.nonChordToneType.isDefined)
-              .map(an => nctAbbrev(an.nonChordToneType.get))
-              .distinct
-            if nctLabels.nonEmpty then List((col.colOffset + 1, nctLabels.mkString(",")))
-            else Nil
-          }
-        ))
+        Some(
+          annotationLine(
+            totalWidth,
+            flatCols.zip(analyses).flatMap { (col, analysis) =>
+              val nctLabels = analysis.notes
+                .filter(_.nonChordToneType.isDefined)
+                .map(an => nctAbbrev(an.nonChordToneType.get))
+                .distinct
+              if nctLabels.nonEmpty then
+                List((col.colOffset + 1, nctLabels.mkString(",")))
+              else Nil
+            }
+          )
+        )
       else None
 
     // Error row (note-level and chord-level)
     val errLine =
-      if analyses.exists(a => a.errors.nonEmpty || a.notes.exists(_.errors.nonEmpty)) then
-        Some(annotationLine(
-          totalWidth,
-          flatCols.zip(analyses).flatMap { (col, analysis) =>
-            val noteErrs  = analysis.notes.flatMap(_.errors).map(errAbbrev)
-            val chordErrs = analysis.errors.map(chordErrAbbrev)
-            val allErrs   = (noteErrs ++ chordErrs).distinct
-            if allErrs.nonEmpty then List((col.colOffset + 1, allErrs.mkString(",")))
-            else Nil
-          }
-        ))
+      if analyses.exists(a =>
+          a.errors.nonEmpty || a.notes.exists(_.errors.nonEmpty)
+        )
+      then
+        Some(
+          annotationLine(
+            totalWidth,
+            flatCols.zip(analyses).flatMap { (col, analysis) =>
+              val noteErrs  = analysis.notes.flatMap(_.errors).map(errAbbrev)
+              val chordErrs = analysis.errors.map(chordErrAbbrev)
+              val allErrs   = (noteErrs ++ chordErrs).distinct
+              if allErrs.nonEmpty then
+                List((col.colOffset + 1, allErrs.mkString(",")))
+              else Nil
+            }
+          )
+        )
       else None
 
     (List(gridStr, rnLine) ++ nctLine ++ errLine).mkString("\n")
@@ -402,17 +441,17 @@ object StaffPrinter:
 
   private def errAbbrev(err: NoteError): String =
     err match
-      case NoteError.ParallelFifths      => "∥5"
-      case NoteError.ParallelOctaves     => "∥8"
-      case NoteError.DirectFifths        => "→5"
-      case NoteError.DirectOctaves       => "→8"
-      case NoteError.VoiceCrossing       => "VX"
-      case NoteError.SpacingError(_)     => "Sp"
-      case NoteError.DoubledLeadingTone  => "2LT"
+      case NoteError.ParallelFifths     => "∥5"
+      case NoteError.ParallelOctaves    => "∥8"
+      case NoteError.DirectFifths       => "→5"
+      case NoteError.DirectOctaves      => "→8"
+      case NoteError.VoiceCrossing      => "VX"
+      case NoteError.SpacingError(_)    => "Sp"
+      case NoteError.DoubledLeadingTone => "2LT"
 
   private def chordErrAbbrev(err: ChordError): String =
     err match
       case ChordError.RootNotDoubledInRootPosition     => "2R"
-      case ChordError.FifthNotDoubledInSecondInversion  => "2×5"
+      case ChordError.FifthNotDoubledInSecondInversion => "2×5"
 
 end StaffPrinter

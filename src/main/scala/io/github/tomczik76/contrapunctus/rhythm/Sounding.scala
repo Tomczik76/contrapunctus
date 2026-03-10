@@ -1,4 +1,6 @@
-package io.github.tomczik76.contrapunctus
+package io.github.tomczik76.contrapunctus.rhythm
+
+import io.github.tomczik76.contrapunctus.core.Note
 
 /** Distinguishes freshly attacked notes from notes sustained (tied) from a
   * previous beat. Use with `Pulse[Sounding]` to represent keyboard music where

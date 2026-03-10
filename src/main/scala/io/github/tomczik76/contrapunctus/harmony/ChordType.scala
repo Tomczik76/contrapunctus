@@ -1,9 +1,10 @@
-package io.github.tomczik76.contrapunctus
+package io.github.tomczik76.contrapunctus.harmony
 
 import cats.data.{NonEmptyList, NonEmptyMap, NonEmptySet}
 import cats.implicits.*
 import cats.kernel.Order
-import Interval.{
+import io.github.tomczik76.contrapunctus.core.{Interval, Note}
+import io.github.tomczik76.contrapunctus.core.Interval.{
   AugmentedFifth,
   DiminishedFifth,
   MajorSecond,
@@ -42,7 +43,7 @@ case class Inversion(
 object Inversion:
   private val names =
     Array("Root", "First", "Second", "Third", "Fourth", "Fifth", "Sixth")
-  private[contrapunctus] def inversionName(index: Int): String =
+  private[harmony] def inversionName(index: Int): String =
     if index < names.length then names(index) else s"Inv$index"
 
 trait ChordGroup:

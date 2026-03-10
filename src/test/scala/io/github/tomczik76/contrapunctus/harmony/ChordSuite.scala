@@ -1,6 +1,7 @@
-package io.github.tomczik76.contrapunctus
+package io.github.tomczik76.contrapunctus.harmony
 
 import cats.data.{NonEmptyList, NonEmptySet}
+import io.github.tomczik76.contrapunctus.core.{Note, NoteType}
 import Note.*
 
 class ChordSuite extends munit.FunSuite:
@@ -319,6 +320,7 @@ class ChordSuite extends munit.FunSuite:
     )
 
   test("Ninth Chord first inversion"):
+    import io.github.tomczik76.contrapunctus.core.Interval
     assertEquals(
       ChordType.invert(
         NonEmptyList.of(
@@ -339,6 +341,7 @@ class ChordSuite extends munit.FunSuite:
     )
 
   test("Ninth Chord second inversion"):
+    import io.github.tomczik76.contrapunctus.core.Interval
     assertEquals(
       ChordType.invert(
         NonEmptyList.of(
@@ -359,6 +362,7 @@ class ChordSuite extends munit.FunSuite:
     )
 
   test("Ninth Chord third inversion"):
+    import io.github.tomczik76.contrapunctus.core.Interval
     assertEquals(
       ChordType.invert(
         NonEmptyList.of(
@@ -379,6 +383,7 @@ class ChordSuite extends munit.FunSuite:
     )
 
   test("Ninth Chord fourth inversion"):
+    import io.github.tomczik76.contrapunctus.core.Interval
     assertEquals(
       ChordType.invert(
         NonEmptyList.of(

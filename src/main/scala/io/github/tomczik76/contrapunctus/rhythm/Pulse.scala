@@ -1,9 +1,10 @@
-package io.github.tomczik76.contrapunctus
+package io.github.tomczik76.contrapunctus.rhythm
 
 import cats.data.NonEmptyList
 import cats.{Applicative, Eval, Traverse}
 import cats.syntax.all.*
 import higherkindness.droste.{Algebra, Coalgebra}
+import io.github.tomczik76.contrapunctus.core.Note
 
 /** Recursive rhythmic subdivision tree.
   *

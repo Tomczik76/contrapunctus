@@ -1,4 +1,4 @@
-package io.github.tomczik76.contrapunctus
+package io.github.tomczik76.contrapunctus.rhythm
 
 class RationalSuite extends munit.FunSuite:
 

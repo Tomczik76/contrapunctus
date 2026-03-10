@@ -1,4 +1,4 @@
-package io.github.tomczik76.contrapunctus
+package io.github.tomczik76.contrapunctus.core
 
 import cats.Order
 

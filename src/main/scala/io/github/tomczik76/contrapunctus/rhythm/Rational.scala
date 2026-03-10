@@ -1,4 +1,4 @@
-package io.github.tomczik76.contrapunctus
+package io.github.tomczik76.contrapunctus.rhythm
 
 /** Minimal rational number type for exact fractional time positions. Used by
   * Pulse.align to compute subdivision boundaries without floating-point

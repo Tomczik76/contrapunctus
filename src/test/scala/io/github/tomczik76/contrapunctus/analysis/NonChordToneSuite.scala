@@ -1,4 +1,7 @@
-package io.github.tomczik76.contrapunctus
+package io.github.tomczik76.contrapunctus.analysis
+
+import io.github.tomczik76.contrapunctus.core.{Note, NoteType}
+import io.github.tomczik76.contrapunctus.harmony.{Chord, Triads, Sevenths}
 
 class NonChordToneSuite extends munit.FunSuite:
   import Note.*
