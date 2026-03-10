@@ -3,42 +3,42 @@ package io.github.tomczik76.contrapunctus
 class AnalysisSuite extends munit.FunSuite:
 
   test("I — C major root position in C major"):
-    val chord = Chord(NoteType.C, Triads.Major.Inversions.Root)
+    val chord    = Chord(NoteType.C, Triads.Major.Inversions.Root)
     val analyzed = AnalyzedChord(chord, NoteType.C, Scale.Major)
     assert(analyzed.romanNumerals.toList.contains("I"))
 
   test("ii — D minor root position in C major"):
-    val chord = Chord(NoteType.D, Triads.Minor.Inversions.Root)
+    val chord    = Chord(NoteType.D, Triads.Minor.Inversions.Root)
     val analyzed = AnalyzedChord(chord, NoteType.C, Scale.Major)
     assert(analyzed.romanNumerals.toList.contains("ii"))
 
   test("vii° — B diminished root position in C major"):
-    val chord = Chord(NoteType.B, Triads.Diminished.Inversions.Root)
+    val chord    = Chord(NoteType.B, Triads.Diminished.Inversions.Root)
     val analyzed = AnalyzedChord(chord, NoteType.C, Scale.Major)
     assert(analyzed.romanNumerals.toList.contains("vii°"))
 
   test("V⁷ — G dominant seventh root position in C major"):
-    val chord = Chord(NoteType.G, Sevenths.DominantSeventh.Inversions.Root)
+    val chord    = Chord(NoteType.G, Sevenths.DominantSeventh.Inversions.Root)
     val analyzed = AnalyzedChord(chord, NoteType.C, Scale.Major)
     assert(analyzed.romanNumerals.toList.contains("V⁷"))
 
   test("V⁶₅ — G dominant seventh first inversion in C major"):
-    val chord = Chord(NoteType.G, Sevenths.DominantSeventh.Inversions.First)
+    val chord    = Chord(NoteType.G, Sevenths.DominantSeventh.Inversions.First)
     val analyzed = AnalyzedChord(chord, NoteType.C, Scale.Major)
     assert(analyzed.romanNumerals.toList.contains("V⁶₅"))
 
   test("I⁶ — C major first inversion in C major"):
-    val chord = Chord(NoteType.C, Triads.Major.Inversions.First)
+    val chord    = Chord(NoteType.C, Triads.Major.Inversions.First)
     val analyzed = AnalyzedChord(chord, NoteType.C, Scale.Major)
     assert(analyzed.romanNumerals.toList.contains("I⁶"))
 
   test("iv⁶₄ — F minor second inversion in C major"):
-    val chord = Chord(NoteType.F, Triads.Minor.Inversions.Second)
+    val chord    = Chord(NoteType.F, Triads.Minor.Inversions.Second)
     val analyzed = AnalyzedChord(chord, NoteType.C, Scale.Major)
     assert(analyzed.romanNumerals.toList.contains("iv⁶₄"))
 
   test("III+ — Eb augmented root position in C minor"):
-    val chord = Chord(NoteType.Eb, Triads.Augmented.Inversions.Root)
+    val chord    = Chord(NoteType.Eb, Triads.Augmented.Inversions.Root)
     val analyzed = AnalyzedChord(chord, NoteType.C, Scale.NaturalMinor)
     assert(analyzed.romanNumerals.toList.contains("III+"))
 
@@ -49,7 +49,7 @@ class AnalysisSuite extends munit.FunSuite:
     assert(analyzed.romanNumerals.toList.contains("viiø⁷"))
 
   test("IΔ⁷ — C major seventh root position in C major"):
-    val chord = Chord(NoteType.C, Sevenths.MajorSeventh.Inversions.Root)
+    val chord    = Chord(NoteType.C, Sevenths.MajorSeventh.Inversions.Root)
     val analyzed = AnalyzedChord(chord, NoteType.C, Scale.Major)
     assert(analyzed.romanNumerals.toList.contains("IΔ⁷"))
 
@@ -67,9 +67,8 @@ class AnalysisSuite extends munit.FunSuite:
 
     val results = Analysis(NoteType.G, Scale.Major, am7, d7, gmaj7)
 
-    val analyses = results.toList.collect { case Pulse.Atom(nel) =>
-      nel.head
-    }
+    val analyses: List[Analysis] = results.toList.collect:
+      case Pulse.Atom(nel) => nel.head
 
     def allNumerals(a: Analysis): Set[String] =
       a.chords.flatMap(_.romanNumerals.toList)
@@ -313,7 +312,8 @@ class AnalysisSuite extends munit.FunSuite:
     val beat3 = Pulse.Atom(Sustain(G(3)), Sustain(B(3)), Sustain(D(4)))
     val beat4 = Pulse.Atom(Attack(C(3)), Attack(E(3)), Attack(G(3)))
 
-    val results = Analysis.fromSounding(NoteType.C, Scale.Major, beat1, beat2, beat3, beat4)
+    val results =
+      Analysis.fromSounding(NoteType.C, Scale.Major, beat1, beat2, beat3, beat4)
     val analyses = results.toList.collect { case Pulse.Atom(nel) =>
       nel.head
     }
@@ -333,11 +333,15 @@ class AnalysisSuite extends munit.FunSuite:
     import Sounding.*
     // Classic 4-3 suspension: F major (preparation) → C major with F sustained (suspension) → resolution to E.
     // The sustained F over C major is a 4-3 suspension.
-    val beat1 = Pulse.Atom(Attack(F(3)), Attack(A(3)), Attack(C(4)), Attack(F(4)))
-    val beat2 = Pulse.Atom(Attack(C(3)), Attack(E(3)), Attack(G(3)), Sustain(F(4)))
-    val beat3 = Pulse.Atom(Sustain(C(3)), Sustain(E(3)), Sustain(G(3)), Attack(E(4)))
+    val beat1 =
+      Pulse.Atom(Attack(F(3)), Attack(A(3)), Attack(C(4)), Attack(F(4)))
+    val beat2 =
+      Pulse.Atom(Attack(C(3)), Attack(E(3)), Attack(G(3)), Sustain(F(4)))
+    val beat3 =
+      Pulse.Atom(Sustain(C(3)), Sustain(E(3)), Sustain(G(3)), Attack(E(4)))
 
-    val results = Analysis.fromSounding(NoteType.C, Scale.Major, beat1, beat2, beat3)
+    val results =
+      Analysis.fromSounding(NoteType.C, Scale.Major, beat1, beat2, beat3)
     val analyses = results.toList.collect { case Pulse.Atom(nel) =>
       nel.head
     }
@@ -357,3 +361,4 @@ class AnalysisSuite extends munit.FunSuite:
     assertEquals(ScaleDegree.Tonic.romanNumeral, "I")
     assertEquals(ScaleDegree.Dominant.romanNumeral, "V")
     assertEquals(ScaleDegree.LeadingTone.romanNumeral, "VII")
+end AnalysisSuite

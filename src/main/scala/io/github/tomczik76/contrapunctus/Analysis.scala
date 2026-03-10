@@ -22,11 +22,10 @@ case class AnalyzedChord(
       s"$alteration$numeral${chord.chordType.qualitySymbol}${chord.chordType.figuredBass}"
     }
 
-case class Analysis(chords: Set[AnalyzedChord], notes: List[AnalyzedNote])
-
-case class VoiceAnalysis(
-    harmonicAnalysis: NonEmptyList[Pulse[Analysis]],
-    partWritingErrors: List[PartWritingError]
+case class Analysis(
+    chords: Set[AnalyzedChord],
+    notes: List[AnalyzedNote],
+    errors: List[ChordError] = Nil
 )
 
 object Analysis:
@@ -42,17 +41,17 @@ object Analysis:
     )
 
   /** Analyze multiple independent voices: runs harmonic analysis on the
-    * combined vertical sonorities and validates part-writing rules.
-    * Voices should be ordered from highest (index 0) to lowest.
+    * combined vertical sonorities and validates part-writing rules. Voices
+    * should be ordered from highest (index 0) to lowest.
     *
-    * Uses Pulse.align to correctly handle voices with different
-    * rhythmic subdivisions.
+    * Uses Pulse.align to correctly handle voices with different rhythmic
+    * subdivisions.
     */
   def fromVoices(
       tonic: NoteType,
       scale: Scale,
       voices: List[NonEmptyList[Pulse[Note]]]
-  ): VoiceAnalysis =
+  ): NonEmptyList[Pulse[Analysis]] =
     val columns = PartWriting.alignVoices(voices)
     val combined: NonEmptyList[Pulse[Note]] =
       NonEmptyList.fromListUnsafe(
@@ -66,22 +65,27 @@ object Analysis:
     val harmonic = apply(tonic, scale, combined)
     val beatAnalyses =
       harmonic.toList.flatMap(Pulse.flatten).map(_.head)
-    VoiceAnalysis(
-      harmonicAnalysis = harmonic,
-      partWritingErrors =
-        PartWriting.check(voices, tonic, scale) ++
-          PartWriting.checkDoublings(columns, beatAnalyses)
-    )
+    val voiceLists = PartWriting.extractVoiceLists(columns)
+    val annotated =
+      PartWriting.annotateAnalyses(
+        beatAnalyses,
+        columns,
+        voiceLists,
+        tonic,
+        scale
+      )
+    remapAnalyses(harmonic, annotated)
+  end fromVoices
 
-  /** Analyze a sequence of pulses and run part-writing checks using
-    * inferred voice leading. Works on any Pulse[Note] input — voices
-    * are inferred from the vertical sonorities via nearest-note matching.
+  /** Analyze a sequence of pulses and run part-writing checks using inferred
+    * voice leading. Works on any Pulse[Note] input — voices are inferred from
+    * the vertical sonorities via nearest-note matching.
     */
   def analyzeWithPartWriting(
       tonic: NoteType,
       scale: Scale,
       measures: NonEmptyList[Pulse[Note]]
-  ): VoiceAnalysis =
+  ): NonEmptyList[Pulse[Analysis]] =
     val harmonic = apply(tonic, scale, measures)
     val beatAnalyses =
       harmonic.toList.flatMap(Pulse.flatten).map(_.head)
@@ -90,17 +94,17 @@ object Analysis:
     val columns = beats.zipWithIndex.map { (notes, _) =>
       AlignedColumn(
         Rational(0),
-        notes.toList.sortBy(-_.midi).map(n => Some(NonEmptyList.one(n))).toIndexedSeq
+        notes.toList
+          .sortBy(-_.midi)
+          .map(n => Some(NonEmptyList.one(n)))
+          .toIndexedSeq
       )
     }
     val voices = PartWriting.inferVoices(columns)
-    VoiceAnalysis(
-      harmonicAnalysis = harmonic,
-      partWritingErrors =
-        PartWriting.checkVertical(columns, tonic, scale) ++
-          PartWriting.checkHorizontal(voices) ++
-          PartWriting.checkDoublings(columns, beatAnalyses)
-    )
+    val annotated =
+      PartWriting.annotateAnalyses(beatAnalyses, columns, voices, tonic, scale)
+    remapAnalyses(harmonic, annotated)
+  end analyzeWithPartWriting
 
   def fromSounding(
       tonic: NoteType,
@@ -246,27 +250,37 @@ object Analysis:
           if Math.abs(esc.note.midi - app.note.midi) <= 5
         yield (ei, ai, esc, app)
         pairs
-          .minByOption((_, _, e, a) =>
-            Math.abs(e.note.midi - a.note.midi)
-          )
+          .minByOption((_, _, e, a) => Math.abs(e.note.midi - a.note.midi))
           .foreach { (ei, ai, esc, app) =>
             arr(i) = arr(i).copy(notes =
               arr(i).notes.updated(
                 ei,
-                esc.copy(nonChordToneType =
-                  Some(NonChordToneType.ChangingTone)
-                )
+                esc.copy(nonChordToneType = Some(NonChordToneType.ChangingTone))
               )
             )
             arr(i + 1) = arr(i + 1).copy(notes =
               arr(i + 1).notes.updated(
                 ai,
-                app.copy(nonChordToneType =
-                  Some(NonChordToneType.ChangingTone)
-                )
+                app.copy(nonChordToneType = Some(NonChordToneType.ChangingTone))
               )
             )
           }
+      end for
       arr.toList
   end reclassifyChangingTones
+
+  /** Replace flat analyses back into Pulse structure, preserving shape. */
+  private def remapAnalyses(
+      original: NonEmptyList[Pulse[Analysis]],
+      annotated: List[Analysis]
+  ): NonEmptyList[Pulse[Analysis]] =
+    PulseTransform
+      .mapWithStateList(original, annotated):
+        case (_, head :: tail) =>
+          (NonEmptyList.one(head), tail)
+        case (_, Nil) =>
+          throw AssertionError(
+            "Mismatch between flattened beats and pulse structure"
+          )
+      ._1
 end Analysis

@@ -13,7 +13,8 @@ enum NonChordToneType:
 
 case class AnalyzedNote(
     note: Note,
-    nonChordToneType: Option[NonChordToneType]
+    nonChordToneType: Option[NonChordToneType],
+    errors: List[NoteError] = Nil
 ):
   def isChordTone: Boolean = nonChordToneType.isEmpty
 

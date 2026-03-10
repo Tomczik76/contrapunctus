@@ -7,25 +7,25 @@ import higherkindness.droste.{Algebra, Coalgebra}
 
 /** Recursive rhythmic subdivision tree.
   *
-  * A Pulse represents a span of musical time that can be subdivided into
-  * equal parts. The tree structure encodes nested subdivisions:
+  * A Pulse represents a span of musical time that can be subdivided into equal
+  * parts. The tree structure encodes nested subdivisions:
   *
   *   - Duplet splits its span into 2 equal parts
   *   - Triplet splits into 3, Quintuplet into 5, Septuplet into 7
   *   - Atom is a leaf carrying one or more simultaneous notes (a chord)
   *   - Rest is a silent leaf
   *
-  * Duration is not stored explicitly — it is determined by position in
-  * the tree. A top-level Pulse represents one full unit of time (e.g.,
-  * a measure or beat). Each subdivision divides its parent's duration
-  * equally among its children. For example, a Triplet inside a Duplet
-  * gives each triplet leaf 1/6 of the total span.
+  * Duration is not stored explicitly — it is determined by position in the
+  * tree. A top-level Pulse represents one full unit of time (e.g., a measure or
+  * beat). Each subdivision divides its parent's duration equally among its
+  * children. For example, a Triplet inside a Duplet gives each triplet leaf 1/6
+  * of the total span.
   *
-  * When a TimeSignature is applied via Measure, the top-level span gets
-  * a concrete duration, but Pulse itself works purely with ratios. This
-  * lets Pulse.align compute exact fractional time positions for aligning
-  * voices with different subdivisions — e.g., a voice playing triplets
-  * against another playing duplets.
+  * When a TimeSignature is applied via Measure, the top-level span gets a
+  * concrete duration, but Pulse itself works purely with ratios. This lets
+  * Pulse.align compute exact fractional time positions for aligning voices with
+  * different subdivisions — e.g., a voice playing triplets against another
+  * playing duplets.
   */
 enum Pulse[+A]:
   case Duplet(a: Pulse[A], b: Pulse[A]) extends Pulse[A]
@@ -53,13 +53,24 @@ enum Pulse[+A]:
   case Atom(value: NonEmptyList[A]) extends Pulse[A]
   case Rest                         extends Pulse[Nothing]
 
-  def map[B](f: A => B): Pulse[B] = this match
-    case Duplet(a, b)                    => Duplet(a.map(f), b.map(f))
-    case Triplet(a, b, c)                => Triplet(a.map(f), b.map(f), c.map(f))
-    case Quintuplet(a, b, c, d, e)       => Quintuplet(a.map(f), b.map(f), c.map(f), d.map(f), e.map(f))
-    case Septuplet(a, b, c, d, e, f0, g) => Septuplet(a.map(f), b.map(f), c.map(f), d.map(f), e.map(f), f0.map(f), g.map(f))
-    case Atom(nel)                       => Atom(nel.map(f))
-    case Rest                            => Rest
+  def map[B](f: A => B): Pulse[B] =
+    this match
+      case Duplet(a, b)     => Duplet(a.map(f), b.map(f))
+      case Triplet(a, b, c) => Triplet(a.map(f), b.map(f), c.map(f))
+      case Quintuplet(a, b, c, d, e) =>
+        Quintuplet(a.map(f), b.map(f), c.map(f), d.map(f), e.map(f))
+      case Septuplet(a, b, c, d, e, f0, g) =>
+        Septuplet(
+          a.map(f),
+          b.map(f),
+          c.map(f),
+          d.map(f),
+          e.map(f),
+          f0.map(f),
+          g.map(f)
+        )
+      case Atom(nel) => Atom(nel.map(f))
+      case Rest      => Rest
 
 end Pulse
 
@@ -76,9 +87,9 @@ case class Part[A](
 
 case class VoiceId(value: String) extends AnyVal
 
-/** A vertical slice across aligned voices at a specific fractional time.
-  * Each position in `values` corresponds to a voice; None means that voice
-  * is resting at this time point.
+/** A vertical slice across aligned voices at a specific fractional time. Each
+  * position in `values` corresponds to a voice; None means that voice is
+  * resting at this time point.
   */
 case class AlignedColumn[+A](
     time: Rational,
@@ -106,17 +117,21 @@ object Pulse:
 
   def flatten[A](pulse: Pulse[A]): List[NonEmptyList[A]] =
     pulse match
-      case Atom(v)                         => List(v)
-      case Rest                            => Nil
-      case Duplet(a, b)                    => flatten(a) ++ flatten(b)
-      case Triplet(a, b, c)                => flatten(a) ++ flatten(b) ++ flatten(c)
-      case Quintuplet(a, b, c, d, e)       => flatten(a) ++ flatten(b) ++ flatten(c) ++ flatten(d) ++ flatten(e)
-      case Septuplet(a, b, c, d, e, f, g)  => flatten(a) ++ flatten(b) ++ flatten(c) ++ flatten(d) ++ flatten(e) ++ flatten(f) ++ flatten(g)
+      case Atom(v)          => List(v)
+      case Rest             => Nil
+      case Duplet(a, b)     => flatten(a) ++ flatten(b)
+      case Triplet(a, b, c) => flatten(a) ++ flatten(b) ++ flatten(c)
+      case Quintuplet(a, b, c, d, e) =>
+        flatten(a) ++ flatten(b) ++ flatten(c) ++ flatten(d) ++ flatten(e)
+      case Septuplet(a, b, c, d, e, f, g) =>
+        flatten(a) ++ flatten(b) ++ flatten(c) ++ flatten(d) ++ flatten(
+          e
+        ) ++ flatten(f) ++ flatten(g)
 
-  /** Compute the fractional time span of each leaf in a Pulse tree.
-    * Returns a list of (startTime, endTime, value) triples, where
-    * the span [0, 1) represents the full duration of the pulse.
-    * Rests produce entries with None; Atoms produce Some(value).
+  /** Compute the fractional time span of each leaf in a Pulse tree. Returns a
+    * list of (startTime, endTime, value) triples, where the span [0, 1)
+    * represents the full duration of the pulse. Rests produce entries with
+    * None; Atoms produce Some(value).
     */
   def timed[A](
       pulse: Pulse[A],
@@ -148,10 +163,10 @@ object Pulse:
 
   /** Align multiple Pulse trees by computing their shared time grid.
     *
-    * Each voice's Pulse tree is walked to find fractional leaf boundaries.
-    * The union of all boundary start times across all voices defines the
-    * alignment columns. At each column time, each voice contributes the
-    * value of whichever leaf spans that time (or None for rests).
+    * Each voice's Pulse tree is walked to find fractional leaf boundaries. The
+    * union of all boundary start times across all voices defines the alignment
+    * columns. At each column time, each voice contributes the value of
+    * whichever leaf spans that time (or None for rests).
     *
     * This correctly handles voices with different subdivisions:
     * {{{
