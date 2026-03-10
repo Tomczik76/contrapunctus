@@ -207,12 +207,19 @@ object Analysis:
     val notes        = beats(beatIndex)
     val primaryChord = chordsPerBeat(beatIndex).headOption
     val bass         = Some(notes.toList.minBy(_.midi))
-    primaryChord match
+    // When the current beat has no identifiable chord (e.g. a single passing
+    // tone), fall back to a neighboring chord so NCT classification can proceed.
+    val effectiveChord = primaryChord
+      .orElse(Option.when(beatIndex > 0)(beatIndex - 1).flatMap(chordsPerBeat(_).headOption))
+      .orElse(Option.when(beatIndex < chordsPerBeat.size - 1)(beatIndex + 1).flatMap(chordsPerBeat(_).headOption))
+
+    effectiveChord match
       case None =>
         notes.toList.map(n => AnalyzedNote(n, None))
       case Some(chord) =>
         notes.toList.map { note =>
-          if chord.isChordTone(note.noteType) then AnalyzedNote(note, None)
+          if primaryChord.isDefined && chord.isChordTone(note.noteType) then
+            AnalyzedNote(note, None)
           else
             val prevPair = for
               i         <- Option.when(beatIndex > 0)(beatIndex - 1)

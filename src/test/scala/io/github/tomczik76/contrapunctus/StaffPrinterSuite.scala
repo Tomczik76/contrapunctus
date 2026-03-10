@@ -22,7 +22,7 @@ class StaffPrinterSuite extends munit.FunSuite:
   test("render single note C4 shows ledger line"):
     val m = measure(ts44, C(4))
     val output = StaffPrinter.render(NonEmptyList.one(m))
-    assert(output.contains("●"), "Should contain a notehead")
+    assert(output.contains("○") || output.contains("●"), "Should contain a notehead")
     assert(output.contains("F5") || output.contains("E4"), "Should have staff line labels")
 
   test("render C major scale across two measures"):
@@ -35,17 +35,20 @@ class StaffPrinterSuite extends munit.FunSuite:
     assert(output.contains("┼") || output.contains("│"), "Should have barline between measures")
 
   test("render chord shows multiple noteheads in same column"):
-    // C major triad: C4, E4, G4
+    // C major triad: C4, E4, G4 — whole note in 4/4 renders as open notehead
     val pulse: Pulse[Note] = Pulse.Atom(C(4), E(4), G(4))
     val m = Measure(ts44, pulse)
     val output = StaffPrinter.render(NonEmptyList.one(m))
-    assertEquals(output.count(_ == '●'), 3)
+    val noteheads = output.count(c => c == '●' || c == '○')
+    assertEquals(noteheads, 3)
 
   test("render with rest leaves empty column"):
+    // Duplet in 4/4 = half notes → open noteheads
     val pulse: Pulse[Note] = Pulse.Duplet(Pulse.Atom(C(4)), Pulse.Rest)
     val m = Measure(ts44, pulse)
     val output = StaffPrinter.render(NonEmptyList.one(m))
-    assertEquals(output.count(_ == '●'), 1)
+    val noteheads = output.count(c => c == '●' || c == '○')
+    assertEquals(noteheads, 1)
 
   test("render with sharps shows accidental"):
     val m = measure(ts44, `F#`(4))
@@ -58,10 +61,12 @@ class StaffPrinterSuite extends munit.FunSuite:
     assert(output.contains("♭"), "Should show flat accidental")
 
   test("render notes above staff shows ledger lines"):
+    // Single note in 4/4 = whole note → open notehead
     val m = measure(ts44, A(5))
     val output = StaffPrinter.render(NonEmptyList.one(m))
     // A5 is above F5, needs one ledger line
-    assertEquals(output.count(_ == '●'), 1)
+    val noteheads = output.count(c => c == '●' || c == '○')
+    assertEquals(noteheads, 1)
 
   test("render selects bass clef for low notes"):
     val m = measure(ts44, C(2), E(2), G(2))
@@ -89,5 +94,50 @@ class StaffPrinterSuite extends munit.FunSuite:
     // Just verify it renders without error and has expected structure
     val lines = output.split("\n")
     assert(lines.length > 5, "Should have multiple rows for the staff")
+
+  test("whole note renders with open notehead"):
+    // Single atom in 4/4 = whole note
+    val m = Measure(ts44, Pulse.Atom(C(4)): Pulse[Note])
+    val output = StaffPrinter.render(NonEmptyList.one(m))
+    assert(output.contains("○"), "Whole note should use open notehead")
+    assert(!output.contains("●"), "Should not have filled noteheads")
+
+  test("half note renders with open notehead"):
+    // Duplet in 4/4 = half notes
+    val pulse: Pulse[Note] = Pulse.Duplet(Pulse.Atom(C(4)), Pulse.Atom(E(4)))
+    val m = Measure(ts44, pulse)
+    val output = StaffPrinter.render(NonEmptyList.one(m))
+    assert(output.contains("○"), "Half note should use open notehead")
+    assertEquals(output.count(_ == '○'), 2)
+
+  test("quarter note renders with filled notehead"):
+    val m = measure(ts44, C(4), D(4), E(4), F(4))
+    val output = StaffPrinter.render(NonEmptyList.one(m))
+    assert(output.contains("●"), "Quarter note should use filled notehead")
+    assertEquals(output.count(_ == '●'), 4)
+
+  test("eighth note renders with filled notehead"):
+    // Four eighths = Duplet(Duplet(a,b), Duplet(c,d)) inside a half-note Duplet
+    val pulse: Pulse[Note] = Pulse.Duplet(
+      Pulse.Duplet(Pulse.Atom(C(4)), Pulse.Atom(D(4))),
+      Pulse.Duplet(Pulse.Atom(E(4)), Pulse.Atom(F(4)))
+    )
+    val m = Measure(ts44, Pulse.Duplet(pulse, Pulse.Atom(G(4))))
+    val output = StaffPrinter.render(NonEmptyList.one(m))
+    // G4 is a half note (open), C-F are eighths (filled)
+    assertEquals(output.count(_ == '●'), 4)
+    assertEquals(output.count(_ == '○'), 1)
+
+  test("mixed note values have proportional spacing"):
+    // Half note + two quarters in 4/4
+    val pulse: Pulse[Note] = Pulse.Duplet(
+      Pulse.Atom(C(4)),
+      Pulse.Duplet(Pulse.Atom(D(4)), Pulse.Atom(E(4)))
+    )
+    val m = Measure(ts44, pulse)
+    val output = StaffPrinter.render(NonEmptyList.one(m))
+    // Half note C4 should be open, quarters D4/E4 should be filled
+    assert(output.contains("○"), "Half note should be open")
+    assert(output.contains("●"), "Quarter notes should be filled")
 
 end StaffPrinterSuite

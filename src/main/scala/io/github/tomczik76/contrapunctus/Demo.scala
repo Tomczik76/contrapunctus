@@ -125,3 +125,35 @@ import Note.{`G#` as Gs, `F#` as Fs, *}
   )
   println(StaffPrinter.renderAnalysis(NoteType.C, Scale.Major, waltz))
   println()
+
+  // ── Example 8: Mixed Note Values ────────────────────────────────────
+  println("═══ Mixed Note Values (C Major) ═══")
+  println()
+  val mixed = NonEmptyList.of(
+    // Half note I chord, then two quarter notes
+    Measure(ts44, Pulse.Duplet(
+      chord(C(4), E(4), G(4)),                                     // half: I
+      Pulse.Duplet(chord(D(4), F(4), A(4)), chord(B(3), D(4), G(4))) // quarters: ii, V
+    )),
+    // Whole note I chord
+    Measure(ts44, chord(C(4), E(4), G(4)))                          // whole: I
+  )
+  println(StaffPrinter.renderAnalysis(NoteType.C, Scale.Major, mixed))
+  println()
+
+  // ── Example 9: Eighth Note Melody ───────────────────────────────────
+  println("═══ Eighth Note Melody (C Major) ═══")
+  println()
+  val eighths = NonEmptyList.of(
+    Measure(ts44, Pulse.Duplet(
+      // Beat 1-2: two quarter notes
+      Pulse.Duplet(chord(C(4), E(4), G(4)), chord(E(4), G(4))),
+      // Beat 3-4: four eighth notes
+      Pulse.Duplet(
+        Pulse.Duplet(chord(F(4)), chord(E(4))),
+        Pulse.Duplet(chord(D(4)), chord(C(4)))
+      )
+    ))
+  )
+  println(StaffPrinter.render(eighths))
+  println()
