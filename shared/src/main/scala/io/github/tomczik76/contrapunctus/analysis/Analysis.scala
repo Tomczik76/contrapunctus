@@ -6,9 +6,10 @@ import io.github.tomczik76.contrapunctus.core.{
   AlteredScaleDegree,
   Note,
   NoteType,
-  Scale
+  Scale,
+  ScaleDegree
 }
-import io.github.tomczik76.contrapunctus.harmony.Chord
+import io.github.tomczik76.contrapunctus.harmony.{Chord, Inversion, Sevenths, Triads}
 import io.github.tomczik76.contrapunctus.rhythm.{
   AlignedColumn,
   Pulse,
@@ -307,6 +308,65 @@ object Analysis:
       end for
       arr.toList
   end reclassifyChangingTones
+
+  /** Compute secondary dominant labels for a chord given what follows it.
+    * Only returns labels when the chord contains at least one chromatic note
+    * and resolves to a diatonic target. Excludes V/I (that's just V).
+    */
+  def secondaryDominantLabels(
+      notes: NonEmptyList[Note],
+      currentChords: Set[Chord],
+      nextChords: Set[Chord],
+      tonic: NoteType,
+      scale: Scale
+  ): List[String] =
+    val scalePCs =
+      scale.intervals.toList.map(i => (tonic.value + i.value) % 12).toSet
+    val notePCs = notes.toList.map(n => n.noteType.value % 12).toSet
+
+    // Must have at least one chromatic note
+    if notePCs.subsetOf(scalePCs) then return Nil
+
+    val scaleIntervals = scale.intervals.toList.map(_.value)
+
+    def targetRomanNumeral(targetRoot: NoteType): Option[String] =
+      val targetPC = targetRoot.value % 12
+      val rootPC   = tonic.value % 12
+      val interval = (targetPC - rootPC + 12) % 12
+      val degreeIdx = scaleIntervals.indexOf(interval)
+      if degreeIdx < 0 then None // not diatonic
+      else
+        val degree = ScaleDegree.fromOrdinal(degreeIdx)
+        // Don't show V/I — that's just the regular dominant
+        if degree == ScaleDegree.Tonic then None
+        else
+          // Determine if diatonic triad on this degree is minor
+          val thirdInterval = scaleIntervals((degreeIdx + 2) % 7)
+          val third = (thirdInterval - scaleIntervals(degreeIdx) + 12) % 12
+          val isMinor = third == 3
+          val numeral =
+            if isMinor then degree.romanNumeral.toLowerCase
+            else degree.romanNumeral
+          Some(numeral)
+
+    val isSecDomType = (chord: Chord) => chord.chordType match
+      case Inversion(Triads.Major, _, _, _)             => true
+      case Inversion(Sevenths.DominantSeventh, _, _, _) => true
+      case _                                            => false
+
+    val results = for
+      chord <- currentChords.toList
+      if isSecDomType(chord)
+      nextChord <- nextChords.toList
+      // V of X: chord root is P5 above next chord root
+      if chord.root.value % 12 == (nextChord.root.value + 7) % 12
+      target <- targetRomanNumeral(nextChord.root).toList
+    yield
+      val fb = chord.chordType.figuredBass
+      s"V$fb/$target"
+
+    results.distinct
+  end secondaryDominantLabels
 
   /** Replace flat analyses back into Pulse structure, preserving shape. */
   private def remapAnalyses(

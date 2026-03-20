@@ -1,5 +1,6 @@
 package io.github.tomczik76.contrapunctus.analysis
 
+import cats.data.NonEmptyList
 import io.github.tomczik76.contrapunctus.core.{Note, NoteType, Scale, ScaleDegree}
 import io.github.tomczik76.contrapunctus.harmony.{Chord, Triads, Sevenths}
 import io.github.tomczik76.contrapunctus.rhythm.{Pulse, Sounding}
@@ -354,4 +355,88 @@ class AnalysisSuite extends munit.FunSuite:
     assertEquals(ScaleDegree.Tonic.romanNumeral, "I")
     assertEquals(ScaleDegree.Dominant.romanNumeral, "V")
     assertEquals(ScaleDegree.LeadingTone.romanNumeral, "VII")
+
+  // ── Secondary dominant tests ──────────────────────────────────────────
+
+  test("secondary dominant — I → IV is NOT V/IV (no chromatic notes)"):
+    import Note.*
+    val currentNotes  = NonEmptyList.of(C(4), E(4), G(4))
+    val currentChords = Set(Chord(NoteType.C, Triads.Major.Inversions.Root))
+    val nextChords    = Set(Chord(NoteType.F, Triads.Major.Inversions.Root))
+    val labels = Analysis.secondaryDominantLabels(
+      currentNotes, currentChords, nextChords, NoteType.C, Scale.Major
+    )
+    assertEquals(labels, Nil)
+
+  test("secondary dominant — C7 → F is V⁷/IV (Bb is chromatic in C major)"):
+    import Note.*
+    val currentNotes  = NonEmptyList.of(C(4), E(4), G(4), Bb(4))
+    val currentChords = Set(Chord(NoteType.C, Sevenths.DominantSeventh.Inversions.Root))
+    val nextChords    = Set(Chord(NoteType.F, Triads.Major.Inversions.Root))
+    val labels = Analysis.secondaryDominantLabels(
+      currentNotes, currentChords, nextChords, NoteType.C, Scale.Major
+    )
+    assert(labels.contains("V⁷/IV"))
+
+  test("secondary dominant — D major → G is V/V (F# is chromatic in C major)"):
+    import Note.*
+    val currentNotes  = NonEmptyList.of(D(4), `F#`(4), A(4))
+    val currentChords = Set(Chord(NoteType.D, Triads.Major.Inversions.Root))
+    val nextChords    = Set(Chord(NoteType.G, Triads.Major.Inversions.Root))
+    val labels = Analysis.secondaryDominantLabels(
+      currentNotes, currentChords, nextChords, NoteType.C, Scale.Major
+    )
+    assert(labels.contains("V/V"))
+
+  test("secondary dominant — E major → Am is V/vi (G# is chromatic in C major)"):
+    import Note.*
+    val currentNotes  = NonEmptyList.of(E(4), `G#`(4), B(4))
+    val currentChords = Set(Chord(NoteType.E, Triads.Major.Inversions.Root))
+    val nextChords    = Set(Chord(NoteType.A, Triads.Minor.Inversions.Root))
+    val labels = Analysis.secondaryDominantLabels(
+      currentNotes, currentChords, nextChords, NoteType.C, Scale.Major
+    )
+    assert(labels.contains("V/vi"))
+
+  test("secondary dominant — A major → Dm is V/ii (C# is chromatic in C major)"):
+    import Note.*
+    val currentNotes  = NonEmptyList.of(A(3), `C#`(4), E(4))
+    val currentChords = Set(Chord(NoteType.A, Triads.Major.Inversions.Root))
+    val nextChords    = Set(Chord(NoteType.D, Triads.Minor.Inversions.Root))
+    val labels = Analysis.secondaryDominantLabels(
+      currentNotes, currentChords, nextChords, NoteType.C, Scale.Major
+    )
+    assert(labels.contains("V/ii"))
+
+  test("secondary dominant — V → I is NOT V/I (excluded by design)"):
+    import Note.*
+    val currentNotes  = NonEmptyList.of(G(3), B(3), D(4), F(4))
+    val currentChords = Set(Chord(NoteType.G, Sevenths.DominantSeventh.Inversions.Root))
+    val nextChords    = Set(Chord(NoteType.C, Triads.Major.Inversions.Root))
+    val labels = Analysis.secondaryDominantLabels(
+      currentNotes, currentChords, nextChords, NoteType.C, Scale.Major
+    )
+    assertEquals(labels, Nil)
+
+  test("secondary dominant — D7 → G is V⁷/V (F# and C chromatic-check in C major)"):
+    import Note.*
+    val currentNotes  = NonEmptyList.of(D(4), `F#`(4), A(4), C(5))
+    val currentChords = Set(Chord(NoteType.D, Sevenths.DominantSeventh.Inversions.Root))
+    val nextChords    = Set(Chord(NoteType.G, Triads.Major.Inversions.Root))
+    val labels = Analysis.secondaryDominantLabels(
+      currentNotes, currentChords, nextChords, NoteType.C, Scale.Major
+    )
+    assert(labels.contains("V⁷/V"))
+
+  test("secondary dominant — no label when chord doesn't resolve correctly"):
+    import Note.*
+    // D major going to C (not G) — D is not V of C
+    val currentNotes  = NonEmptyList.of(D(4), `F#`(4), A(4))
+    val currentChords = Set(Chord(NoteType.D, Triads.Major.Inversions.Root))
+    val nextChords    = Set(Chord(NoteType.C, Triads.Major.Inversions.Root))
+    val labels = Analysis.secondaryDominantLabels(
+      currentNotes, currentChords, nextChords, NoteType.C, Scale.Major
+    )
+    assertEquals(labels, Nil)
+
 end AnalysisSuite

@@ -6,6 +6,7 @@ import scala.scalajs.js.JSConverters.*
 import cats.data.NonEmptyList
 import io.github.tomczik76.contrapunctus.core.{Note, NoteType, Scale}
 import io.github.tomczik76.contrapunctus.analysis.Analysis
+import io.github.tomczik76.contrapunctus.harmony.{Inversion, Sevenths}
 import io.github.tomczik76.contrapunctus.rhythm.{Measure, Pulse, TimeSignature}
 
 // ── JS-facing data types ─────────────────────────────────────────────
@@ -173,12 +174,39 @@ object Contrapunctus:
 
     val pulses = measures.map(_.pulses)
     val analyses = Analysis.analyzeWithPartWriting(tonic, scale, pulses)
-    val romanNumeralOptions = analyses.toList.flatMap: pulse =>
-      Pulse.flatten(pulse).map: analysis =>
-        val chords = analysis.head.chords
-        chords.toList
-          .flatMap(_.romanNumerals.toList)
-          .distinct
+
+    // Flatten all beats with their notes for secondary dominant analysis
+    val flatBeats: List[(NonEmptyList[Note], Analysis)] =
+      measures.toList.zip(analyses.toList).flatMap: (m, pulse) =>
+        Pulse.flatten(m.pulses).zip(Pulse.flatten(pulse)).map:
+          case (notes, analysis) => (notes, analysis.head)
+
+    val romanNumeralOptions = flatBeats.zipWithIndex.map { case ((notes, analysis), i) =>
+      val chords = analysis.chords
+      // Sort so inversions come before add chords (MajorSixth/MinorSixth root position)
+      val sorted = chords.toList.sortBy: ac =>
+        ac.chord.chordType match
+          case Inversion(base, 0, _, _) if base == Sevenths.MajorSixth || base == Sevenths.MinorSixth => 1
+          case _ => 0
+      val baseLabels = sorted
+        .flatMap(_.romanNumerals.toList)
+        .distinct
+
+      // Add secondary dominant labels if applicable
+      val secDomLabels =
+        if i < flatBeats.size - 1 then
+          val (_, nextAnalysis) = flatBeats(i + 1)
+          Analysis.secondaryDominantLabels(
+            notes,
+            chords.map(_.chord),
+            nextAnalysis.chords.map(_.chord),
+            tonic,
+            scale
+          )
+        else Nil
+
+      (secDomLabels ++ baseLabels).distinct
+    }
 
     buildRenderData(measures, Some(romanNumeralOptions))
 
