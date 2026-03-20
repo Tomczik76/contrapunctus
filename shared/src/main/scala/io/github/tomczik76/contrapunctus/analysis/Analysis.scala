@@ -114,7 +114,14 @@ object Analysis:
       )
     val voices = PartWriting.inferVoices(columns)
     val annotated =
-      PartWriting.annotateAnalyses(beatAnalyses, columns, voices, tonic, scale)
+      PartWriting.annotateAnalyses(
+        beatAnalyses,
+        columns,
+        voices,
+        tonic,
+        scale,
+        checkCrossing = false
+      )
     remapAnalyses(harmonic, annotated)
   end analyzeWithPartWriting
 
@@ -198,10 +205,19 @@ object Analysis:
       yield chords
       val allSubsets      = fromSubsets.flatten.toSet
       val diatonicSubsets = allSubsets.filter(isDiatonic)
-      val preferred       = preferNonSus(diatonicSubsets)
-      if preferred.nonEmpty then preferred
-      else if fromAll.nonEmpty then fromAll
-      else allSubsets
+      // Prefer non-diatonic full-chord identification (e.g. VMaj7)
+      // over diatonic subset triads, but only when every input note
+      // is a chord tone AND the chord root is diatonic to the scale.
+      val pitchClasses = notes.toList.map(_.noteType).toSet
+      val fullChordMatch = fromAll.filter: chord =>
+        pitchClasses.forall(chord.isChordTone) &&
+          scalePitchClasses.contains(chord.root.value)
+      if fullChordMatch.nonEmpty then preferNonSus(fullChordMatch)
+      else
+        val preferred = preferNonSus(diatonicSubsets)
+        if preferred.nonEmpty then preferred
+        else if fromAll.nonEmpty then fromAll
+        else allSubsets
   end identifyChords
 
   private def findClosestNote(

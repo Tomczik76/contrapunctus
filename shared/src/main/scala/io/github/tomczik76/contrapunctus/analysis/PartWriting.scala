@@ -2,6 +2,14 @@ package io.github.tomczik76.contrapunctus.analysis
 
 import cats.data.NonEmptyList
 import io.github.tomczik76.contrapunctus.core.{Note, NoteType, Scale}
+import io.github.tomczik76.contrapunctus.harmony.{
+  Chord,
+  Elevenths,
+  Inversion,
+  Ninths,
+  Sevenths,
+  Thirteenths
+}
 import io.github.tomczik76.contrapunctus.rhythm.{AlignedColumn, Pulse}
 
 /** Note-level part-writing errors, embedded on individual AnalyzedNotes. */
@@ -13,6 +21,8 @@ enum NoteError:
   case VoiceCrossing
   case SpacingError(semitones: Int)
   case DoubledLeadingTone
+  case UnresolvedLeadingTone
+  case UnresolvedChordal7th
 
 /** Chord-level part-writing errors, embedded on Analysis (per-beat). */
 enum ChordError:
@@ -30,16 +40,19 @@ object PartWriting:
       columns: List[AlignedColumn[Note]],
       voices: List[List[Note]],
       tonic: NoteType,
-      scale: Scale
+      scale: Scale,
+      checkCrossing: Boolean = true
   ): List[Analysis] =
     val beats = columnNotes(columns)
 
     val noteErrs: List[(Int, Note, NoteError)] =
       checkParallels(voices) ++
         checkDirectMotion(voices) ++
-        checkVoiceCrossing(voices) ++
+        (if checkCrossing then checkVoiceCrossing(voices) else Nil) ++
         checkSpacing(beats) ++
-        checkDoubledLeadingTone(beats, tonic, scale)
+        checkDoubledLeadingTone(beats, tonic, scale) ++
+        checkLeadingToneResolution(voices, analyses, tonic, scale) ++
+        checkChordal7thResolution(voices, analyses)
 
     val chordErrs: List[(Int, ChordError)] =
       checkDoublings(beats, analyses)
@@ -278,5 +291,84 @@ object PartWriting:
       yield err
     end if
   end checkDoublings
+
+  /** True if the chord has a chordal 7th (dim7/min7/maj7) and the note is
+    * that 7th. Excludes add6 chords (MajorSixth/MinorSixth) since those use
+    * the same semitone count (9) but the 6th doesn't carry the same tendency.
+    */
+  private def isChordal7th(note: Note, chord: Chord): Boolean =
+    val inv = chord.chordType.asInstanceOf[Inversion]
+    val is7thChord = inv.base match
+      case Sevenths.MajorSixth | Sevenths.MinorSixth              => false
+      case _: Sevenths | _: Ninths | _: Elevenths | _: Thirteenths => true
+      case _                                                        => false
+    is7thChord &&
+    (note.noteType.value - chord.root.value + 12) % 12 >= 9 &&
+    chord.isChordTone(note.noteType)
+
+  /** True when two consecutive beats represent the same chord root and quality,
+    * so that a tendency tone being held does not need to resolve yet.
+    */
+  private def sameChord(a: AnalyzedChord, b: AnalyzedChord): Boolean =
+    a.chord.root == b.chord.root &&
+      a.chord.chordType.intervals == b.chord.chordType.intervals
+
+  /** Flag leading tones in dominant-function chords (V, V7, vii°, vii°7) that
+    * do not resolve up by a semitone to tonic when the chord changes.
+    */
+  private def checkLeadingToneResolution(
+      voices: List[List[Note]],
+      analyses: List[Analysis],
+      tonic: NoteType,
+      scale: Scale
+  ): List[(Int, Note, NoteError)] =
+    val hasLeadingTone = scale.intervals.toList.exists(_.value == 11)
+    if !hasLeadingTone then Nil
+    else
+      val ltPc    = (tonic.value + 11) % 12
+      val tonicPc = tonic.value % 12
+      val domPc   = (tonic.value + 7) % 12
+      val numBeats = if voices.nonEmpty then voices.head.size else 0
+      for
+        voice <- voices
+        beat  <- (0 until numBeats - 1).toList
+        note      = voice(beat)
+        if note.noteType.value % 12 == ltPc
+        chord    <- analyses.lift(beat).flatMap(_.chords.headOption).toList
+        // Only dominant-function chords: V (root=5th) or vii° (root=LT)
+        chordRootPc = chord.chord.root.value % 12
+        if chordRootPc == domPc || chordRootPc == ltPc
+        nextNote  = voice(beat + 1)
+        nextChord  = analyses.lift(beat + 1).flatMap(_.chords.headOption)
+        // Don't flag if the chord sustains unchanged
+        if !nextChord.exists(sameChord(chord, _))
+        // Flag if it doesn't step up by a semitone to tonic
+        if !(nextNote.midi - note.midi == 1 && nextNote.noteType.value % 12 == tonicPc)
+      yield (beat, note, NoteError.UnresolvedLeadingTone)
+  end checkLeadingToneResolution
+
+  /** Flag chordal 7ths that do not resolve down by a diatonic step (1–2
+    * semitones) when the chord changes.
+    */
+  private def checkChordal7thResolution(
+      voices: List[List[Note]],
+      analyses: List[Analysis]
+  ): List[(Int, Note, NoteError)] =
+    val numBeats = if voices.nonEmpty then voices.head.size else 0
+    for
+      voice <- voices
+      beat  <- (0 until numBeats - 1).toList
+      note      = voice(beat)
+      chord    <- analyses.lift(beat).flatMap(_.chords.headOption).toList
+      if isChordal7th(note, chord.chord)
+      nextNote  = voice(beat + 1)
+      nextChord  = analyses.lift(beat + 1).flatMap(_.chords.headOption)
+      // Don't flag if the chord sustains unchanged
+      if !nextChord.exists(sameChord(chord, _))
+      // Flag if it doesn't resolve down by a step
+      diff = note.midi - nextNote.midi
+      if diff != 1 && diff != 2
+    yield (beat, note, NoteError.UnresolvedChordal7th)
+  end checkChordal7thResolution
 
 end PartWriting

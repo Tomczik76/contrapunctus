@@ -335,4 +335,120 @@ class PartWritingSuite extends munit.FunSuite:
     assert(!hasNoteError(analyses, NoteError.ParallelFifths))
     assert(!hasNoteError(analyses, NoteError.ParallelOctaves))
 
+  // --- Chordal 7th resolution ---
+
+  test("chordal 7th resolves down — no error"):
+    // V7 → I: soprano F5 resolves down by step to E5.
+    val soprano = voice(F(5), E(5))
+    val alto    = voice(D(4), C(4))
+    val tenor   = voice(B(3), G(3))
+    val bass    = voice(G(2), C(2))
+    val result = Analysis.fromVoices(
+      NoteType.C,
+      Scale.Major,
+      List(soprano, alto, tenor, bass)
+    )
+    val analyses = flatAnalyses(result)
+    assert(!hasNoteError(analyses, NoteError.UnresolvedChordal7th))
+
+  test("chordal 7th leaps instead of resolving — error flagged"):
+    // V7 → I: soprano F5 leaps up to G5 instead of resolving down to E5.
+    val soprano = voice(F(5), G(5))
+    val alto    = voice(D(4), E(4))
+    val tenor   = voice(B(3), C(4))
+    val bass    = voice(G(2), C(2))
+    val result = Analysis.fromVoices(
+      NoteType.C,
+      Scale.Major,
+      List(soprano, alto, tenor, bass)
+    )
+    val analyses = flatAnalyses(result)
+    assert(hasNoteError(analyses, NoteError.UnresolvedChordal7th))
+
+  test("chordal 7th held when chord sustains — no error"):
+    // V7 sustained for two beats; F does not need to resolve yet.
+    val soprano = voice(F(5), F(5))
+    val alto    = voice(D(4), D(4))
+    val tenor   = voice(B(3), B(3))
+    val bass    = voice(G(2), G(2))
+    val result = Analysis.fromVoices(
+      NoteType.C,
+      Scale.Major,
+      List(soprano, alto, tenor, bass)
+    )
+    val analyses = flatAnalyses(result)
+    assert(!hasNoteError(analyses, NoteError.UnresolvedChordal7th))
+
+  test("add6 chord — sixth does not trigger chordal 7th rule"):
+    // C major 6th (C-E-G-A): the A is a major 6th, not a 7th — no resolution required.
+    val soprano = voice(A(4), G(4))
+    val alto    = voice(G(4), F(4))
+    val tenor   = voice(E(4), D(4))
+    val bass    = voice(C(3), G(2))
+    val result = Analysis.fromVoices(
+      NoteType.C,
+      Scale.Major,
+      List(soprano, alto, tenor, bass)
+    )
+    val analyses = flatAnalyses(result)
+    assert(!hasNoteError(analyses, NoteError.UnresolvedChordal7th))
+
+  // --- Leading tone resolution ---
+
+  test("leading tone resolves up to tonic — no error"):
+    // V → I: soprano B4 steps up to C5.
+    val soprano = voice(B(4), C(5))
+    val alto    = voice(G(4), E(4))
+    val tenor   = voice(D(4), C(4))
+    val bass    = voice(G(2), C(2))
+    val result = Analysis.fromVoices(
+      NoteType.C,
+      Scale.Major,
+      List(soprano, alto, tenor, bass)
+    )
+    val analyses = flatAnalyses(result)
+    assert(!hasNoteError(analyses, NoteError.UnresolvedLeadingTone))
+
+  test("leading tone falls instead of resolving — error flagged"):
+    // V → IV: soprano B4 falls to A4 instead of rising to C5.
+    val soprano = voice(B(4), A(4))
+    val alto    = voice(G(4), F(4))
+    val tenor   = voice(D(4), C(4))
+    val bass    = voice(G(2), F(2))
+    val result = Analysis.fromVoices(
+      NoteType.C,
+      Scale.Major,
+      List(soprano, alto, tenor, bass)
+    )
+    val analyses = flatAnalyses(result)
+    assert(hasNoteError(analyses, NoteError.UnresolvedLeadingTone))
+
+  test("leading tone in non-dominant chord — no error"):
+    // iii → IV: B is the root of iii, not in a dominant-function chord.
+    val soprano = voice(B(4), C(5))
+    val alto    = voice(G(4), A(4))
+    val tenor   = voice(E(4), F(4))
+    val bass    = voice(B(3), C(3))
+    val result = Analysis.fromVoices(
+      NoteType.C,
+      Scale.Major,
+      List(soprano, alto, tenor, bass)
+    )
+    val analyses = flatAnalyses(result)
+    assert(!hasNoteError(analyses, NoteError.UnresolvedLeadingTone))
+
+  test("leading tone resolution not checked in natural minor — no error"):
+    // Natural minor has no leading tone (♭7), so the rule doesn't apply.
+    val soprano = voice(Bb(4), C(5))
+    val alto    = voice(G(4), E(4))
+    val tenor   = voice(D(4), C(4))
+    val bass    = voice(G(2), C(2))
+    val result = Analysis.fromVoices(
+      NoteType.C,
+      Scale.NaturalMinor,
+      List(soprano, alto, tenor, bass)
+    )
+    val analyses = flatAnalyses(result)
+    assert(!hasNoteError(analyses, NoteError.UnresolvedLeadingTone))
+
 end PartWritingSuite

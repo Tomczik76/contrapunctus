@@ -1,8 +1,8 @@
 package io.github.tomczik76.contrapunctus
 
 import cats.data.NonEmptyList
-import io.github.tomczik76.contrapunctus.core.{Note, NoteType, Scale}
 import io.github.tomczik76.contrapunctus.core.Note.{`F#` as Fs, `G#` as Gs, *}
+import io.github.tomczik76.contrapunctus.core.{Note, NoteType, Scale}
 import io.github.tomczik76.contrapunctus.notation.StaffPrinter
 import io.github.tomczik76.contrapunctus.rhythm.{Measure, Pulse, TimeSignature}
 
@@ -179,4 +179,82 @@ import io.github.tomczik76.contrapunctus.rhythm.{Measure, Pulse, TimeSignature}
   )
   println(StaffPrinter.render(eighths))
   println()
+  // ── Example 10: Parallel Fifths ──────────────────────────────────────
+  // All three voices step up together from I to ii: C→D (bass), G→A (middle),
+  // E→F (top). The bass–middle pair maintains a perfect fifth both before and
+  // after the move, creating parallel fifths (∥5).
+  println("═══ Parallel Fifths (C Major) ═══")
+  println()
+  val parallelFifths = NonEmptyList.of(
+    measure(
+      ts44,
+      chord(C(3), G(3), E(4)), // I
+      chord(D(3), A(3), F(4)), // ii — C→D / G→A maintains ∥5 between bass & middle
+      chord(B(2), G(3), D(4)), // V
+      chord(C(3), E(3), G(3))  // I
+    )
+  )
+  println(StaffPrinter.renderAnalysis(NoteType.C, Scale.Major, parallelFifths))
+  println()
+
+  // ── Example 11: Doubled Leading Tone ────────────────────────────────
+  // The leading tone B appears in two voices on the V chord (B3 tenor, B4
+  // soprano). The root G appears only once, so two errors are flagged: 2LT
+  // (doubled leading tone) and 2R (root not doubled in root position).
+  println("═══ Doubled Leading Tone (C Major) ═══")
+  println()
+  val doubledLT = NonEmptyList.of(
+    Measure(ts44, chord(G(2), B(3), D(4), B(4))) // V  — B in two voices → 2LT, 2R
+  )
+  println(StaffPrinter.renderAnalysis(NoteType.C, Scale.Major, doubledLT))
+  println()
+
+  // ── Example 12: Root Not Doubled in Root Position ───────────────────
+  // Beat 1 voices the I chord with E doubled and C appearing only once.
+  // Beat 2 corrects this by doubling the root.
+  println("═══ Root Not Doubled in Root Position (C Major) ═══")
+  println()
+  val badDoubling = NonEmptyList.of(
+    measure(
+      ts44,
+      chord(C(3), E(3), E(4), G(4)), // I  — E doubled, root C not doubled → 2R
+      chord(C(3), G(3), C(4), E(4))  // I  — root C doubled correctly
+    )
+  )
+  println(StaffPrinter.renderAnalysis(NoteType.C, Scale.Major, badDoubling))
+  println()
+
+  // ── Example 13: Unresolved Chordal 7th ──────────────────────────────
+  // The V⁷ chord (G-B-D-F) has F as its minor 7th. F should resolve
+  // down by step to E. Here the tonic chord is voiced without E, so the
+  // voice carrying F is forced to leap up to G instead (7↓).
+  println("═══ Unresolved Chordal 7th (C Major) ═══")
+  println()
+  val unresolved7th = NonEmptyList.of(
+    measure(
+      ts44,
+      chord(C(4), E(4), G(4), C(5)), // I
+      chord(B(3), D(4), G(4), F(4)), // V⁷ — F is the 7th
+      chord(C(4), G(4), G(4), C(5))  // I (no E) — F leaps to G (7↓)
+    )
+  )
+  println(StaffPrinter.renderAnalysis(NoteType.C, Scale.Major, unresolved7th))
+  println()
+
+  // ── Example 14: Unresolved Leading Tone ──────────────────────────────
+  // The leading tone B in V should step up by a semitone to C (tonic).
+  // Here it falls down to A instead, moving to IV rather than resolving (LT↑).
+  println("═══ Unresolved Leading Tone (C Major) ═══")
+  println()
+  val unresolvedLT = NonEmptyList.of(
+    measure(
+      ts44,
+      chord(C(4), E(4), G(4), C(5)), // I
+      chord(G(3), B(3), D(4), G(4)), // V  — B is the leading tone
+      chord(F(3), A(3), C(4), F(4))  // IV — B falls to A instead of rising to C (LT↑)
+    )
+  )
+  println(StaffPrinter.renderAnalysis(NoteType.C, Scale.Major, unresolvedLT))
+  println()
+
 end demo

@@ -21,10 +21,86 @@ object StaffPrinter:
   // Bass clef: G2, B2, D3, F3, A3
   private val bassStaffLines = List(18, 20, 22, 24, 26)
 
+  // Grand staff is used when notes unambiguously span both clefs:
+  // any note on/above treble bottom (E4=30) AND any note on/below bass top (A3=26).
+  private val trebleBottom         = trebleStaffLines.head  // 30 = E4
+  private val bassTop              = bassStaffLines.last    // 26 = A3
+  // Notes at or above C4 (dp=28) are assigned to treble in a grand staff.
+  private val grandStaffThreshold  = 28
+
   private val marginWidth = 3
   private val labelWidth  = 4
+  private val gapRows     = 2 // blank rows between treble and bass staves
 
   private type Placements = Map[(Int, Int), Char]
+
+  /** Captures the layout of one staff (treble or bass) within the combined grid.
+    * sectionMax/Min define the pitch range (inclusive) for this section.
+    * rowOffset is the first row in the combined grid belonging to this section.
+    */
+  private case class StaffSection(
+      staffLines: List[Int],
+      sectionMax: Int,
+      sectionMin: Int,
+      rowOffset: Int
+  ):
+    def rowFor(dp: Int): Int = rowOffset + (sectionMax - dp)
+    def staffMin: Int        = staffLines.head
+    def staffMax: Int        = staffLines.last
+    def rows: Int            = sectionMax - sectionMin + 1
+
+  /** Determine which staves to render based on all note diatonic positions.
+    * Uses a grand staff (treble + bass) when notes unambiguously span both ranges.
+    */
+  private def determineSections(
+      allPositions: List[Int]
+  ): List[StaffSection] =
+    if allPositions.isEmpty then
+      val tMax = trebleStaffLines.last + 1
+      val tMin = trebleStaffLines.head - 1
+      return List(StaffSection(trebleStaffLines, tMax, tMin, 0))
+    val hasTreble = allPositions.exists(_ >= trebleBottom)
+    val hasBass   = allPositions.exists(_ <= bassTop)
+    if hasTreble && hasBass then
+      // Grand staff: notes split at grandStaffThreshold (C4)
+      val trebleNotes = allPositions.filter(_ >= grandStaffThreshold)
+      val tMax        =
+        math.max(
+          if trebleNotes.nonEmpty then trebleNotes.max + 1
+          else trebleStaffLines.last + 1,
+          trebleStaffLines.last + 1
+        )
+      val tMin        =
+        math.min(
+          if trebleNotes.nonEmpty then trebleNotes.min - 1
+          else trebleStaffLines.head - 1,
+          trebleStaffLines.head - 1
+        )
+      val treble      = StaffSection(trebleStaffLines, tMax, tMin, 0)
+      val bassNotes   = allPositions.filter(_ < grandStaffThreshold)
+      val bMax        =
+        math.max(
+          if bassNotes.nonEmpty then bassNotes.max + 1
+          else bassStaffLines.last + 1,
+          bassStaffLines.last + 1
+        )
+      val bMin        =
+        math.min(
+          if bassNotes.nonEmpty then bassNotes.min - 1
+          else bassStaffLines.head - 1,
+          bassStaffLines.head - 1
+        )
+      val bass        = StaffSection(bassStaffLines, bMax, bMin, treble.rows + gapRows)
+      List(treble, bass)
+    else
+      // Single staff: choose treble or bass by median pitch
+      val median     = allPositions.sorted.apply(allPositions.size / 2)
+      val staffLines =
+        if median < grandStaffThreshold then bassStaffLines else trebleStaffLines
+      val sMax       = math.max(allPositions.max + 1, staffLines.last + 1)
+      val sMin       = math.min(allPositions.min - 1, staffLines.head - 1)
+      List(StaffSection(staffLines, sMax, sMin, 0))
+  end determineSections
 
   /** Diatonic position: octave * 7 + letter index. Determines vertical
     * placement on the staff. C4 = 28, D4 = 29, E4 = 30, etc.
@@ -78,11 +154,6 @@ object StaffPrinter:
       val highest = math.min(dp, staffMax + 8)
       (staffMax + 2 to highest).filter(_ % 2 == 0).toSet
     else Set.empty
-
-  /** Select treble or bass clef based on the median pitch of all notes. */
-  private def selectStaffLines(positions: List[Int]): List[Int] =
-    val median = positions.sorted.apply(positions.size / 2)
-    if median < 28 then bassStaffLines else trebleStaffLines
 
   /** Abbreviation for NonChordToneType labels. */
   private def nctAbbrev(nct: NonChordToneType): String =
@@ -154,12 +225,17 @@ object StaffPrinter:
       number.toString.zipWithIndex.map((ch, i) => (row, i) -> ch).toMap
     else Map.empty
 
+  /** Find the appropriate staff section for a diatonic position. */
+  private def sectionFor(dp: Int, sections: List[StaffSection]): StaffSection =
+    if sections.size == 1 then sections.head
+    else if dp >= grandStaffThreshold then sections(0) // treble
+    else sections(1)                                    // bass
+
   /** Generate character placements for a single beat column's notes. */
   private def beatPlacements(
       col: BeatColumn,
       nctNotes: Set[Note],
-      staffLines: List[Int],
-      gridMax: Int,
+      sections: List[StaffSection],
       numRows: Int,
       musicEnd: Int
   ): Placements =
@@ -167,33 +243,35 @@ object StaffPrinter:
       case None => Map.empty
       case Some(notes) =>
         val ledgerChars = notes.toList.flatMap: n =>
-          ledgerLinePositions(diatonicPos(n), staffLines).toList.flatMap:
-            ldp =>
-              val lrow = gridMax - ldp
-              if lrow >= 0 && lrow < numRows then
-                (1 to 3).collect:
-                  case k if col.colOffset + k < musicEnd =>
-                    (lrow, col.colOffset + k) -> '─'
-              else Nil
+          val dp      = diatonicPos(n)
+          val section = sectionFor(dp, sections)
+          ledgerLinePositions(dp, section.staffLines).toList.flatMap: ldp =>
+            val lrow = section.rowFor(ldp)
+            if lrow >= 0 && lrow < numRows then
+              (1 to 3).collect:
+                case k if col.colOffset + k < musicEnd =>
+                  (lrow, col.colOffset + k) -> '─'
+            else Nil
 
         val noteChars = notes.toList.flatMap: note =>
-          val dp  = diatonicPos(note)
-          val row = gridMax - dp
+          val dp      = diatonicPos(note)
+          val section = sectionFor(dp, sections)
+          val row     = section.rowFor(dp)
           if row < 0 || row >= numRows then Nil
           else
-            val noteCol = col.colOffset + 2
+            val noteCol  = col.colOffset + 2
             val headChar =
               if nctNotes.contains(note) then '◇'
               else if col.noteValueFrac >= Rational(1, 2) then '○'
               else '●'
-            val head =
+            val head     =
               if noteCol < musicEnd then List((row, noteCol) -> headChar)
               else Nil
-            val dot =
+            val dot      =
               if isDotted(col.noteValueFrac) && noteCol + 1 < musicEnd then
                 List((row, noteCol + 1) -> '·')
               else Nil
-            val acc = accidentalStr(note.noteType)
+            val acc      = accidentalStr(note.noteType)
             val accChars =
               if acc.nonEmpty then
                 val start = 2 - acc.length
@@ -213,11 +291,12 @@ object StaffPrinter:
   /** Shared grid-building logic used by both render and renderAnalysis. When
     * nctNotesByBeat is provided, notes at each beat index are rendered with ◇.
     * The list must align with the flat sequence of leaves across all measures.
+    * Automatically renders a grand staff when notes span both treble and bass ranges.
     */
   private def buildGrid(
       measures: NonEmptyList[Measure[Note]],
       nctNotesByBeat: List[Set[Note]] = Nil
-  ): (String, List[List[BeatColumn]], Int, Int, List[Int]) =
+  ): (String, List[List[BeatColumn]], Int) =
     // Extract leaves with durations from each measure
     val measLeaves: List[List[LeafInfo]] = measures.toList.map: m =>
       val ts = m.timeSignature
@@ -230,15 +309,8 @@ object StaffPrinter:
       .flatMap(_.notes.toList.flatMap(_.toList))
 
     val allPositions = allNotes.map(diatonicPos)
-    val staffLines   = selectStaffLines(allPositions)
-    val staffMin     = staffLines.head
-    val staffMax     = staffLines.last
-
-    val noteMin = allPositions.min
-    val noteMax = allPositions.max
-    val gridMin = math.min(noteMin - 1, staffMin - 1)
-    val gridMax = math.max(noteMax + 1, staffMax + 1)
-    val numRows = gridMax - gridMin + 1
+    val sections     = determineSections(allPositions)
+    val numRows      = sections.map(_.rows).sum + (sections.size - 1) * gapRows
 
     // Compute column widths proportional to note value
     val measColWidths: List[List[Int]] = measLeaves.map(
@@ -268,30 +340,42 @@ object StaffPrinter:
                 )
           (acc :+ columns, nextOffset + 1) // +1 for barline gap
 
-    // Layer 1: Staff lines
-    val staffLineChars: Placements = staffLines.flatMap: dp =>
-      val row = gridMax - dp
-      if row >= 0 && row < numRows then
-        (marginWidth until musicEnd).map(col => (row, col) -> '─')
-      else Nil
+    // Layer 1: Staff lines (all sections)
+    val staffLineChars: Placements = sections.flatMap: section =>
+      section.staffLines.flatMap: dp =>
+        val row = section.rowFor(dp)
+        if row >= 0 && row < numRows then
+          (marginWidth until musicEnd).map(col => (row, col) -> '─')
+        else Nil
     .toMap
 
-    // Layer 2: Time signature
-    val ts = measures.head.timeSignature
-    val tsChars: Placements =
-      numberPlacements(gridMax - (staffLines(3) + 1), numRows, ts.top) ++
-        numberPlacements(gridMax - (staffLines(1) - 1), numRows, ts.bottom)
+    // Layer 2: Time signature (all sections)
+    val ts      = measures.head.timeSignature
+    val tsChars = sections.flatMap: section =>
+      (numberPlacements(
+        section.rowFor(section.staffLines(3) + 1),
+        numRows,
+        ts.top
+      ) ++
+        numberPlacements(
+          section.rowFor(section.staffLines(1) - 1),
+          numRows,
+          ts.bottom
+        )).toList
+    .toMap
 
-    // Layer 3: Barlines
-    val barlineChars: Placements = beatColumns.init.flatMap: cols =>
-      val barCol = cols.last.colOffset + cols.last.colWidth
-      (0 until numRows).collect:
-        case row
-            if gridMax - row >= staffMin &&
-              gridMax - row <= staffMax &&
-              barCol < musicEnd =>
-          val dp = gridMax - row
-          (row, barCol) -> (if staffLines.contains(dp) then '┼' else '│')
+    // Layer 3: Barlines (all sections)
+    val barlineChars: Placements = sections.flatMap: section =>
+      beatColumns.init.flatMap: cols =>
+        val barCol = cols.last.colOffset + cols.last.colWidth
+        (section.staffMin to section.staffMax).flatMap: dp =>
+          val row = section.rowFor(dp)
+          if row >= 0 && row < numRows && barCol < musicEnd then
+            List(
+              (row, barCol) ->
+                (if section.staffLines.contains(dp) then '┼' else '│')
+            )
+          else Nil
     .toMap
 
     // Layer 4: Notes (ledger lines, accidentals, noteheads, dots)
@@ -300,23 +384,17 @@ object StaffPrinter:
       flatCols.zipWithIndex.foldLeft(Map.empty: Placements):
         case (acc, (col, beatIdx)) =>
           val nctNotes = nctNotesByBeat.lift(beatIdx).getOrElse(Set.empty)
-          acc ++ beatPlacements(
-            col,
-            nctNotes,
-            staffLines,
-            gridMax,
-            numRows,
-            musicEnd
-          )
+          acc ++ beatPlacements(col, nctNotes, sections, numRows, musicEnd)
 
-    // Layer 5: Right-margin labels
-    val labelChars: Placements = staffLines.flatMap: dp =>
-      val row = gridMax - dp
-      if row >= 0 && row < numRows then
-        s" ${posToName(dp)}".zipWithIndex.collect:
-          case (ch, i) if musicEnd + i < totalWidth =>
-            (row, musicEnd + i) -> ch
-      else Nil
+    // Layer 5: Right-margin labels (all sections)
+    val labelChars: Placements = sections.flatMap: section =>
+      section.staffLines.flatMap: dp =>
+        val row = section.rowFor(dp)
+        if row >= 0 && row < numRows then
+          s" ${posToName(dp)}".zipWithIndex.collect:
+            case (ch, i) if musicEnd + i < totalWidth =>
+              (row, musicEnd + i) -> ch
+        else Nil
     .toMap
 
     // Merge layers (later layers override earlier)
@@ -331,7 +409,7 @@ object StaffPrinter:
           .stripTrailing()
       .mkString("\n")
 
-    (gridStr, beatColumns, musicWidth, gridMax, staffLines)
+    (gridStr, beatColumns, musicWidth)
   end buildGrid
 
   /** Render measures as a text-based staff. */
@@ -341,7 +419,7 @@ object StaffPrinter:
       .flatMap(_.toList.flatMap(_.toList))
     if allNotes.isEmpty then return "(empty)"
 
-    val (gridStr, _, _, _, _) = buildGrid(measures)
+    val (gridStr, _, _) = buildGrid(measures)
     gridStr
 
   /** Render measures with Roman numeral analysis, non-chord tone markers, and
@@ -359,7 +437,7 @@ object StaffPrinter:
 
     // Run analysis on the pulse sequence extracted from measures
     val pulses         = measures.map(_.pulses)
-    val analysisPulses = Analysis(tonic, scale, pulses)
+    val analysisPulses = Analysis.analyzeWithPartWriting(tonic, scale, pulses)
     val analyses: List[Analysis] =
       analysisPulses.toList.flatMap(Pulse.flatten).map(_.head)
 
@@ -367,7 +445,7 @@ object StaffPrinter:
     val nctNotesByBeat: List[Set[Note]] = analyses.map: a =>
       a.notes.filter(_.nonChordToneType.isDefined).map(_.note).toSet
 
-    val (gridStr, beatColumns, musicWidth, _, _) =
+    val (gridStr, beatColumns, musicWidth) =
       buildGrid(measures, nctNotesByBeat)
     val totalWidth = marginWidth + musicWidth + labelWidth
 
@@ -433,7 +511,9 @@ object StaffPrinter:
       case NoteError.DirectOctaves      => "→8"
       case NoteError.VoiceCrossing      => "VX"
       case NoteError.SpacingError(_)    => "Sp"
-      case NoteError.DoubledLeadingTone => "2LT"
+      case NoteError.DoubledLeadingTone    => "2LT"
+      case NoteError.UnresolvedLeadingTone => "LT↑"
+      case NoteError.UnresolvedChordal7th  => "7↓"
 
   private def chordErrAbbrev(err: ChordError): String =
     err match

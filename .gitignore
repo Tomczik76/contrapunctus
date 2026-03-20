@@ -30,3 +30,7 @@ metals.sbt
 .idea
 .idea_modules
 /.worksheet/
+
+# Frontend
+frontend/node_modules/
+frontend/dist/
