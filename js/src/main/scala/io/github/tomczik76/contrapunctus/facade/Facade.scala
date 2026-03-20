@@ -169,6 +169,11 @@ object Contrapunctus:
       case "major"         => Scale.Major
       case "minor"         => Scale.NaturalMinor
       case "harmonicMinor" => Scale.HarmonicMinor
+      case "dorian"        => Scale.Dorian
+      case "phrygian"      => Scale.Phrygian
+      case "lydian"        => Scale.Lydian
+      case "mixolydian"    => Scale.Mixolydian
+      case "locrian"       => Scale.Locrian
       case other =>
         throw js.JavaScriptException(js.Error(s"Unknown scale: $other"))
 

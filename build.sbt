@@ -1,6 +1,18 @@
 val scala3Version = "3.5.2"
 
-lazy val root = crossProject(JVMPlatform, JSPlatform)
+// Backend versions
+val Http4sVersion     = "0.23.33"
+val CirceVersion      = "0.14.14"
+val MunitVersion      = "1.1.1"
+val LogbackVersion    = "1.5.6"
+val SkunkVersion      = "0.6.5"
+val FlywayVersion     = "10.17.0"
+val PostgresVersion   = "42.7.3"
+val BCryptVersion     = "0.4"
+val JwtVersion        = "4.4.0"
+val PureConfigVersion = "0.17.8"
+
+lazy val core = crossProject(JVMPlatform, JSPlatform)
   .in(file("."))
   .settings(
     name := "Contrapunctus",
@@ -16,4 +28,37 @@ lazy val root = crossProject(JVMPlatform, JSPlatform)
   .jsSettings(
     scalaJSUseMainModuleInitializer := false,
     scalaJSLinkerConfig ~= { _.withModuleKind(ModuleKind.ESModule) }
+  )
+
+lazy val backend = (project in file("backend"))
+  .settings(
+    name         := "contrapunctus-backend",
+    version      := "0.0.1-SNAPSHOT",
+    scalaVersion := scala3Version,
+    organization := "io.github.tomczik76",
+    libraryDependencies ++= Seq(
+      "org.http4s"     %% "http4s-ember-server" % Http4sVersion,
+      "org.http4s"     %% "http4s-circe"        % Http4sVersion,
+      "org.http4s"     %% "http4s-dsl"          % Http4sVersion,
+      "io.circe"       %% "circe-generic"       % CirceVersion,
+      "io.circe"       %% "circe-parser"        % CirceVersion,
+      "org.scalameta"  %% "munit"               % MunitVersion % Test,
+      "ch.qos.logback" %  "logback-classic"     % LogbackVersion,
+      "org.tpolecat"   %% "skunk-core"          % SkunkVersion,
+      "org.flywaydb"   %  "flyway-core"         % FlywayVersion,
+      "org.flywaydb"   %  "flyway-database-postgresql" % FlywayVersion,
+      "org.postgresql"  %  "postgresql"          % PostgresVersion,
+      "org.mindrot"    %  "jbcrypt"              % BCryptVersion,
+      "com.auth0"      %  "java-jwt"             % JwtVersion,
+      "com.github.pureconfig" %% "pureconfig-core" % PureConfigVersion,
+    ),
+    testFrameworks += new TestFramework("munit.Framework"),
+    assembly / mainClass := Some("contrapunctus.backend.Main"),
+    assembly / assemblyJarName := "backend.jar",
+    assembly / assemblyMergeStrategy := {
+      case PathList("META-INF", "services", _*) => MergeStrategy.concat
+      case PathList("META-INF", _*)             => MergeStrategy.discard
+      case "reference.conf"                     => MergeStrategy.concat
+      case _                                    => MergeStrategy.first
+    }
   )

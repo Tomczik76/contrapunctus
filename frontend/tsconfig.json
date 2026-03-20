@@ -15,5 +15,6 @@
       "contrapunctus": ["../js/target/scala-3.5.2/contrapunctus-fastopt/main.js"]
     }
   },
+  "types": ["vite/client"],
   "include": ["src"]
 }

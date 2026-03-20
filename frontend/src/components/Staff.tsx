@@ -598,7 +598,8 @@ function NoteHead({ note, x, staffTopDp, staffBotDp, yOffset, durationFraction, 
 
       {/* Accidental */}
       {accSym && (
-        <text x={x - headW / 2 - 3} y={y + 4} fontSize={14} textAnchor="end" fill="currentColor">
+        <text x={x - headW / 2 - 1} y={y + (accSym === "\u266D" ? 4 : 6)} fontSize={accSym === "\u266E" ? 17 : 16} textAnchor="end"
+          fill="currentColor" stroke="currentColor" strokeWidth={0.5} paintOrder="stroke">
           {accSym}
         </text>
       )}
@@ -669,7 +670,7 @@ const ED_GRAND_THRESHOLD = 28; // C4 — notes >= 28 go to treble
 const ED_CLEF_X = 12;
 const ED_TS_X = CLEF_WIDTH + 12;
 const ED_LEFT = CLEF_WIDTH + TS_WIDTH + 10;
-const ED_NOTE_SPACING = 45;
+const ED_NOTE_SPACING = 55;
 const ED_BARLINE_GAP = 12;
 
 /** Fraction of a whole note for each duration. */
@@ -834,8 +835,41 @@ const MINOR_KEY_SIGS: Record<number, number> = {
 /** Width per accidental glyph in the key signature. */
 const KS_ACCIDENTAL_W = 10;
 
+// Semitone value for each tonicIdx: C=0, C#=1, Db=1, D=2, Eb=3, E=4, F=5, F#=6, Gb=6, G=7, Ab=8, A=9, Bb=10, B=11
+const TONIC_SEMITONES = [0, 1, 1, 2, 3, 4, 5, 6, 6, 7, 8, 9, 10, 11];
+
+// All tonicIdx values for each semitone (enharmonic equivalents)
+const SEMITONE_TO_TONICS: Record<number, number[]> = {
+  0: [0], 1: [1, 2], 2: [3], 3: [4], 4: [5], 5: [6], 6: [7, 8], 7: [9], 8: [10], 9: [11], 10: [12], 11: [13],
+};
+
+// Semitone offset from mode tonic to its relative major tonic
+const MODE_MAJOR_OFFSET: Record<string, number> = {
+  dorian: 10,     // down whole step = +10
+  phrygian: 8,    // down major 3rd = +8
+  lydian: 7,      // down perfect 4th = +7
+  mixolydian: 5,  // down perfect 5th = +5
+  locrian: 1,     // down major 7th = +1
+};
+
 function getKeySig(tonicIdx: number, scaleName: string): { count: number; type: "sharp" | "flat" | "none" } {
-  const sigs = scaleName === "major" ? MAJOR_KEY_SIGS : MINOR_KEY_SIGS;
+  const modeOffset = MODE_MAJOR_OFFSET[scaleName];
+  if (modeOffset !== undefined) {
+    // Find the relative major tonic and pick the enharmonic with fewest accidentals
+    const semitone = TONIC_SEMITONES[tonicIdx];
+    const majorSemitone = (semitone + modeOffset) % 12;
+    const candidates = SEMITONE_TO_TONICS[majorSemitone] ?? [];
+    let bestVal = 99;
+    for (const idx of candidates) {
+      const v = MAJOR_KEY_SIGS[idx] ?? 0;
+      if (Math.abs(v) < Math.abs(bestVal)) bestVal = v;
+    }
+    if (bestVal === 99) bestVal = 0;
+    if (bestVal > 0) return { count: bestVal, type: "sharp" };
+    if (bestVal < 0) return { count: -bestVal, type: "flat" };
+    return { count: 0, type: "none" };
+  }
+  const sigs = scaleName === "major" || scaleName === "ionian" ? MAJOR_KEY_SIGS : MINOR_KEY_SIGS;
   const val = sigs[tonicIdx] ?? 0;
   if (val > 0) return { count: val, type: "sharp" };
   if (val < 0) return { count: -val, type: "flat" };
@@ -874,6 +908,37 @@ function displayAccidental(stored: Accidental, dp: number, keySig: { count: numb
   return accidentalSymbol(eff);
 }
 
+/** Given a note's sounding accidental under the old key sig, compute what
+ *  stored accidental preserves that pitch under a new key sig. */
+function storedForSounding(
+  sounding: Accidental,
+  dp: number,
+  newKeySig: { count: number; type: "sharp" | "flat" | "none" }
+): Accidental {
+  const ksAcc = keySignatureAccidental(dp, newKeySig);
+  // If the key sig already gives us the right accidental, store "" (follow key sig)
+  if (sounding === ksAcc) return "";
+  // If sounding is natural but key sig applies something, store "n"
+  if (sounding === "" && ksAcc !== "") return "n";
+  // Otherwise store the explicit accidental
+  return sounding;
+}
+
+function rewriteBeatsForKeySig(
+  beats: PlacedBeat[],
+  oldKeySig: { count: number; type: "sharp" | "flat" | "none" },
+  newKeySig: { count: number; type: "sharp" | "flat" | "none" }
+): PlacedBeat[] {
+  return beats.map((beat) => ({
+    ...beat,
+    notes: beat.notes.map((n) => {
+      const sounding = effectiveAccidental(n.accidental, n.dp, oldKeySig);
+      const newStored = storedForSounding(sounding, n.dp, newKeySig);
+      return { ...n, accidental: newStored };
+    }),
+  }));
+}
+
 const TONIC_OPTIONS = [
   { label: "C", letter: "C", acc: "" },
   { label: "C#", letter: "C", acc: "#" },
@@ -895,6 +960,11 @@ const SCALE_OPTIONS = [
   { label: "Major", value: "major" },
   { label: "Minor", value: "minor" },
   { label: "Harmonic Minor", value: "harmonicMinor" },
+  { label: "Dorian", value: "dorian" },
+  { label: "Phrygian", value: "phrygian" },
+  { label: "Lydian", value: "lydian" },
+  { label: "Mixolydian", value: "mixolydian" },
+  { label: "Locrian", value: "locrian" },
 ];
 
 /** Small SVG icon of a note for the duration picker buttons. */
@@ -1239,6 +1309,7 @@ export function NoteEditor() {
   }, [trebleBeats, bassBeats, trebleTimes, bassTimes, allTimePoints, tonicIdx, scaleName, tsTop, tsBottom, keySig]);
 
   const [rnSelections, setRnSelections] = useState<Record<number, number>>({});
+  const [openRnDropdown, setOpenRnDropdown] = useState<number | null>(null);
 
   const hasRN = romanNumerals.some((rn) => rn.length > 0);
 
@@ -1635,7 +1706,8 @@ export function NoteEditor() {
           return <line key={`l-${ldp}`} x1={x - LEDGER_HW} y1={ly} x2={x + LEDGER_HW} y2={ly} stroke="currentColor" strokeWidth={LINE_W} />;
         })}
         {accSym && (
-          <text x={x - headW / 2 - 3} y={y + 4} fontSize={14} textAnchor="end" fill="currentColor">{accSym}</text>
+          <text x={x - headW / 2 - 1} y={y + (accSym === "\u266D" ? 4 : 6)} fontSize={accSym === "\u266E" ? 17 : 16} textAnchor="end"
+            fill="currentColor" stroke="currentColor" strokeWidth={0.5} paintOrder="stroke">{accSym}</text>
         )}
         <path d={head.path} fill="currentColor" stroke="none"
           transform={`translate(${headX}, ${y}) scale(${s}, ${-s})`} />
@@ -1899,12 +1971,26 @@ export function NoteEditor() {
         </label>
         <label style={{ display: "flex", alignItems: "center", gap: 6 }}>
           <span>Key</span>
-          <select value={tonicIdx} onChange={(e) => setTonicIdx(Number(e.target.value))} style={selectStyle}>
+          <select value={tonicIdx} onChange={(e) => {
+            const newIdx = Number(e.target.value);
+            const oldKS = keySig;
+            const newKS = getKeySig(newIdx, scaleName);
+            setTrebleBeatsRaw((tb) => rewriteBeatsForKeySig(tb, oldKS, newKS));
+            setBassBeatsRaw((bb) => rewriteBeatsForKeySig(bb, oldKS, newKS));
+            setTonicIdx(newIdx);
+          }} style={selectStyle}>
             {TONIC_OPTIONS.map((t, i) => (
               <option key={t.label} value={i}>{t.label}</option>
             ))}
           </select>
-          <select value={scaleName} onChange={(e) => setScaleName(e.target.value)} style={selectStyle}>
+          <select value={scaleName} onChange={(e) => {
+            const newScale = e.target.value;
+            const oldKS = keySig;
+            const newKS = getKeySig(tonicIdx, newScale);
+            setTrebleBeatsRaw((tb) => rewriteBeatsForKeySig(tb, oldKS, newKS));
+            setBassBeatsRaw((bb) => rewriteBeatsForKeySig(bb, oldKS, newKS));
+            setScaleName(newScale);
+          }} style={selectStyle}>
             {SCALE_OPTIONS.map((s) => (
               <option key={s.value} value={s.value}>{s.label}</option>
             ))}
@@ -1921,7 +2007,7 @@ export function NoteEditor() {
       </div>
 
       {/* Interactive grand staff */}
-      <div ref={containerRef} style={{ width: "100%" }}>
+      <div ref={containerRef} style={{ width: "100%", position: "relative" }}>
       <svg
         ref={svgRef}
         width="100%"
@@ -1932,6 +2018,7 @@ export function NoteEditor() {
         onMouseMove={handleMouseMove}
         onMouseDown={handleMouseDown}
         onMouseUp={handleMouseUp}
+        onClick={() => setOpenRnDropdown(null)}
         onMouseLeave={() => { dragRef.current = null; setHoverDp(null); setHoverStaff(null); setHoverBeatIdx(null); }}
       >
         {Array.from({ length: systemCount }, (_, sysIdx) => {
@@ -1963,8 +2050,10 @@ export function NoteEditor() {
                 const kx = CLEF_WIDTH + 4 + i * KS_ACCIDENTAL_W;
                 return (
                   <g key={`ks-${i}`}>
-                    <text x={kx} y={dpToY(trebleDp, ED_TREBLE_TOP, trebleYOffset) + 4} fontSize={14} textAnchor="middle" fill="currentColor">{sym}</text>
-                    <text x={kx} y={dpToY(bassDp, ED_BASS_TOP, bassYOffset) + 4} fontSize={14} textAnchor="middle" fill="currentColor">{sym}</text>
+                    <text x={kx} y={dpToY(trebleDp, ED_TREBLE_TOP, trebleYOffset) + (keySig.type === "sharp" ? 6 : 4)} fontSize={16} textAnchor="middle"
+                      fill="currentColor" stroke="currentColor" strokeWidth={0.5} paintOrder="stroke">{sym}</text>
+                    <text x={kx} y={dpToY(bassDp, ED_BASS_TOP, bassYOffset) + (keySig.type === "sharp" ? 6 : 4)} fontSize={16} textAnchor="middle"
+                      fill="currentColor" stroke="currentColor" strokeWidth={0.5} paintOrder="stroke">{sym}</text>
                   </g>
                 );
               })}
@@ -2057,33 +2146,23 @@ export function NoteEditor() {
                 const rx = pos.x;
                 const rnY = staffHeight + 2;
                 const selIdx = rnSelections[i] ?? 0;
-                if (rns.length === 1) {
-                  return (
-                    <text key={`rn-${i}`} x={rx} y={rnY + 20} fontSize={18}
-                      fontStyle="normal" textAnchor="middle" fill="currentColor" fontFamily="serif">
-                      {rns[0]}
-                    </text>
-                  );
-                }
-                const foW = 68;
-                const foH = 28;
+                const label = rns[selIdx] ?? rns[0];
+                const hasAlts = rns.length > 1;
                 return (
-                  <foreignObject key={`rn-${i}`} x={rx - foW / 2} y={rnY} width={foW} height={foH}>
-                    <select
-                      value={selIdx}
-                      onChange={(e) => setRnSelections((s) => ({ ...s, [i]: Number(e.target.value) }))}
-                      style={{
-                        width: "100%", height: foH, fontSize: 15, fontFamily: "inherit",
-                        textAlign: "center", textAlignLast: "center",
-                        border: "1px solid #d0ccc8", borderRadius: 5, background: "#faf9f7",
-                        padding: 0, cursor: "pointer",
-                      }}
-                    >
-                      {rns.map((rn, j) => (
-                        <option key={j} value={j}>{rn}</option>
-                      ))}
-                    </select>
-                  </foreignObject>
+                  <g key={`rn-${i}`}
+                    style={hasAlts ? { cursor: "pointer" } : undefined}
+                    onClick={hasAlts ? (e) => { e.stopPropagation(); setOpenRnDropdown(openRnDropdown === i ? null : i); } : undefined}
+                  >
+                    {hasAlts && (() => {
+                      const boxW = Math.max(22, label.length * 9 + 2);
+                      return <rect x={rx - boxW / 2} y={rnY + 2} width={boxW} height={26} rx={4} ry={4}
+                        fill="none" stroke="#c0bbb5" strokeWidth={1} />;
+                    })()}
+                    <text x={rx} y={rnY + 20} fontSize={16}
+                      fontStyle="normal" textAnchor="middle" fill="currentColor" fontFamily="serif">
+                      {label}
+                    </text>
+                  </g>
                 );
               })}
 
@@ -2131,6 +2210,56 @@ export function NoteEditor() {
           );
         })}
       </svg>
+      {/* RN dropdown rendered outside SVG so it's not clipped */}
+      {openRnDropdown !== null && (() => {
+        const i = openRnDropdown;
+        const rns = romanNumerals[i];
+        if (!rns || rns.length < 2) return null;
+        const t = allTimePoints[i];
+        const pos = timeToPos.get(t);
+        if (!pos) return null;
+        const selIdx = rnSelections[i] ?? 0;
+        const svg = svgRef.current;
+        if (!svg) return null;
+        const pt = svg.createSVGPoint();
+        pt.x = pos.x;
+        const rnY = staffHeight + 2 + pos.systemIdx * systemTotalHeight + 24;
+        pt.y = rnY;
+        const ctm = svg.getScreenCTM();
+        if (!ctm) return null;
+        const screenPt = pt.matrixTransform(ctm);
+        const containerRect = containerRef.current?.getBoundingClientRect();
+        if (!containerRect) return null;
+        const left = screenPt.x - containerRect.left;
+        const top = screenPt.y - containerRect.top;
+        return (
+          <div style={{
+            position: "absolute", left, top, transform: "translateX(-50%)",
+            background: "#fff", border: "1px solid #d0ccc8", borderRadius: 4,
+            boxShadow: "0 2px 8px rgba(0,0,0,0.15)", zIndex: 10,
+            minWidth: 60,
+          }}>
+            {rns.map((rn, j) => (
+              <div key={j}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setRnSelections((s) => ({ ...s, [i]: j }));
+                  setOpenRnDropdown(null);
+                }}
+                style={{
+                  padding: "4px 10px", fontSize: 15, fontFamily: "serif",
+                  textAlign: "center", cursor: "pointer", whiteSpace: "nowrap",
+                  background: j === selIdx ? "#eee" : "transparent",
+                }}
+                onMouseEnter={(e) => (e.currentTarget.style.background = "#f0efed")}
+                onMouseLeave={(e) => (e.currentTarget.style.background = j === selIdx ? "#eee" : "transparent")}
+              >
+                {rn}
+              </div>
+            ))}
+          </div>
+        );
+      })()}
       </div>
     </div>
   );
