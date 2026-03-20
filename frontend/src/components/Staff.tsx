@@ -437,19 +437,37 @@ function GlyphClef({ path, lineDp, staffTopDp, yOffset, x }: {
 
 /** Render a single time-signature digit as a Bravura glyph. */
 function TsDigit({ digit, x, y }: { digit: number; x: number; y: number }) {
-  const g = TS_DIGIT_GLYPHS[digit];
-  if (!g) return null;
-  const path = vexOutlineToSvgPath(g.o);
+  const digits = String(digit).split("").map(Number);
+  if (digits.length === 1) {
+    const g = TS_DIGIT_GLYPHS[digits[0]];
+    if (!g) return null;
+    const path = vexOutlineToSvgPath(g.o);
+    const s = GLYPH_SCALE;
+    const cx = x - ((g.x_min + g.x_max) / 2) * s;
+    return (
+      <path d={path} fill="currentColor" stroke="none"
+        transform={`translate(${cx}, ${y}) scale(${s}, ${-s})`} />
+    );
+  }
+  // Multi-digit: compute total width, center the group
   const s = GLYPH_SCALE;
-  // Center the glyph horizontally: offset by half glyph width
-  const cx = x - ((g.x_min + g.x_max) / 2) * s;
+  const glyphs = digits.map((d) => TS_DIGIT_GLYPHS[d]).filter(Boolean);
+  const totalW = glyphs.reduce((sum, g) => sum + (g.x_max - g.x_min) * s, 0);
+  const gap = 2;
+  const totalWithGaps = totalW + (glyphs.length - 1) * gap;
+  let cx = x - totalWithGaps / 2;
   return (
-    <path
-      d={path}
-      fill="currentColor"
-      stroke="none"
-      transform={`translate(${cx}, ${y}) scale(${s}, ${-s})`}
-    />
+    <g>
+      {glyphs.map((g, i) => {
+        const path = vexOutlineToSvgPath(g.o);
+        const gx = cx - g.x_min * s;
+        cx += (g.x_max - g.x_min) * s + gap;
+        return (
+          <path key={i} d={path} fill="currentColor" stroke="none"
+            transform={`translate(${gx}, ${y}) scale(${s}, ${-s})`} />
+        );
+      })}
+    </g>
   );
 }
 
@@ -626,8 +644,57 @@ const ED_BASS_MID = 22;
 const ED_BASS_BOT = 18;
 const ED_GRAND_THRESHOLD = 28; // C4 — notes >= 28 go to treble
 const ED_CLEF_X = 12;
-const ED_LEFT = CLEF_WIDTH + 10;
+const ED_TS_X = CLEF_WIDTH + 12;
+const ED_LEFT = CLEF_WIDTH + TS_WIDTH + 10;
 const ED_NOTE_SPACING = 45;
+const ED_BARLINE_GAP = 12;
+
+/** Fraction of a whole note for each duration. */
+const DURATION_VALUE: Record<Duration, number> = {
+  whole: 1,
+  half: 1 / 2,
+  quarter: 1 / 4,
+  eighth: 1 / 8,
+  sixteenth: 1 / 16,
+};
+
+/** Which durations fit in a given remaining measure space. */
+function durationFits(dur: Duration, remaining: number): boolean {
+  return DURATION_VALUE[dur] <= remaining + 1e-9;
+}
+
+/** Compute measure groupings: array of { startIdx, count } into the flat beats array. */
+function computeMeasures(beats: PlacedBeat[], tsTop: number, tsBottom: number): { startIdx: number; count: number }[] {
+  const measureCapacity = tsTop / tsBottom; // fraction of a whole note
+  const measures: { startIdx: number; count: number }[] = [];
+  let i = 0;
+  while (i < beats.length) {
+    let used = 0;
+    const start = i;
+    while (i < beats.length) {
+      const val = DURATION_VALUE[beats[i].duration];
+      if (used + val > measureCapacity + 1e-9) break;
+      used += val;
+      i++;
+    }
+    measures.push({ startIdx: start, count: i - start });
+  }
+  return measures;
+}
+
+/** How much space remains in the last measure (or full capacity if all measures are complete). */
+function remainingInLastMeasure(beats: PlacedBeat[], tsTop: number, tsBottom: number): number {
+  const measureCapacity = tsTop / tsBottom;
+  const measures = computeMeasures(beats, tsTop, tsBottom);
+  if (measures.length === 0) return measureCapacity;
+  const last = measures[measures.length - 1];
+  let used = 0;
+  for (let i = last.startIdx; i < last.startIdx + last.count; i++) {
+    used += DURATION_VALUE[beats[i].duration];
+  }
+  const rem = measureCapacity - used;
+  return rem < 1e-9 ? measureCapacity : rem; // if full, next beat starts a new measure
+}
 
 const TONIC_OPTIONS = [
   { label: "C", letter: "C", acc: "" },
@@ -652,6 +719,50 @@ const SCALE_OPTIONS = [
   { label: "Harmonic Minor", value: "harmonicMinor" },
 ];
 
+/** Small SVG icon of a note for the duration picker buttons. */
+function NoteIcon({ duration, size }: { duration: Duration; size: number }) {
+  const gs = 0.022; // glyph-to-virtual scale
+  const head = duration === "whole" ? NOTEHEAD_WHOLE
+    : duration === "half" ? NOTEHEAD_HALF
+    : NOTEHEAD_BLACK;
+  const headW = (head.outlineXMax - head.outlineXMin) * gs;
+  const headH = 8;
+  const hasStem = duration !== "whole";
+  const hasFlag = duration === "eighth" || duration === "sixteenth";
+  const stemLen = hasStem ? 19 : 0;
+  const stemW = 0.8;
+
+  // Fixed viewBox — all icons same size
+  const vw = 18;
+  const vh = 30;
+
+  // Notehead always at the same vertical position (near bottom)
+  const headCy = vh - headH / 2 - 1;
+  const headCx = hasStem ? vw / 2 - 1 : vw / 2;
+  const headX = headCx - headW / 2 - head.outlineXMin * gs;
+
+  const stemX = headCx + headW / 2;
+  const stemTop = headCy - stemLen;
+
+  return (
+    <svg width={size * (vw / vh)} height={size} viewBox={`0 0 ${vw} ${vh}`}>
+      <path d={head.path} fill="currentColor" stroke="none"
+        transform={`translate(${headX}, ${headCy}) scale(${gs}, ${-gs})`} />
+      {hasStem && (
+        <line x1={stemX} y1={headCy} x2={stemX} y2={stemTop}
+          stroke="currentColor" strokeWidth={stemW} />
+      )}
+      {hasFlag && (() => {
+        const flagPath = duration === "eighth" ? FLAG_8TH_UP.path : FLAG_16TH_UP.path;
+        return (
+          <path d={flagPath} fill="currentColor" stroke="none"
+            transform={`translate(${stemX}, ${stemTop}) scale(${gs}, ${-gs})`} />
+        );
+      })()}
+    </svg>
+  );
+}
+
 export function NoteEditor() {
   const [selectedDuration, setSelectedDuration] = useState<Duration>("quarter");
   const [selectedAccidental, setSelectedAccidental] = useState<Accidental>("");
@@ -662,6 +773,8 @@ export function NoteEditor() {
   const [hoverBeatIdx, setHoverBeatIdx] = useState<number | null>(null);
   const [tonicIdx, setTonicIdx] = useState(0); // C
   const [scaleName, setScaleName] = useState("major");
+  const [tsTop, setTsTop] = useState(4);
+  const [tsBottom, setTsBottom] = useState(4);
   const svgRef = useRef<SVGSVGElement>(null);
 
   // Layout: treble from dp 40 down to 30, gap, bass from 26 down to 16
@@ -671,8 +784,54 @@ export function NoteEditor() {
   const displayBotDp = 14;
   const staffHeight = bassYOffset + (ED_BASS_TOP - displayBotDp) * STEP + STEP * 2;
 
+  // Compute measure groupings
+  const measureGroups = useMemo(() => computeMeasures(beats, tsTop, tsBottom), [beats, tsTop, tsBottom]);
+
+  // Compute x-positions for each beat, accounting for barlines
+  const beatPositions = useMemo(() => {
+    const positions: number[] = [];
+    let x = ED_LEFT;
+    for (let mi = 0; mi < measureGroups.length; mi++) {
+      const m = measureGroups[mi];
+      for (let bi = 0; bi < m.count; bi++) {
+        positions.push(x + ED_NOTE_SPACING / 2);
+        x += ED_NOTE_SPACING;
+      }
+      x += ED_BARLINE_GAP; // space for barline
+    }
+    return positions;
+  }, [measureGroups]);
+
+  /** Get x for beat index i (existing or new). */
+  function beatX(i: number): number {
+    if (i < beatPositions.length) return beatPositions[i];
+    // New beat: after last position + spacing (or start of new measure after barline)
+    if (beatPositions.length === 0) return ED_LEFT + ED_NOTE_SPACING / 2;
+    const last = beatPositions[beatPositions.length - 1];
+    // Check if last measure is full — if so, add barline gap
+    const remaining = remainingInLastMeasure(beats, tsTop, tsBottom);
+    const isFull = remaining >= tsTop / tsBottom - 1e-9;
+    return last + ED_NOTE_SPACING + (isFull ? ED_BARLINE_GAP : 0);
+  }
+
+  // Barline x-positions (after each completed or partial measure except the last)
+  const barlineXs = useMemo(() => {
+    const xs: number[] = [];
+    let idx = 0;
+    for (let mi = 0; mi < measureGroups.length; mi++) {
+      idx += measureGroups[mi].count;
+      if (mi < measureGroups.length - 1) {
+        // Barline between this measure's last beat and next measure's first beat
+        const lastX = beatPositions[idx - 1];
+        const nextX = beatPositions[idx];
+        xs.push((lastX + nextX) / 2);
+      }
+    }
+    return xs;
+  }, [measureGroups, beatPositions]);
+
   const totalWidth = Math.max(
-    ED_LEFT + (beats.length + 1) * ED_NOTE_SPACING + RIGHT_MARGIN,
+    beatX(beats.length) + ED_NOTE_SPACING / 2 + RIGHT_MARGIN,
     600
   );
 
@@ -681,7 +840,6 @@ export function NoteEditor() {
     if (beats.length === 0) return [];
     const tonic = TONIC_OPTIONS[tonicIdx];
     try {
-      // Convert each editor beat to a JsBeat
       const jBeats = beats.map((b) => {
         const notes = b.notes.map((n) => {
           const letterIdx = ((n.dp % 7) + 7) % 7;
@@ -690,39 +848,31 @@ export function NoteEditor() {
         });
         return C.beat(notes);
       });
-      // Pack into 4/4 measures (pad with rests to fill if needed)
-      const measures = [];
-      for (let i = 0; i < jBeats.length; i += 4) {
-        const chunk = jBeats.slice(i, i + 4);
-        // Pad to power of 2 for valid pulse tree
-        while (chunk.length > 0 && chunk.length < 2) chunk.push(C.rest());
-        while (chunk.length > 2 && chunk.length < 4) chunk.push(C.rest());
-        measures.push(C.measure(4, 4, chunk));
-      }
+      // Build measures from our computed groupings
+      const measures = measureGroups.map((mg) => {
+        const chunk = jBeats.slice(mg.startIdx, mg.startIdx + mg.count);
+        return C.measure(tsTop, tsBottom, chunk);
+      });
+      if (measures.length === 0) return [];
       const data = C.renderWithAnalysis(measures, tonic.letter, tonic.acc, scaleName);
       return data.measures.flatMap((m) => m.beats.map((b) => b.romanNumeral));
     } catch {
       return [];
     }
-  }, [beats, tonicIdx, scaleName]);
+  }, [beats, measureGroups, tonicIdx, scaleName, tsTop, tsBottom]);
 
   const hasRN = romanNumerals.some((rn) => rn.length > 0);
   const RN_SPACE_ED = hasRN ? 24 : 0;
   const editorStaffHeight = staffHeight + RN_SPACE_ED;
 
-  /** Get the x-position of beat at index i. */
-  function beatX(i: number): number {
-    return ED_LEFT + (i + 0.5) * ED_NOTE_SPACING;
-  }
-
   /** Convert mouse x to the nearest beat index. Returns beats.length if past all beats (new beat). */
   function xToBeatIdx(mouseX: number): number {
     if (beats.length === 0) return 0;
-    // Find closest existing beat, or the "new beat" slot
-    let closest = beats.length; // default: new beat
-    let closestDist = Math.abs(mouseX - beatX(beats.length));
+    const newX = beatX(beats.length);
+    let closest = beats.length;
+    let closestDist = Math.abs(mouseX - newX);
     for (let i = 0; i < beats.length; i++) {
-      const dist = Math.abs(mouseX - beatX(i));
+      const dist = Math.abs(mouseX - beatPositions[i]);
       if (dist < closestDist) {
         closestDist = dist;
         closest = i;
@@ -746,6 +896,15 @@ export function NoteEditor() {
     }
   }, [trebleYOffset, bassYOffset]);
 
+  // Drag state: tracks which note is being dragged
+  const dragRef = useRef<{
+    beatIdx: number;
+    note: PlacedNote;
+    startDp: number;
+    startStaff: "treble" | "bass";
+    moved: boolean;
+  } | null>(null);
+
   const handleMouseMove = useCallback((e: React.MouseEvent<SVGSVGElement>) => {
     const svg = svgRef.current;
     if (!svg) return;
@@ -757,14 +916,65 @@ export function NoteEditor() {
       setHoverDp(dp);
       setHoverStaff(staff);
       setHoverBeatIdx(xToBeatIdx(mouseX));
+      // Detect if drag has moved
+      if (dragRef.current) {
+        if (dp !== dragRef.current.startDp || staff !== dragRef.current.startStaff) {
+          dragRef.current.moved = true;
+        }
+      }
     } else {
       setHoverDp(null);
       setHoverStaff(null);
       setHoverBeatIdx(null);
     }
-  }, [yToDpAndStaff, beats.length]);
+  }, [yToDpAndStaff, beats.length, beatPositions]);
 
-  const handleClick = useCallback(() => {
+  const handleMouseDown = useCallback((e: React.MouseEvent<SVGSVGElement>) => {
+    if (hoverDp === null || hoverBeatIdx === null || hoverStaff === null) return;
+    if (deleteMode) return;
+    // Check if we're clicking on an existing note
+    if (hoverBeatIdx < beats.length) {
+      const beat = beats[hoverBeatIdx];
+      const existing = beat.notes.find((n) => n.dp === hoverDp && n.staff === hoverStaff);
+      if (existing) {
+        e.preventDefault();
+        dragRef.current = {
+          beatIdx: hoverBeatIdx,
+          note: existing,
+          startDp: hoverDp,
+          startStaff: hoverStaff,
+          moved: false,
+        };
+        return;
+      }
+    }
+  }, [hoverDp, hoverStaff, hoverBeatIdx, beats, deleteMode]);
+
+  const handleMouseUp = useCallback(() => {
+    const drag = dragRef.current;
+    dragRef.current = null;
+
+    if (drag && drag.moved && hoverDp !== null && hoverStaff !== null) {
+      // Commit the drag: move the note to the new position
+      setBeats((prev) => {
+        if (drag.beatIdx >= prev.length) return prev;
+        const beat = prev[drag.beatIdx];
+        const origMatch = (n: PlacedNote) => n.dp === drag.note.dp && n.staff === drag.note.staff;
+        // Remove the original note and add at new position
+        const withoutOrig = beat.notes.filter((n) => !origMatch(n));
+        // Check if there's already a note at the destination in this beat
+        const destMatch = (n: PlacedNote) => n.dp === hoverDp && n.staff === hoverStaff;
+        const filtered = withoutOrig.filter((n) => !destMatch(n));
+        const movedNote: PlacedNote = { dp: hoverDp, staff: hoverStaff, accidental: drag.note.accidental };
+        const newNotes = [...filtered, movedNote];
+        const updated = [...prev];
+        updated[drag.beatIdx] = { ...beat, notes: newNotes };
+        return updated;
+      });
+      return;
+    }
+
+    // No drag (or didn't move) — treat as regular click
     if (hoverDp === null || hoverBeatIdx === null || hoverStaff === null) return;
 
     const posMatch = (n: PlacedNote) => n.dp === hoverDp && n.staff === hoverStaff;
@@ -792,7 +1002,6 @@ export function NoteEditor() {
         const existing = beat.notes.find(posMatch);
         if (existing) {
           if (existing.accidental === selectedAccidental) {
-            // Same note+accidental — toggle off
             const newNotes = beat.notes.filter((n) => !posMatch(n));
             if (newNotes.length === 0) {
               return [...prev.slice(0, hoverBeatIdx), ...prev.slice(hoverBeatIdx + 1)];
@@ -801,20 +1010,19 @@ export function NoteEditor() {
             updated[hoverBeatIdx] = { ...beat, notes: newNotes };
             return updated;
           }
-          // Different accidental — replace
           const updated = [...prev];
           updated[hoverBeatIdx] = { ...beat, notes: beat.notes.map((n) => posMatch(n) ? hoverNote : n) };
           return updated;
         }
-        // Add note to chord
         const updated = [...prev];
         updated[hoverBeatIdx] = { ...beat, notes: [...beat.notes, hoverNote] };
         return updated;
       }
-      // New beat
+      const remaining = remainingInLastMeasure(prev, tsTop, tsBottom);
+      if (!durationFits(selectedDuration, remaining)) return prev;
       return [...prev, { notes: [hoverNote], duration: selectedDuration }];
     });
-  }, [hoverDp, hoverStaff, hoverBeatIdx, selectedDuration, selectedAccidental, deleteMode]);
+  }, [hoverDp, hoverStaff, hoverBeatIdx, selectedDuration, selectedAccidental, deleteMode, tsTop, tsBottom]);
 
   const handleUndo = useCallback(() => {
     setBeats((prev) => {
@@ -971,62 +1179,50 @@ export function NoteEditor() {
     return <g>{elements}</g>;
   }
 
-  const durations: { key: Duration; label: string }[] = [
-    { key: "whole", label: "1" },
-    { key: "half", label: "½" },
-    { key: "quarter", label: "¼" },
-    { key: "eighth", label: "⅛" },
-    { key: "sixteenth", label: "¹⁄₁₆" },
-  ];
+  const durations: Duration[] = ["whole", "half", "quarter", "eighth", "sixteenth"];
+
+  const btnBase: React.CSSProperties = {
+    width: 36, height: 36,
+    borderRadius: 4,
+    cursor: "pointer",
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
+    padding: 0,
+  };
+  const btnOn = (on: boolean): React.CSSProperties => ({
+    ...btnBase,
+    border: on ? "2px solid #333" : "1px solid #aaa",
+    background: on ? "#e0e0e0" : "#fff",
+  });
 
   return (
     <div>
       {/* Duration buttons */}
-      <div style={{ display: "flex", gap: 8, marginBottom: 12, alignItems: "center", flexWrap: "wrap" }}>
-        {durations.map(({ key, label }) => (
-          <button
-            key={key}
-            onClick={() => setSelectedDuration(key)}
-            style={{
-              fontSize: 20,
-              padding: "4px 12px",
-              border: selectedDuration === key ? "2px solid #333" : "1px solid #aaa",
-              borderRadius: 4,
-              background: selectedDuration === key ? "#e0e0e0" : "#fff",
-              cursor: "pointer",
-              fontFamily: "serif",
-            }}
-            title={key}
-          >
-            {label}
+      <div style={{ display: "flex", gap: 6, marginBottom: 12, alignItems: "center", flexWrap: "wrap" }}>
+        {durations.map((key) => (
+          <button key={key} onClick={() => setSelectedDuration(key)}
+            style={btnOn(selectedDuration === key)} title={key}>
+            <NoteIcon duration={key} size={28} />
           </button>
         ))}
-        <div style={{ width: 1, height: 28, background: "#ccc", margin: "0 4px" }} />
+        <div style={{ width: 1, height: 36, background: "#ccc", margin: "0 2px" }} />
         {([["", "\u266E"], ["#", "\u266F"], ["b", "\u266D"]] as [Accidental, string][]).map(([acc, sym]) => (
-          <button
-            key={acc || "nat"}
-            onClick={() => setSelectedAccidental(acc)}
-            style={{
-              fontSize: 18,
-              padding: "4px 10px",
-              border: selectedAccidental === acc ? "2px solid #333" : "1px solid #aaa",
-              borderRadius: 4,
-              background: selectedAccidental === acc ? "#e0e0e0" : "#fff",
-              cursor: "pointer",
-            }}
-            title={acc === "#" ? "Sharp" : acc === "b" ? "Flat" : "Natural"}
-          >
+          <button key={acc || "nat"} onClick={() => setSelectedAccidental(acc)}
+            style={{ ...btnOn(selectedAccidental === acc), fontSize: 20 }}
+            title={acc === "#" ? "Sharp" : acc === "b" ? "Flat" : "Natural"}>
             {sym}
           </button>
         ))}
-        <div style={{ width: 1, height: 28, background: "#ccc", margin: "0 4px" }} />
+        <div style={{ width: 1, height: 36, background: "#ccc", margin: "0 2px" }} />
         <button
           onClick={() => setDeleteMode((d) => !d)}
           style={{
-            padding: "4px 12px",
-            cursor: "pointer",
+            ...btnBase,
+            width: "auto",
+            padding: "0 10px",
+            fontSize: 13,
             border: deleteMode ? "2px solid #c00" : "1px solid #aaa",
-            borderRadius: 4,
             background: deleteMode ? "#fee" : "#fff",
             color: deleteMode ? "#c00" : "inherit",
           }}
@@ -1034,13 +1230,35 @@ export function NoteEditor() {
         >
           Delete
         </button>
-        <button onClick={handleUndo} style={{ padding: "4px 12px", cursor: "pointer" }} title="Undo last note">
+        <button onClick={handleUndo} style={{ ...btnBase, width: "auto", padding: "0 10px", fontSize: 13 }} title="Undo last note">
           Undo
         </button>
-        <button onClick={handleClear} style={{ padding: "4px 12px", cursor: "pointer" }} title="Clear all">
+        <button onClick={handleClear} style={{ ...btnBase, width: "auto", padding: "0 10px", fontSize: 13 }} title="Clear all">
           Clear
         </button>
-        <div style={{ width: 1, height: 28, background: "#ccc", margin: "0 4px" }} />
+        <div style={{ width: 1, height: 36, background: "#ccc", margin: "0 2px" }} />
+        <label style={{ fontFamily: "serif", fontSize: 14 }}>
+          <select
+            value={tsTop}
+            onChange={(e) => setTsTop(Number(e.target.value))}
+            style={{ fontFamily: "serif", fontSize: 14, padding: "2px 4px", width: 40 }}
+          >
+            {[2, 3, 4, 5, 6, 7, 8, 9, 12].map((n) => (
+              <option key={n} value={n}>{n}</option>
+            ))}
+          </select>
+          {" / "}
+          <select
+            value={tsBottom}
+            onChange={(e) => setTsBottom(Number(e.target.value))}
+            style={{ fontFamily: "serif", fontSize: 14, padding: "2px 4px", width: 40 }}
+          >
+            {[2, 4, 8, 16].map((n) => (
+              <option key={n} value={n}>{n}</option>
+            ))}
+          </select>
+        </label>
+        <div style={{ width: 1, height: 36, background: "#ccc", margin: "0 2px" }} />
         <label style={{ fontFamily: "serif", fontSize: 14 }}>
           Key:{" "}
           <select
@@ -1077,8 +1295,9 @@ export function NoteEditor() {
         viewBox={`0 0 ${totalWidth} ${editorStaffHeight}`}
         style={{ fontFamily: "serif", cursor: deleteMode ? "not-allowed" : "crosshair" }}
         onMouseMove={handleMouseMove}
-        onMouseLeave={() => { setHoverDp(null); setHoverStaff(null); setHoverBeatIdx(null); }}
-        onClick={handleClick}
+        onMouseDown={handleMouseDown}
+        onMouseUp={handleMouseUp}
+        onMouseLeave={() => { dragRef.current = null; setHoverDp(null); setHoverStaff(null); setHoverBeatIdx(null); }}
       >
         {/* Treble staff lines */}
         {ED_TREBLE_LINES.map((dp) => {
@@ -1097,9 +1316,52 @@ export function NoteEditor() {
         <path d={BASS_CLEF_PATH} fill="currentColor" stroke="none"
           transform={`translate(${ED_CLEF_X}, ${dpToY(24, ED_BASS_TOP, bassYOffset)}) scale(${GLYPH_SCALE}, ${-GLYPH_SCALE})`} />
 
+        {/* Time signature */}
+        {(() => {
+          const trebleTopLineY = dpToY(ED_TREBLE_LINES[4], ED_TREBLE_TOP, trebleYOffset);
+          const trebleMidLineY = dpToY(ED_TREBLE_LINES[2], ED_TREBLE_TOP, trebleYOffset);
+          const trebleBotLineY = dpToY(ED_TREBLE_LINES[0], ED_TREBLE_TOP, trebleYOffset);
+          const bassTopLineY = dpToY(ED_BASS_LINES[4], ED_BASS_TOP, bassYOffset);
+          const bassMidLineY = dpToY(ED_BASS_LINES[2], ED_BASS_TOP, bassYOffset);
+          const bassBotLineY = dpToY(ED_BASS_LINES[0], ED_BASS_TOP, bassYOffset);
+          return (
+            <>
+              <TsDigit digit={tsTop} x={ED_TS_X} y={(trebleTopLineY + trebleMidLineY) / 2} />
+              <TsDigit digit={tsBottom} x={ED_TS_X} y={(trebleMidLineY + trebleBotLineY) / 2} />
+              <TsDigit digit={tsTop} x={ED_TS_X} y={(bassTopLineY + bassMidLineY) / 2} />
+              <TsDigit digit={tsBottom} x={ED_TS_X} y={(bassMidLineY + bassBotLineY) / 2} />
+            </>
+          );
+        })()}
+
+        {/* Barlines */}
+        {barlineXs.map((bx, i) => {
+          const trebleTopY = dpToY(ED_TREBLE_LINES[4], ED_TREBLE_TOP, trebleYOffset);
+          const bassBotY = dpToY(ED_BASS_LINES[0], ED_BASS_TOP, bassYOffset);
+          return <line key={`bar-${i}`} x1={bx} y1={trebleTopY} x2={bx} y2={bassBotY} stroke="currentColor" strokeWidth={1} />;
+        })}
+
         {/* Placed beats */}
         {beats.map((beat, i) => {
-          const x = beatX(i);
+          const x = beatPositions[i];
+          const drag = dragRef.current;
+          if (drag && drag.beatIdx === i && drag.moved) {
+            // Render this beat with the dragged note dimmed
+            const filtered: PlacedBeat = {
+              ...beat,
+              notes: beat.notes.filter((n) => !(n.dp === drag.note.dp && n.staff === drag.note.staff)),
+            };
+            return (
+              <g key={`beat-${i}`}>
+                {filtered.notes.length > 0 && renderBeat(filtered, x)}
+                {renderNotehead(drag.note.dp, beat.duration, x,
+                  drag.note.staff === "treble" ? ED_TREBLE_TOP : ED_BASS_TOP,
+                  drag.note.staff === "treble" ? ED_TREBLE_LINES[0] : ED_BASS_LINES[0],
+                  drag.note.staff === "treble" ? trebleYOffset : bassYOffset,
+                  drag.note.accidental, 0.2)}
+              </g>
+            );
+          }
           return <g key={`beat-${i}`}>{renderBeat(beat, x)}</g>;
         })}
 
@@ -1107,7 +1369,7 @@ export function NoteEditor() {
         {hasRN && beats.map((_, i) => {
           const rn = romanNumerals[i];
           if (!rn) return null;
-          const x = beatX(i);
+          const x = beatPositions[i];
           const rnY = editorStaffHeight - RN_SPACE_ED + 16;
           return (
             <text
@@ -1125,13 +1387,23 @@ export function NoteEditor() {
           );
         })}
 
-        {/* Hover ghost note */}
+        {/* Hover ghost note / drag preview */}
         {hoverDp !== null && hoverStaff !== null && hoverBeatIdx !== null && (() => {
-          const x = beatX(hoverBeatIdx);
+          const drag = dragRef.current;
+          const isDragging = drag && drag.moved;
           const isTreble = hoverStaff === "treble";
           const sTopDp = isTreble ? ED_TREBLE_TOP : ED_BASS_TOP;
           const sBotDp = isTreble ? ED_TREBLE_LINES[0] : ED_BASS_LINES[0];
           const yOff = isTreble ? trebleYOffset : bassYOffset;
+
+          if (isDragging) {
+            // Show the dragged note at the hover position
+            const dur = beats[drag.beatIdx]?.duration ?? selectedDuration;
+            const x = beatPositions[drag.beatIdx];
+            return renderNotehead(hoverDp, dur, x, sTopDp, sBotDp, yOff, drag.note.accidental, 0.5);
+          }
+
+          const x = beatX(hoverBeatIdx);
           const existingBeat = beats[hoverBeatIdx];
           const noteExists = existingBeat?.notes.some((n) => n.dp === hoverDp && n.staff === hoverStaff);
 
