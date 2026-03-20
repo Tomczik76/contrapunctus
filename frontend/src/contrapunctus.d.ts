@@ -40,7 +40,7 @@ export interface BeatRender {
   /** Duration as [numerator, denominator] fraction of a whole note. */
   readonly durationFraction: [number, number];
   readonly isRest: boolean;
-  readonly romanNumeral: string;
+  readonly romanNumerals: string[];
 }
 
 /** A rendered measure. */

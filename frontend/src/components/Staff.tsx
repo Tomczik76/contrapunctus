@@ -242,7 +242,7 @@ export function GrandStaff({ data }: StaffProps) {
 
   // Check if any beat has a Roman numeral
   const hasRomanNumerals = measures.some((m) =>
-    m.beats.some((b) => b.romanNumeral && b.romanNumeral.length > 0)
+    m.beats.some((b) => b.romanNumerals && b.romanNumerals.length > 0)
   );
   const RN_SPACE = hasRomanNumerals ? 24 : 0;
 
@@ -379,7 +379,7 @@ export function GrandStaff({ data }: StaffProps) {
 
       {/* Roman numerals */}
       {hasRomanNumerals && beatPositions.map(({ x, beat }, i) => {
-        if (!beat.romanNumeral) return null;
+        if (!beat.romanNumerals || beat.romanNumerals.length === 0) return null;
         const rnY = height - RN_SPACE + 16;
         return (
           <text
@@ -392,7 +392,7 @@ export function GrandStaff({ data }: StaffProps) {
             fill="currentColor"
             fontFamily="serif"
           >
-            {beat.romanNumeral}
+            {beat.romanNumerals[0]}
           </text>
         );
       })}
@@ -855,14 +855,16 @@ export function NoteEditor() {
       });
       if (measures.length === 0) return [];
       const data = C.renderWithAnalysis(measures, tonic.letter, tonic.acc, scaleName);
-      return data.measures.flatMap((m) => m.beats.map((b) => b.romanNumeral));
+      return data.measures.flatMap((m) => m.beats.map((b) => b.romanNumerals));
     } catch {
       return [];
     }
   }, [beats, measureGroups, tonicIdx, scaleName, tsTop, tsBottom]);
 
+  const [rnSelections, setRnSelections] = useState<Record<number, number>>({});
+
   const hasRN = romanNumerals.some((rn) => rn.length > 0);
-  const RN_SPACE_ED = hasRN ? 24 : 0;
+  const RN_SPACE_ED = hasRN ? 32 : 0;
   const editorStaffHeight = staffHeight + RN_SPACE_ED;
 
   /** Convert mouse x to the nearest beat index. Returns beats.length if past all beats (new beat). */
@@ -1367,23 +1369,59 @@ export function NoteEditor() {
 
         {/* Roman numerals */}
         {hasRN && beats.map((_, i) => {
-          const rn = romanNumerals[i];
-          if (!rn) return null;
+          const rns = romanNumerals[i];
+          if (!rns || rns.length === 0) return null;
           const x = beatPositions[i];
-          const rnY = editorStaffHeight - RN_SPACE_ED + 16;
+          const rnY = editorStaffHeight - RN_SPACE_ED + 2;
+          const selIdx = rnSelections[i] ?? 0;
+          if (rns.length === 1) {
+            return (
+              <text
+                key={`rn-${i}`}
+                x={x}
+                y={rnY + 20}
+                fontSize={18}
+                fontStyle="normal"
+                textAnchor="middle"
+                fill="currentColor"
+                fontFamily="serif"
+              >
+                {rns[0]}
+              </text>
+            );
+          }
+          const foW = 50;
+          const foH = 28;
           return (
-            <text
+            <foreignObject
               key={`rn-${i}`}
-              x={x}
+              x={x - foW / 2}
               y={rnY}
-              fontSize={14}
-              fontStyle="normal"
-              textAnchor="middle"
-              fill="currentColor"
-              fontFamily="serif"
+              width={foW}
+              height={foH}
             >
-              {rn}
-            </text>
+              <select
+                value={selIdx}
+                onChange={(e) => setRnSelections((s) => ({ ...s, [i]: Number(e.target.value) }))}
+                style={{
+                  width: "100%",
+                  height: foH,
+                  fontSize: 16,
+                  fontFamily: "serif",
+                  textAlign: "center",
+                  textAlignLast: "center",
+                  border: "1px solid #ccc",
+                  borderRadius: 3,
+                  background: "#fff",
+                  padding: 0,
+                  cursor: "pointer",
+                }}
+              >
+                {rns.map((rn, j) => (
+                  <option key={j} value={j}>{rn}</option>
+                ))}
+              </select>
+            </foreignObject>
           );
         })}
 

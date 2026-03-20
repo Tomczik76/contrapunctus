@@ -246,7 +246,7 @@ enum Sevenths(val rootIntervals: NonEmptySet[Interval])
       case MajorSixth | MinorSixth => true
       case _                       => false
     (isSixth, inversionIndex) match
-      case (true, 0)  => "⁶"
+      case (true, 0)  => "⁺⁶"
       case (false, 0) => "⁷"
       case (_, 1)     => "⁶₅"
       case (_, 2)     => "⁴₃"

@@ -44,7 +44,7 @@ trait JsBeatRender extends js.Object:
   val notes: js.Array[JsNoteRender]
   val durationFraction: js.Array[Int]
   val isRest: Boolean
-  val romanNumeral: String
+  val romanNumerals: js.Array[String]
 
 trait JsMeasureRender extends js.Object:
   val timeSignature: js.Dynamic
@@ -173,13 +173,14 @@ object Contrapunctus:
 
     val pulses = measures.map(_.pulses)
     val analyses = Analysis.analyzeWithPartWriting(tonic, scale, pulses)
-    val romanNumerals = analyses.toList.flatMap: pulse =>
+    val romanNumeralOptions = analyses.toList.flatMap: pulse =>
       Pulse.flatten(pulse).map: analysis =>
-        analysis.head.chords.headOption
-          .map(_.romanNumerals.head)
-          .getOrElse("")
+        val chords = analysis.head.chords
+        chords.toList
+          .flatMap(_.romanNumerals.toList)
+          .distinct
 
-    buildRenderData(measures, Some(romanNumerals))
+    buildRenderData(measures, Some(romanNumeralOptions))
 
   private def parseMeasures(
       jsMeasures: js.Array[JsMeasure]
@@ -219,7 +220,7 @@ object Contrapunctus:
 
   private def buildRenderData(
       measures: NonEmptyList[Measure[Note]],
-      romanNumerals: Option[List[String]]
+      romanNumerals: Option[List[List[String]]]
   ): JsRenderData =
     val allNotes = measures.toList.flatMap: m =>
       Pulse.flatten(m.pulses).flatMap(_.toList)
@@ -260,7 +261,7 @@ object Contrapunctus:
       val leaves = extractLeaves(m.pulses)
       val jsBeats: js.Array[JsBeatRender] = leaves.map:
         case (maybeNotes, (durNum, durDen)) =>
-          val rn = romanNumerals.flatMap(_.lift(rnIndex)).getOrElse("")
+          val rns = romanNumerals.flatMap(_.lift(rnIndex)).getOrElse(List.empty)
           rnIndex += 1
           val (noteRenders, isRest) = maybeNotes match
             case None => (js.Array[JsNoteRender](), true)
@@ -283,7 +284,7 @@ object Contrapunctus:
               notes = noteRenders,
               durationFraction = js.Array(durNum.toInt, durDen.toInt),
               isRest = isRest,
-              romanNumeral = rn
+              romanNumerals = rns.toJSArray
             )
             .asInstanceOf[JsBeatRender]
       .toJSArray
