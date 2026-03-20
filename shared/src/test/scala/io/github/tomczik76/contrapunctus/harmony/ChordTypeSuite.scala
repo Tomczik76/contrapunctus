@@ -1,7 +1,7 @@
 package io.github.tomczik76.contrapunctus.harmony
 
 import cats.data.NonEmptySet
-import io.github.tomczik76.contrapunctus.core.{Interval, Note}
+import io.github.tomczik76.contrapunctus.core.{Interval, Note, NoteType}
 import Note.*
 
 class ChordTypeSuite extends munit.FunSuite:
@@ -326,5 +326,84 @@ class ChordTypeSuite extends munit.FunSuite:
   test("Thirteenth Inversions.Sixth is valid"):
     val sixth = Thirteenths.DominantThirteenth.Inversions.Sixth
     assert(sixth.isInstanceOf[ChordType])
+
+  // --- Inversions accessor boundary tests ---
+
+  test("Seventh Inversions.Fourth throws"):
+    intercept[IndexOutOfBoundsException]:
+      Sevenths.DominantSeventh.Inversions.Fourth
+
+  test("AlteredChords Inversions.Fifth throws"):
+    intercept[IndexOutOfBoundsException]:
+      AlteredChords.SevenFlatNine.Inversions.Fifth
+
+  test("Thirteenth Inversions.Sixth is accessible"):
+    val sixth = Thirteenths.DominantThirteenth.Inversions.Sixth
+    assert(sixth.isInstanceOf[ChordType])
+
+  // --- Inversion ordinal ---
+
+  test("Inversion ordinal matches index"):
+    val root = Triads.Major.Inversions.Root.asInstanceOf[Inversion]
+    val first = Triads.Major.Inversions.First.asInstanceOf[Inversion]
+    val second = Triads.Major.Inversions.Second.asInstanceOf[Inversion]
+    assertEquals(root.ordinal, 0)
+    assertEquals(first.ordinal, 1)
+    assertEquals(second.ordinal, 2)
+
+  // --- ChordType.invert edge cases ---
+
+  test("ChordType.invert single-element list returns same"):
+    import cats.data.NonEmptyList
+    val single = NonEmptyList.one(Interval.PerfectUnison)
+    assertEquals(ChordType.invert(single), single)
+
+  // --- Inversions accessor for higher-order chords ---
+
+  test("inversionRootInterval for second inversion"):
+    val secondInv = Triads.Major.Inversions.Second.asInstanceOf[Inversion]
+    assert(secondInv.rootInterval.value >= 0)
+
+  test("Seventh second inversion rootInterval"):
+    val secondInv = Sevenths.DominantSeventh.Inversions.Second.asInstanceOf[Inversion]
+    assert(secondInv.rootInterval.value >= 0)
+
+  test("Seventh third inversion rootInterval"):
+    val thirdInv = Sevenths.DominantSeventh.Inversions.Third.asInstanceOf[Inversion]
+    assert(thirdInv.rootInterval.value >= 0)
+
+  // --- Chord.isChordTone ---
+
+  test("Chord.isChordTone on seventh chord"):
+    val g7 = Chord(NoteType.G, Sevenths.DominantSeventh.Inversions.Root)
+    assert(g7.isChordTone(NoteType.G))
+    assert(g7.isChordTone(NoteType.B))
+    assert(g7.isChordTone(NoteType.D))
+    assert(g7.isChordTone(NoteType.F))
+    assert(!g7.isChordTone(NoteType.C))
+
+  test("Chord.isChordTone on inverted chord"):
+    val cMajFirst = Chord(NoteType.C, Triads.Major.Inversions.First)
+    assert(cMajFirst.isChordTone(NoteType.C))
+    assert(cMajFirst.isChordTone(NoteType.E))
+    assert(cMajFirst.isChordTone(NoteType.G))
+    assert(!cMajFirst.isChordTone(NoteType.D))
+
+  // --- Enharmonic NoteType equality ---
+
+  test("enharmonic NoteTypes are equal"):
+    assertEquals(NoteType.`F#`, NoteType.`Gb`)
+    assertEquals(NoteType.`B#`, NoteType.C)
+    assertEquals(NoteType.Cb, NoteType.B)
+    assertEquals(NoteType.`A#`, NoteType.Bb)
+
+  // --- Note constructors for enharmonic spellings ---
+
+  test("Note constructors for enharmonic spellings"):
+    // Same octave, enharmonic notes share MIDI values
+    assertEquals(Note.`Gb`(4).midi, Note.`F#`(4).midi)
+    assertEquals(Note.`B#`(4).midi, Note.C(4).midi)
+    assertEquals(Note.Cb(4).midi, Note.B(4).midi)
+    assertEquals(Note.`A#`(4).midi, Note.Bb(4).midi)
 
 end ChordTypeSuite

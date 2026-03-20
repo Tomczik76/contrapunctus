@@ -24,4 +24,18 @@ class RationalSuite extends munit.FunSuite:
     assertEquals(Rational.zero, Rational(0, 1))
     assertEquals(Rational.one, Rational(1, 1))
 
+  test("toString — whole number omits denominator"):
+    assertEquals(Rational(3, 1).toString, "3")
+
+  test("toString — fraction shows numerator/denominator"):
+    assertEquals(Rational(1, 3).toString, "1/3")
+
+  test("division by zero throws"):
+    interceptMessage[IllegalArgumentException]("requirement failed: Division by zero"):
+      Rational(1, 2) / Rational(0)
+
+  test("zero denominator throws"):
+    interceptMessage[IllegalArgumentException]("requirement failed: Denominator must not be zero"):
+      Rational(1, 0)
+
 end RationalSuite

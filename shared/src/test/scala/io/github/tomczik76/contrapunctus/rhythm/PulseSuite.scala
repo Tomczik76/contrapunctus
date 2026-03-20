@@ -319,4 +319,156 @@ class PulseSuite extends munit.FunSuite:
     )
     assertEquals(finalSum, 6)
 
+  // --- convenience constructors ---
+
+  test("Pulse.duplet constructs a Duplet from two Pulses"):
+    val p = Pulse.duplet(Pulse.Atom(1), Pulse.Atom(2))
+    assertEquals(Pulse.flatten(p).flatMap(_.toList), List(1, 2))
+
+  test("Pulse.triplet constructs a Triplet from three Pulses"):
+    val p = Pulse.triplet(Pulse.Atom(1), Pulse.Atom(2), Pulse.Atom(3))
+    assertEquals(Pulse.flatten(p).flatMap(_.toList), List(1, 2, 3))
+
+  test("Pulse.quintuplet constructs a Quintuplet from five Pulses"):
+    val p = Pulse.quintuplet(
+      Pulse.Atom(1), Pulse.Atom(2), Pulse.Atom(3), Pulse.Atom(4), Pulse.Atom(5)
+    )
+    assertEquals(Pulse.flatten(p).flatMap(_.toList), List(1, 2, 3, 4, 5))
+
+  test("Pulse.septuplet constructs a Septuplet from seven Pulses"):
+    val p = Pulse.septuplet(
+      Pulse.Atom(1), Pulse.Atom(2), Pulse.Atom(3), Pulse.Atom(4),
+      Pulse.Atom(5), Pulse.Atom(6), Pulse.Atom(7)
+    )
+    assertEquals(Pulse.flatten(p).flatMap(_.toList), List(1, 2, 3, 4, 5, 6, 7))
+
+  // --- PulseF Functor ---
+
+  test("PulseF standalone Functor.map exercises the Functor given directly"):
+    import io.github.tomczik76.contrapunctus.rhythm.PulseF
+    import cats.data.NonEmptyList
+    // Directly instantiate the standalone Functor given (not the Traverse one)
+    val f = PulseF.given_Functor_PulseF[Int]
+    assertEquals(f.map(PulseF.DupletF(1, 2))(_ * 10), PulseF.DupletF(10, 20))
+    assertEquals(f.map(PulseF.TripletF(1, 2, 3))(_ + 1), PulseF.TripletF(2, 3, 4))
+    assertEquals(f.map(PulseF.QuintupletF(1, 2, 3, 4, 5))(_ * 2), PulseF.QuintupletF(2, 4, 6, 8, 10))
+    assertEquals(f.map(PulseF.SeptupletF(1, 2, 3, 4, 5, 6, 7))(_ + 10), PulseF.SeptupletF(11, 12, 13, 14, 15, 16, 17))
+    assertEquals(f.map(PulseF.AtomF[Int, Int](NonEmptyList.one(42)))(_ + 1), PulseF.AtomF(NonEmptyList.one(42)))
+    assertEquals(f.map(PulseF.RestF: PulseF[Int, Int])(_ + 1), PulseF.RestF)
+
+  // --- PulseF Traverse: foldLeft ---
+
+  test("PulseF Traverse.foldLeft over DupletF"):
+    import io.github.tomczik76.contrapunctus.rhythm.PulseF
+    import PulseF.given
+    val t = summon[cats.Traverse[[r] =>> PulseF[Int, r]]]
+    assertEquals(t.foldLeft(PulseF.DupletF(1, 2), 0)(_ + _), 3)
+
+  test("PulseF Traverse.foldLeft over TripletF"):
+    import io.github.tomczik76.contrapunctus.rhythm.PulseF
+    import PulseF.given
+    val t = summon[cats.Traverse[[r] =>> PulseF[Int, r]]]
+    assertEquals(t.foldLeft(PulseF.TripletF(1, 2, 3), 0)(_ + _), 6)
+
+  test("PulseF Traverse.foldLeft over QuintupletF"):
+    import io.github.tomczik76.contrapunctus.rhythm.PulseF
+    import PulseF.given
+    val t = summon[cats.Traverse[[r] =>> PulseF[Int, r]]]
+    assertEquals(t.foldLeft(PulseF.QuintupletF(1, 2, 3, 4, 5), 0)(_ + _), 15)
+
+  test("PulseF Traverse.foldLeft over SeptupletF"):
+    import io.github.tomczik76.contrapunctus.rhythm.PulseF
+    import PulseF.given
+    val t = summon[cats.Traverse[[r] =>> PulseF[Int, r]]]
+    assertEquals(t.foldLeft(PulseF.SeptupletF(1, 2, 3, 4, 5, 6, 7), 0)(_ + _), 28)
+
+  test("PulseF Traverse.foldLeft over AtomF and RestF returns initial"):
+    import io.github.tomczik76.contrapunctus.rhythm.PulseF
+    import PulseF.given
+    import cats.data.NonEmptyList
+    val t = summon[cats.Traverse[[r] =>> PulseF[Int, r]]]
+    assertEquals(t.foldLeft(PulseF.AtomF[Int, Int](NonEmptyList.one(99)), 0)(_ + _), 0)
+    assertEquals(t.foldLeft(PulseF.RestF: PulseF[Int, Int], 0)(_ + _), 0)
+
+  // --- PulseF Traverse: foldRight ---
+
+  test("PulseF Traverse.foldRight over DupletF"):
+    import io.github.tomczik76.contrapunctus.rhythm.PulseF
+    import PulseF.given
+    import cats.Eval
+    val t = summon[cats.Traverse[[r] =>> PulseF[Int, r]]]
+    val result = t.foldRight(PulseF.DupletF(1, 2), Eval.now(0))((a, b) => b.map(_ + a)).value
+    assertEquals(result, 3)
+
+  test("PulseF Traverse.foldRight over TripletF"):
+    import io.github.tomczik76.contrapunctus.rhythm.PulseF
+    import PulseF.given
+    import cats.Eval
+    val t = summon[cats.Traverse[[r] =>> PulseF[Int, r]]]
+    val result = t.foldRight(PulseF.TripletF(1, 2, 3), Eval.now(0))((a, b) => b.map(_ + a)).value
+    assertEquals(result, 6)
+
+  test("PulseF Traverse.foldRight over QuintupletF"):
+    import io.github.tomczik76.contrapunctus.rhythm.PulseF
+    import PulseF.given
+    import cats.Eval
+    val t = summon[cats.Traverse[[r] =>> PulseF[Int, r]]]
+    val result = t.foldRight(PulseF.QuintupletF(1, 2, 3, 4, 5), Eval.now(0))((a, b) => b.map(_ + a)).value
+    assertEquals(result, 15)
+
+  test("PulseF Traverse.foldRight over SeptupletF"):
+    import io.github.tomczik76.contrapunctus.rhythm.PulseF
+    import PulseF.given
+    import cats.Eval
+    val t = summon[cats.Traverse[[r] =>> PulseF[Int, r]]]
+    val result = t.foldRight(PulseF.SeptupletF(1, 2, 3, 4, 5, 6, 7), Eval.now(0))((a, b) => b.map(_ + a)).value
+    assertEquals(result, 28)
+
+  test("PulseF Traverse.foldRight over AtomF and RestF returns initial"):
+    import io.github.tomczik76.contrapunctus.rhythm.PulseF
+    import PulseF.given
+    import cats.Eval
+    import cats.data.NonEmptyList
+    val t = summon[cats.Traverse[[r] =>> PulseF[Int, r]]]
+    assertEquals(t.foldRight(PulseF.AtomF[Int, Int](NonEmptyList.one(99)), Eval.now(0))((a, b) => b.map(_ + a)).value, 0)
+    assertEquals(t.foldRight(PulseF.RestF: PulseF[Int, Int], Eval.now(0))((a, b) => b.map(_ + a)).value, 0)
+
+  // --- PulseF coalgebra and algebra ---
+
+  test("PulseF algebra reconstructs Pulse from all PulseF variants"):
+    import io.github.tomczik76.contrapunctus.rhythm.PulseF
+    import cats.data.NonEmptyList
+    val alg = PulseF.algebra[Int]
+    val a1: Pulse[Int] = Pulse.Atom(1)
+    val a2: Pulse[Int] = Pulse.Atom(2)
+    val a3: Pulse[Int] = Pulse.Atom(3)
+    val a4: Pulse[Int] = Pulse.Atom(4)
+    val a5: Pulse[Int] = Pulse.Atom(5)
+    val a6: Pulse[Int] = Pulse.Atom(6)
+    val a7: Pulse[Int] = Pulse.Atom(7)
+    assertEquals(alg(PulseF.DupletF(a1, a2)), Pulse.Duplet(a1, a2))
+    assertEquals(alg(PulseF.TripletF(a1, a2, a3)), Pulse.Triplet(a1, a2, a3))
+    assertEquals(alg(PulseF.QuintupletF(a1, a2, a3, a4, a5)), Pulse.Quintuplet(a1, a2, a3, a4, a5))
+    assertEquals(alg(PulseF.SeptupletF(a1, a2, a3, a4, a5, a6, a7)), Pulse.Septuplet(a1, a2, a3, a4, a5, a6, a7))
+    assertEquals(alg(PulseF.AtomF[Int, Pulse[Int]](NonEmptyList.one(42))), Pulse.Atom(NonEmptyList.one(42)))
+    assertEquals(alg(PulseF.RestF: PulseF[Int, Pulse[Int]]), Pulse.Rest)
+
+  test("PulseF coalgebra decomposes all Pulse variants"):
+    import io.github.tomczik76.contrapunctus.rhythm.PulseF
+    import cats.data.NonEmptyList
+    val coalg = PulseF.coalgebra[Int]
+    val a1: Pulse[Int] = Pulse.Atom(1)
+    val a2: Pulse[Int] = Pulse.Atom(2)
+    val a3: Pulse[Int] = Pulse.Atom(3)
+    val a4: Pulse[Int] = Pulse.Atom(4)
+    val a5: Pulse[Int] = Pulse.Atom(5)
+    val a6: Pulse[Int] = Pulse.Atom(6)
+    val a7: Pulse[Int] = Pulse.Atom(7)
+    assertEquals(coalg(Pulse.Duplet(a1, a2)), PulseF.DupletF(a1, a2))
+    assertEquals(coalg(Pulse.Triplet(a1, a2, a3)), PulseF.TripletF(a1, a2, a3))
+    assertEquals(coalg(Pulse.Quintuplet(a1, a2, a3, a4, a5)), PulseF.QuintupletF(a1, a2, a3, a4, a5))
+    assertEquals(coalg(Pulse.Septuplet(a1, a2, a3, a4, a5, a6, a7)), PulseF.SeptupletF(a1, a2, a3, a4, a5, a6, a7))
+    assertEquals(coalg(Pulse.Atom(NonEmptyList.one(42))), PulseF.AtomF[Int, Pulse[Int]](NonEmptyList.one(42)))
+    assertEquals(coalg(Pulse.Rest), PulseF.RestF)
+
 end PulseSuite

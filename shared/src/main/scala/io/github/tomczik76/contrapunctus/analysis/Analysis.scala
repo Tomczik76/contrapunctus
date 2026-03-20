@@ -27,7 +27,7 @@ case class AnalyzedChord(
     scale.alteredScaleDegree(tonic, chord.root)
 
   def romanNumerals: NonEmptyList[String] =
-    alteredScaleDegrees.toNonEmptyList.map: asd =>
+    val base = alteredScaleDegrees.toNonEmptyList.map: asd =>
       val numeral =
         if chord.chordType.isMinorQuality
         then asd.degree.romanNumeral.toLowerCase
@@ -36,6 +36,21 @@ case class AnalyzedChord(
         if asd.alteration == Alteration.Natural then ""
         else asd.alteration.toString
       s"$alteration$numeral${chord.chordType.qualitySymbol}${chord.chordType.figuredBass}"
+
+    // Neapolitan chord: major triad on ♭II
+    val neapolitan = chord.chordType match
+      case Inversion(Triads.Major, idx, _, _) =>
+        val isFlatTwo = alteredScaleDegrees.exists: asd =>
+          asd.degree == ScaleDegree.Supertonic && asd.alteration == Alteration.Flat
+        if isFlatTwo then
+          val fb = chord.chordType.figuredBass
+          Some(s"N$fb")
+        else None
+      case _ => None
+
+    neapolitan match
+      case Some(label) => NonEmptyList(label, base.toList)
+      case None        => base
 
 case class Analysis(
     chords: Set[AnalyzedChord],
@@ -367,6 +382,30 @@ object Analysis:
 
     results.distinct
   end secondaryDominantLabels
+
+  /** Detect augmented sixth chords by pitch class content relative to tonic.
+    * Returns a label (It⁺⁶, Fr⁺⁶, Ger⁺⁶) if the notes match one of the
+    * three augmented sixth chord types.
+    *
+    * Pitch classes relative to tonic:
+    *   Italian:  {♭6, 1, ♯4}       — 3 notes
+    *   French:   {♭6, 1, 2, ♯4}    — 4 notes
+    *   German:   {♭6, 1, ♭3, ♯4}   — 4 notes
+    */
+  def augmentedSixthLabel(
+      notes: NonEmptyList[Note],
+      tonic: NoteType
+  ): Option[String] =
+    val tonicPC = tonic.value % 12
+    val pcs = notes.toList.map(n => (n.noteType.value - tonicPC + 12) % 12).toSet
+    val flat6 = 8 // minor 6th above tonic
+    val sharp4 = 6 // augmented 4th / tritone
+    if !pcs.contains(flat6) || !pcs.contains(sharp4) then None
+    else if pcs == Set(flat6, 0, sharp4) then Some("It⁺⁶")
+    else if pcs == Set(flat6, 0, 2, sharp4) then Some("Fr⁺⁶")
+    else if pcs == Set(flat6, 0, 3, sharp4) then Some("Ger⁺⁶")
+    else None
+  end augmentedSixthLabel
 
   /** Replace flat analyses back into Pulse structure, preserving shape. */
   private def remapAnalyses(

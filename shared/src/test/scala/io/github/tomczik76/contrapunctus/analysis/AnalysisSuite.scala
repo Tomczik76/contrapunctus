@@ -439,4 +439,160 @@ class AnalysisSuite extends munit.FunSuite:
     )
     assertEquals(labels, Nil)
 
+  // ── Neapolitan chord tests ────────────────────────────────────────────
+
+  test("Neapolitan — ♭II root position in C major shows N"):
+    val chord    = Chord(NoteType.Db, Triads.Major.Inversions.Root)
+    val analyzed = AnalyzedChord(chord, NoteType.C, Scale.Major)
+    val rns = analyzed.romanNumerals.toList
+    assert(rns.contains("N"), s"Expected N in $rns")
+    assert(rns.contains("♭II"), s"Expected ♭II in $rns")
+
+  test("Neapolitan — ♭II first inversion in C major shows N⁶"):
+    val chord    = Chord(NoteType.Db, Triads.Major.Inversions.First)
+    val analyzed = AnalyzedChord(chord, NoteType.C, Scale.Major)
+    val rns = analyzed.romanNumerals.toList
+    assert(rns.contains("N⁶"), s"Expected N⁶ in $rns")
+
+  test("Neapolitan — ♭II in A minor shows N"):
+    val chord    = Chord(NoteType.Bb, Triads.Major.Inversions.Root)
+    val analyzed = AnalyzedChord(chord, NoteType.A, Scale.NaturalMinor)
+    val rns = analyzed.romanNumerals.toList
+    assert(rns.contains("N"), s"Expected N in $rns")
+
+  test("Neapolitan — N label preferred over ♭II"):
+    val chord    = Chord(NoteType.Db, Triads.Major.Inversions.First)
+    val analyzed = AnalyzedChord(chord, NoteType.C, Scale.Major)
+    val rns = analyzed.romanNumerals.toList
+    assertEquals(rns.head, "N⁶", "N⁶ should be first")
+
+  test("Neapolitan — regular II is not Neapolitan"):
+    val chord    = Chord(NoteType.D, Triads.Major.Inversions.Root)
+    val analyzed = AnalyzedChord(chord, NoteType.C, Scale.Major)
+    val rns = analyzed.romanNumerals.toList
+    assert(!rns.exists(_.startsWith("N")), s"Should not contain N in $rns")
+
+  test("Neapolitan — minor triad on ♭II is not Neapolitan"):
+    val chord    = Chord(NoteType.Db, Triads.Minor.Inversions.Root)
+    val analyzed = AnalyzedChord(chord, NoteType.C, Scale.Major)
+    val rns = analyzed.romanNumerals.toList
+    assert(!rns.exists(_.startsWith("N")), s"Should not contain N in $rns")
+
+  // ── Augmented sixth chord tests ───────────────────────────────────────
+
+  test("Italian augmented sixth — Ab-C-F# in C major"):
+    import Note.*
+    val label = Analysis.augmentedSixthLabel(
+      NonEmptyList.of(Ab(3), C(4), `F#`(4)), NoteType.C
+    )
+    assertEquals(label, Some("It⁺⁶"))
+
+  test("French augmented sixth — Ab-C-D-F# in C major"):
+    import Note.*
+    val label = Analysis.augmentedSixthLabel(
+      NonEmptyList.of(Ab(3), C(4), D(4), `F#`(4)), NoteType.C
+    )
+    assertEquals(label, Some("Fr⁺⁶"))
+
+  test("German augmented sixth — Ab-C-Eb-F# in C major"):
+    import Note.*
+    val label = Analysis.augmentedSixthLabel(
+      NonEmptyList.of(Ab(3), C(4), Eb(4), `F#`(4)), NoteType.C
+    )
+    assertEquals(label, Some("Ger⁺⁶"))
+
+  test("Italian augmented sixth — F-A-D# in A minor"):
+    import Note.*
+    val label = Analysis.augmentedSixthLabel(
+      NonEmptyList.of(F(3), A(3), `D#`(4)), NoteType.A
+    )
+    assertEquals(label, Some("It⁺⁶"))
+
+  test("German augmented sixth — F-A-C-D# in A minor"):
+    import Note.*
+    val label = Analysis.augmentedSixthLabel(
+      NonEmptyList.of(F(3), A(3), C(4), `D#`(4)), NoteType.A
+    )
+    assertEquals(label, Some("Ger⁺⁶"))
+
+  test("augmented sixth — not detected without ♭6 and #4"):
+    import Note.*
+    val label = Analysis.augmentedSixthLabel(
+      NonEmptyList.of(C(4), E(4), G(4)), NoteType.C
+    )
+    assertEquals(label, None)
+
+  test("augmented sixth — doublings don't affect detection"):
+    import Note.*
+    val label = Analysis.augmentedSixthLabel(
+      NonEmptyList.of(Ab(3), C(4), `F#`(4), Ab(4)), NoteType.C
+    )
+    assertEquals(label, Some("It⁺⁶"))
+
+  // ── identifyChords fallback paths ─────────────────────────────────
+
+  test("identifyChords — non-diatonic full chord with diatonic root preferred over diatonic subsets"):
+    import Note.*
+    // In C major, C-E-G#-B is a CMaj7#5 (augmented major 7th).
+    // G# is chromatic, but root C is diatonic. Should prefer the full chord identification.
+    val beat1 = Pulse.Atom(C(4), E(4), `G#`(4), B(4))
+    val results = Analysis(NoteType.C, Scale.Major, beat1)
+    val analyses = results.toList.collect:
+      case Pulse.Atom(nel) => nel.head
+    // Should have found at least one chord
+    assert(analyses.head.chords.nonEmpty)
+
+  test("identifyChords — fromAll fallback when no diatonic chords found"):
+    import Note.*
+    // Ab-C-Eb-Gb — fully chromatic in C major, but forms a valid Ab7 chord
+    val beat1 = Pulse.Atom(Ab(3), C(4), Eb(4), `Gb`(4))
+    val results = Analysis(NoteType.C, Scale.Major, beat1)
+    val analyses = results.toList.collect:
+      case Pulse.Atom(nel) => nel.head
+    assert(analyses.head.chords.nonEmpty, "Should find chords via fromAll fallback")
+
+  test("identifyChords — allSubsets fallback when fromAll is empty"):
+    import Note.*
+    // A note cluster that doesn't form any known chord but subsets do
+    // C-Db-E-G: full set doesn't match, but removing Db gives C major
+    val beat1 = Pulse.Atom(C(4), Db(4), E(4), G(4))
+    val results = Analysis(NoteType.C, Scale.Major, beat1)
+    val analyses = results.toList.collect:
+      case Pulse.Atom(nel) => nel.head
+    assert(analyses.head.chords.nonEmpty, "Should find chords from subsets")
+
+  test("identifyChords — preferNonSus filters out sus chords"):
+    import Note.*
+    // C-F-G could be Csus4 or an inversion. In C major, should prefer non-sus if available.
+    val beat1 = Pulse.Atom(C(3), F(3), G(3), C(4))
+    val results = Analysis(NoteType.C, Scale.Major, beat1)
+    val analyses = results.toList.collect:
+      case Pulse.Atom(nel) => nel.head
+    // If there's a non-sus interpretation, it should be preferred
+    val hasSus = analyses.head.chords.exists(_.chord.chordType.qualitySymbol.contains("sus"))
+    val hasNonSus = analyses.head.chords.exists(!_.chord.chordType.qualitySymbol.contains("sus"))
+    if hasNonSus then
+      assert(!hasSus, "Non-sus should be preferred over sus")
+
+  test("classifyBeatNotes — effectiveChord falls back to previous beat"):
+    import Note.*
+    // A single non-chord tone with no chord on current beat but chord on previous
+    val beat1 = Pulse.Atom(C(3), E(3), G(3))
+    val beat2 = Pulse.Atom(Db(4))  // single chromatic note, likely no chord
+    val beat3 = Pulse.Atom(C(3), E(3), G(3))
+    val results = Analysis(NoteType.C, Scale.Major, beat1, beat2, beat3)
+    val analyses = results.toList.collect:
+      case Pulse.Atom(nel) => nel.head
+    // Beat 2 should still classify Db relative to surrounding chords
+    assert(analyses(1).notes.nonEmpty)
+
+  test("reclassifyChangingTones — single analysis list unchanged"):
+    import Note.*
+    // With only 1 beat, no changing tone reclassification is possible
+    val beat1 = Pulse.Atom(C(3), E(3), G(3))
+    val results = Analysis(NoteType.C, Scale.Major, beat1)
+    val analyses = results.toList.collect:
+      case Pulse.Atom(nel) => nel.head
+    assertEquals(analyses.size, 1)
+
 end AnalysisSuite

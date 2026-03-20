@@ -141,3 +141,13 @@ class NonChordToneSuite extends munit.FunSuite:
     assert(g7.isChordTone(NoteType.D))
     assert(g7.isChordTone(NoteType.F))
     assert(!g7.isChordTone(NoteType.C))
+
+  test("genericInterval — 10 semitones maps to 7th"):
+    assertEquals(NonChordToneAnalysis.genericInterval(10), 7)
+
+  test("genericInterval — 11 semitones maps to 7th"):
+    assertEquals(NonChordToneAnalysis.genericInterval(11), 7)
+
+  test("genericInterval — negative semitones normalized"):
+    assertEquals(NonChordToneAnalysis.genericInterval(-1), 7) // -1 % 12 + 12 = 11 → 7
+    assertEquals(NonChordToneAnalysis.genericInterval(-3), 6) // -3 % 12 + 12 = 9 → 6

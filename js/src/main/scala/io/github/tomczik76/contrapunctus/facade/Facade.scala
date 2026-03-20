@@ -205,7 +205,10 @@ object Contrapunctus:
           )
         else Nil
 
-      (secDomLabels ++ baseLabels).distinct
+      // Add augmented sixth label if applicable
+      val aug6Label = Analysis.augmentedSixthLabel(notes, tonic).toList
+
+      (aug6Label ++ secDomLabels ++ baseLabels).distinct
     }
 
     buildRenderData(measures, Some(romanNumeralOptions))
