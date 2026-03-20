@@ -148,19 +148,20 @@ const TS_DIGIT_GLYPHS: Record<number, { o: string; x_min: number; x_max: number 
 // noteheadHalf:  x_min=0, x_max=295 (hollow, has stem)
 // noteheadBlack: x_min=0, x_max=295 (filled, has stem)
 
-// Outline x-extents are measured from the actual path coordinates, not the font metadata.
+// outlineXMin/outlineXMax define the notehead bounds used for centering.
+// stemRight is the VexFlow font metric x_max — the stem attachment point for stem-up notes.
 const NOTEHEAD_WHOLE = {
-  outlineXMin: 0, outlineXMax: 608,
+  outlineXMin: 0, outlineXMax: 608, stemRight: 400,
   path: vexOutlineToSvgPath('m 311 180 b 0 3 120 180 0 101 b 297 -180 0 -94 82 -180 b 608 3 533 -180 608 -98 b 311 180 608 105 445 180 z m 160 91 b 274 148 176 141 229 148 b 452 -45 373 148 452 42 b 386 -141 452 -89 433 -130 b 341 -147 372 -145 356 -147 b 206 -72 289 -147 236 -112 b 156 56 177 -39 156 10 b 160 91 156 68 157 79 z'),
 };
 
 const NOTEHEAD_HALF = {
-  outlineXMin: 0, outlineXMax: 425,
+  outlineXMin: 0, outlineXMax: 425, stemRight: 400,
   path: vexOutlineToSvgPath('m 140 -180 b 425 60 377 -180 425 13 b 282 180 425 134 366 180 b 0 -60 68 180 0 14 b 140 -180 0 -137 60 -180 z m 108 -125 b 50 -92 78 -125 60 -109 b 42 -63 46 -84 42 -73 b 318 121 42 7 251 121 b 372 91 346 121 361 108 b 380 63 376 82 380 73 b 108 -125 380 1 177 -125 z'),
 };
 
 const NOTEHEAD_BLACK = {
-  outlineXMin: 0, outlineXMax: 425,
+  outlineXMin: 0, outlineXMax: 425, stemRight: 400,
   path: vexOutlineToSvgPath('m 140 -180 b 425 60 268 -180 425 -62 b 285 180 425 134 367 180 b 0 -60 127 180 0 63 b 140 -180 0 -135 62 -180 z'),
 };
 
@@ -556,8 +557,9 @@ function NoteHead({ note, x, staffTopDp, staffBotDp, yOffset, durationFraction, 
   const hasStem = dur !== "whole";
   const hasFlag = dur === "eighth" || dur === "sixteenth";
 
-  // Stem attaches to right edge (stem up) or left edge (stem down) of notehead
-  const stemX = stemDown ? x - headW / 2 : x + headW / 2;
+  // Stem attaches at metric edges: left body edge (stem down) or right body edge (stem up)
+  const stemLeft = (head.outlineXMax - head.stemRight) * s;
+  const stemX = stemDown ? x - headW / 2 + stemLeft : x - headW / 2 + head.stemRight * s;
   const stemEndY = stemDown ? y + STEM_HEIGHT : y - STEM_HEIGHT;
 
   // Ledger lines
@@ -630,7 +632,7 @@ function NoteHead({ note, x, staffTopDp, staffBotDp, yOffset, durationFraction, 
 type Duration = "whole" | "half" | "quarter" | "eighth" | "sixteenth";
 
 /** A beat contains one or more notes (a chord) with a shared duration. */
-type Accidental = "" | "#" | "b";
+type Accidental = "" | "n" | "#" | "b";
 
 interface PlacedNote {
   dp: number;
@@ -805,6 +807,38 @@ function getKeySig(tonicIdx: number, scaleName: string): { count: number; type: 
   return { count: 0, type: "none" };
 }
 
+/** Order of note letters affected by sharps/flats in key signatures. */
+const SHARP_LETTER_INDICES = [3, 0, 4, 1, 5, 2, 6]; // F, C, G, D, A, E, B
+const FLAT_LETTER_INDICES = [6, 2, 5, 1, 4, 0, 3];   // B, E, A, D, G, C, F
+
+/** Returns the accidental that the key signature applies to a given diatonic position. */
+function keySignatureAccidental(dp: number, keySig: { count: number; type: "sharp" | "flat" | "none" }): Accidental {
+  if (keySig.count === 0 || keySig.type === "none") return "";
+  const letterIdx = ((dp % 7) + 7) % 7;
+  const order = keySig.type === "sharp" ? SHARP_LETTER_INDICES : FLAT_LETTER_INDICES;
+  const affected = order.slice(0, keySig.count);
+  if (affected.includes(letterIdx)) return keySig.type === "sharp" ? "#" : "b";
+  return "";
+}
+
+/** Resolves a stored accidental to the effective (sounding) accidental.
+ *  "" means "follow the key signature", "n" means "explicitly natural". */
+function effectiveAccidental(stored: Accidental, dp: number, keySig: { count: number; type: "sharp" | "flat" | "none" }): Accidental {
+  if (stored === "") return keySignatureAccidental(dp, keySig);
+  if (stored === "n") return "";
+  return stored;
+}
+
+/** Returns the accidental symbol to display on a note (empty if implied by key signature). */
+function displayAccidental(stored: Accidental, dp: number, keySig: { count: number; type: "sharp" | "flat" | "none" }): string {
+  const ksAcc = keySignatureAccidental(dp, keySig);
+  const eff = effectiveAccidental(stored, dp, keySig);
+  if (eff === ksAcc) return "";
+  // Show natural sign when overriding a key signature accidental
+  if (eff === "" && ksAcc !== "") return "\u266E";
+  return accidentalSymbol(eff);
+}
+
 const TONIC_OPTIONS = [
   { label: "C", letter: "C", acc: "" },
   { label: "C#", letter: "C", acc: "#" },
@@ -850,7 +884,7 @@ function NoteIcon({ duration, size }: { duration: Duration; size: number }) {
   const headCx = hasStem ? vw / 2 - 1 : vw / 2;
   const headX = headCx - headW / 2 - head.outlineXMin * gs;
 
-  const stemX = headCx + headW / 2;
+  const stemX = headCx - headW / 2 + head.stemRight * gs;
   const stemTop = headCy - stemLen;
 
   return (
@@ -881,22 +915,44 @@ export function NoteEditor() {
   const [tsBottom, setTsBottom] = useState(4);
 
   // Independent beat arrays for each staff
-  const [trebleBeats, setTrebleBeatsRaw] = useState<PlacedBeat[]>(() => fillWithRests(4 / 4));
-  const [bassBeats, setBassBeatsRaw] = useState<PlacedBeat[]>(() => fillWithRests(4 / 4));
+  const initRests = () => fillWithRests(4 / 4);
+  const [trebleBeats, setTrebleBeatsRaw] = useState<PlacedBeat[]>(initRests);
+  const [bassBeats, setBassBeatsRaw] = useState<PlacedBeat[]>(initRests);
+
+  // Undo/redo history: snapshots of [trebleBeats, bassBeats]
+  type Snapshot = [PlacedBeat[], PlacedBeat[]];
+  const historyRef = useRef<{ past: Snapshot[]; future: Snapshot[] }>({
+    past: [],
+    future: [],
+  });
+
+  /** Push current state onto undo stack before a mutation. */
+  const pushUndo = useCallback(() => {
+    setTrebleBeatsRaw((tb) => {
+      setBassBeatsRaw((bb) => {
+        historyRef.current.past.push([tb, bb]);
+        historyRef.current.future = [];
+        return bb;
+      });
+      return tb;
+    });
+  }, []);
 
   const setTrebleBeats: typeof setTrebleBeatsRaw = useCallback((action) => {
+    pushUndo();
     setTrebleBeatsRaw((prev) => {
       const next = typeof action === "function" ? action(prev) : action;
       return autoFillBeats(next, tsTop, tsBottom);
     });
-  }, [tsTop, tsBottom]);
+  }, [tsTop, tsBottom, pushUndo]);
 
   const setBassBeats: typeof setBassBeatsRaw = useCallback((action) => {
+    pushUndo();
     setBassBeatsRaw((prev) => {
       const next = typeof action === "function" ? action(prev) : action;
       return autoFillBeats(next, tsTop, tsBottom);
     });
-  }, [tsTop, tsBottom]);
+  }, [tsTop, tsBottom, pushUndo]);
 
   /** Get the setter for the given staff. */
   function setStaffBeats(staff: "treble" | "bass") {
@@ -1008,12 +1064,31 @@ export function NoteEditor() {
     return positions[positions.length - 1] + ED_NOTE_SPACING;
   }
 
-  // Compute Roman numeral analysis by merging notes at each time point
+  // Compute Roman numeral analysis by merging notes at each time point,
+  // including sustained notes from longer durations on either staff.
   const romanNumerals = useMemo(() => {
     if (trebleBeats.length === 0 && bassBeats.length === 0) return [];
     const tonic = TONIC_OPTIONS[tonicIdx];
     try {
       const measureCap = timeKey(tsTop / tsBottom);
+
+      // Helper: find which notes are sounding at time t from a staff's beats
+      function soundingNotes(beats: PlacedBeat[], times: number[], t: number): PlacedNote[] {
+        // Find the last beat that started at or before t
+        let idx = -1;
+        for (let i = 0; i < times.length; i++) {
+          if (times[i] <= t + 1e-9) idx = i;
+          else break;
+        }
+        if (idx < 0) return [];
+        const beat = beats[idx];
+        if (beat.isRest) return [];
+        // Check if the beat's duration extends past t
+        const beatEnd = times[idx] + DURATION_VALUE[beat.duration];
+        if (beatEnd > t - 1e-9) return beat.notes;
+        return [];
+      }
+
       // Group time points into measures
       const measures: { time: number; notes: PlacedNote[] }[][] = [];
       let currentMeasure: { time: number; notes: PlacedNote[] }[] = [];
@@ -1023,12 +1098,17 @@ export function NoteEditor() {
           measures.push(currentMeasure);
           currentMeasure = [];
         }
-        const notes: PlacedNote[] = [];
-        const ti = trebleTimes.indexOf(t);
-        if (ti >= 0 && !trebleBeats[ti].isRest) notes.push(...trebleBeats[ti].notes);
-        const bi = bassTimes.indexOf(t);
-        if (bi >= 0 && !bassBeats[bi].isRest) notes.push(...bassBeats[bi].notes);
-        currentMeasure.push({ time: t, notes });
+        // Collect all sounding notes (including sustained) from both staves
+        const trebleNotes = soundingNotes(trebleBeats, trebleTimes, t);
+        const bassNotes = soundingNotes(bassBeats, bassTimes, t);
+        // Deduplicate by dp to avoid counting the same pitch twice
+        const allNotes: PlacedNote[] = [...trebleNotes];
+        for (const bn of bassNotes) {
+          if (!allNotes.some((n) => n.dp === bn.dp && n.accidental === bn.accidental)) {
+            allNotes.push(bn);
+          }
+        }
+        currentMeasure.push({ time: t, notes: allNotes });
       }
       if (currentMeasure.length > 0) measures.push(currentMeasure);
 
@@ -1038,7 +1118,7 @@ export function NoteEditor() {
           const notes = tb.notes.map((n) => {
             const letterIdx = ((n.dp % 7) + 7) % 7;
             const octave = Math.floor(n.dp / 7);
-            return C.note(LETTERS[letterIdx], n.accidental, octave);
+            return C.note(LETTERS[letterIdx], effectiveAccidental(n.accidental, n.dp, keySig), octave);
           });
           return C.beat(notes);
         });
@@ -1050,7 +1130,7 @@ export function NoteEditor() {
     } catch {
       return [];
     }
-  }, [trebleBeats, bassBeats, trebleTimes, bassTimes, allTimePoints, tonicIdx, scaleName, tsTop, tsBottom]);
+  }, [trebleBeats, bassBeats, trebleTimes, bassTimes, allTimePoints, tonicIdx, scaleName, tsTop, tsBottom, keySig]);
 
   const [rnSelections, setRnSelections] = useState<Record<number, number>>({});
 
@@ -1247,9 +1327,37 @@ export function NoteEditor() {
             ...prev.slice(restStart + restsToRemove),
           ];
         }
+        // Different duration selected → replace beat with new note at selected duration
+        if (beat.duration !== selectedDuration) {
+          // Treat like clicking on the rest space: remove this beat and consecutive rests after it,
+          // then insert the new note and fill remaining space
+          const measures = computeMeasures(prev, tsTop, tsBottom);
+          const measure = measures.find((m) => hoverBeatIdx >= m.startIdx && hoverBeatIdx < m.startIdx + m.count);
+          if (!measure) return prev;
+          const measureEnd = measure.startIdx + measure.count;
+          // Free space from this beat onward (this beat + any consecutive rests after it)
+          let beatsToRemove = 1;
+          let spaceFreed = DURATION_VALUE[beat.duration];
+          for (let i = hoverBeatIdx + 1; i < measureEnd && prev[i].isRest; i++) {
+            beatsToRemove++;
+            spaceFreed += DURATION_VALUE[prev[i].duration];
+          }
+          if (!durationFits(selectedDuration, spaceFreed)) return prev;
+          const newBeat: PlacedBeat = { notes: [...beat.notes], duration: selectedDuration };
+          const leftover = spaceFreed - DURATION_VALUE[selectedDuration];
+          const fillerRests = leftover > 1e-9 ? fillWithRests(leftover) : [];
+          return [
+            ...prev.slice(0, hoverBeatIdx),
+            newBeat,
+            ...fillerRests,
+            ...prev.slice(hoverBeatIdx + beatsToRemove),
+          ];
+        }
+        // Same duration — toggle/add notes within the beat
         const existing = beat.notes.find(posMatch);
         if (existing) {
           if (existing.accidental === selectedAccidental) {
+            // Toggle off this note
             const newNotes = beat.notes.filter((n) => !posMatch(n));
             if (newNotes.length === 0) {
               const updated = [...prev];
@@ -1260,10 +1368,12 @@ export function NoteEditor() {
             updated[hoverBeatIdx] = { ...beat, notes: newNotes };
             return updated;
           }
+          // Change accidental on existing note
           const updated = [...prev];
           updated[hoverBeatIdx] = { ...beat, notes: beat.notes.map((n) => posMatch(n) ? hoverNote : n) };
           return updated;
         }
+        // Add note to chord
         const updated = [...prev];
         updated[hoverBeatIdx] = { ...beat, notes: [...beat.notes, hoverNote] };
         return updated;
@@ -1274,32 +1384,43 @@ export function NoteEditor() {
   }, [hoverDp, hoverStaff, hoverBeatIdx, selectedDuration, selectedAccidental, deleteMode, restMode, tsTop, tsBottom, trebleBeats, bassBeats]);
 
   const handleUndo = useCallback(() => {
-    // Undo last note on whichever staff had the most recent note
-    // For simplicity, undo on both staves' last note
-    const undoOnStaff = (prev: PlacedBeat[]) => {
-      if (prev.length === 0) return prev;
-      let lastNoteIdx = prev.length - 1;
-      while (lastNoteIdx >= 0 && prev[lastNoteIdx].isRest) lastNoteIdx--;
-      if (lastNoteIdx < 0) return prev;
-      const last = prev[lastNoteIdx];
-      if (last.notes.length > 1) {
-        const updated = [...prev];
-        updated[lastNoteIdx] = { ...last, notes: last.notes.slice(0, -1) };
-        return updated;
-      }
-      return [...prev.slice(0, lastNoteIdx), ...prev.slice(lastNoteIdx + 1)];
-    };
-    // Undo on the staff that was last hovered, or both
-    if (hoverStaff === "treble") setTrebleBeats(undoOnStaff);
-    else if (hoverStaff === "bass") setBassBeats(undoOnStaff);
-    else { setTrebleBeats(undoOnStaff); setBassBeats(undoOnStaff); }
-  }, [hoverStaff, setTrebleBeats, setBassBeats]);
+    const { past, future } = historyRef.current;
+    if (past.length === 0) return;
+    // Save current state to future (redo stack)
+    setTrebleBeatsRaw((tb) => {
+      setBassBeatsRaw((bb) => {
+        future.push([tb, bb]);
+        return bb;
+      });
+      return tb;
+    });
+    const [prevTreble, prevBass] = past.pop()!;
+    setTrebleBeatsRaw(prevTreble);
+    setBassBeatsRaw(prevBass);
+  }, []);
+
+  const handleRedo = useCallback(() => {
+    const { past, future } = historyRef.current;
+    if (future.length === 0) return;
+    // Save current state to past (undo stack)
+    setTrebleBeatsRaw((tb) => {
+      setBassBeatsRaw((bb) => {
+        past.push([tb, bb]);
+        return bb;
+      });
+      return tb;
+    });
+    const [nextTreble, nextBass] = future.pop()!;
+    setTrebleBeatsRaw(nextTreble);
+    setBassBeatsRaw(nextBass);
+  }, []);
 
   const handleClear = useCallback(() => {
+    pushUndo();
     const fresh = fillWithRests(tsTop / tsBottom);
     setTrebleBeatsRaw(fresh);
-    setBassBeatsRaw([...fresh.map((b) => ({ ...b }))]);
-  }, [tsTop, tsBottom]);
+    setBassBeatsRaw(fillWithRests(tsTop / tsBottom));
+  }, [tsTop, tsBottom, pushUndo]);
 
   /** Render a rest glyph on a single staff given its line Y positions. */
   function renderRestOnStaff(dur: Duration, x: number, lineYs: number[], opacity = 1) {
@@ -1357,7 +1478,7 @@ export function NoteEditor() {
       : NOTEHEAD_BLACK;
     const headW = (head.outlineXMax - head.outlineXMin) * s;
     const headX = x - headW / 2 - head.outlineXMin * s;
-    const accSym = accidentalSymbol(acc);
+    const accSym = displayAccidental(acc, dp, keySig);
 
     // Ledger lines
     const ledgers: number[] = [];
@@ -1403,20 +1524,30 @@ export function NoteEditor() {
 
     const elements: React.ReactNode[] = [];
 
+    // Helper: compute stem geometry for a group of notes on one staff
+    function stemGeometry(
+      dps: number[], staffTopDp: number, staffMidDp: number, yOff: number
+    ) {
+      const avgDp = dps.reduce((a, b) => a + b, 0) / dps.length;
+      const stemDown = avgDp >= staffMidDp;
+      const stemLeft = (head.outlineXMax - head.stemRight) * s;
+      const stemX = stemDown ? x - headW / 2 + stemLeft : x - headW / 2 + head.stemRight * s;
+      const topDp = Math.max(...dps);
+      const botDp = Math.min(...dps);
+      const topY = dpToY(topDp, staffTopDp, yOff);
+      const botY = dpToY(botDp, staffTopDp, yOff);
+      // Stem base: where it meets the near notehead
+      const stemBaseY = stemDown ? topY : botY;
+      // Stem end: extends STEM_HEIGHT beyond the far notehead
+      const stemEndY = stemDown ? botY + STEM_HEIGHT : topY - STEM_HEIGHT;
+      return { stemDown, stemX, stemBaseY, stemEndY };
+    }
+
     // Render treble notes
     if (trebleNotes.length > 0) {
       const dps = trebleNotes.map((n) => n.dp);
-      const avgDp = dps.reduce((a, b) => a + b, 0) / dps.length;
-      const stemDown = avgDp >= ED_TREBLE_MID;
-      const stemX = stemDown ? x - headW / 2 : x + headW / 2;
-      const topDp = Math.max(...dps);
-      const botDp = Math.min(...dps);
-      const topY = dpToY(topDp, ED_TREBLE_TOP, trebleYOffset);
-      const botY = dpToY(botDp, ED_TREBLE_TOP, trebleYOffset);
-      const stemEndY = stemDown
-        ? Math.max(botY + STEM_HEIGHT, dpToY(ED_TREBLE_LINES[0], ED_TREBLE_TOP, trebleYOffset))
-        : Math.min(topY - STEM_HEIGHT, dpToY(ED_TREBLE_TOP, ED_TREBLE_TOP, trebleYOffset));
-      const stemBaseY = stemDown ? topY : botY;
+      const { stemDown, stemX, stemBaseY, stemEndY } =
+        stemGeometry(dps, ED_TREBLE_TOP, ED_TREBLE_MID, trebleYOffset);
 
       trebleNotes.forEach((n, i) => {
         elements.push(
@@ -1446,17 +1577,8 @@ export function NoteEditor() {
     // Render bass notes
     if (bassNotes.length > 0) {
       const dps = bassNotes.map((n) => n.dp);
-      const avgDp = dps.reduce((a, b) => a + b, 0) / dps.length;
-      const stemDown = avgDp >= ED_BASS_MID;
-      const stemX = stemDown ? x - headW / 2 : x + headW / 2;
-      const topDp = Math.max(...dps);
-      const botDp = Math.min(...dps);
-      const topY = dpToY(topDp, ED_BASS_TOP, bassYOffset);
-      const botY = dpToY(botDp, ED_BASS_TOP, bassYOffset);
-      const stemEndY = stemDown
-        ? Math.max(botY + STEM_HEIGHT, dpToY(ED_BASS_BOT, ED_BASS_TOP, bassYOffset))
-        : Math.min(topY - STEM_HEIGHT, dpToY(ED_BASS_TOP, ED_BASS_TOP, bassYOffset));
-      const stemBaseY = stemDown ? topY : botY;
+      const { stemDown, stemX, stemBaseY, stemEndY } =
+        stemGeometry(dps, ED_BASS_TOP, ED_BASS_MID, bassYOffset);
 
       bassNotes.forEach((n, i) => {
         elements.push(
@@ -1514,8 +1636,8 @@ export function NoteEditor() {
           </button>
         ))}
         <div style={{ width: 1, height: 36, background: "#ccc", margin: "0 2px" }} />
-        {([["", "\u266E"], ["#", "\u266F"], ["b", "\u266D"]] as [Accidental, string][]).map(([acc, sym]) => (
-          <button key={acc || "nat"} onClick={() => setSelectedAccidental(acc)}
+        {([["n", "\u266E"], ["#", "\u266F"], ["b", "\u266D"]] as [Accidental, string][]).map(([acc, sym]) => (
+          <button key={acc} onClick={() => setSelectedAccidental((prev) => prev === acc ? "" : acc)}
             style={{ ...btnOn(selectedAccidental === acc), fontSize: 20 }}
             title={acc === "#" ? "Sharp" : acc === "b" ? "Flat" : "Natural"}>
             {sym}
@@ -1551,8 +1673,11 @@ export function NoteEditor() {
         >
           Delete
         </button>
-        <button onClick={handleUndo} style={{ ...btnBase, width: "auto", padding: "0 10px", fontSize: 13 }} title="Undo last note">
+        <button onClick={handleUndo} style={{ ...btnBase, width: "auto", padding: "0 10px", fontSize: 13 }} title="Undo (Ctrl+Z)">
           Undo
+        </button>
+        <button onClick={handleRedo} style={{ ...btnBase, width: "auto", padding: "0 10px", fontSize: 13 }} title="Redo (Ctrl+Shift+Z)">
+          Redo
         </button>
         <button onClick={handleClear} style={{ ...btnBase, width: "auto", padding: "0 10px", fontSize: 13 }} title="Clear all">
           Clear
@@ -1605,7 +1730,12 @@ export function NoteEditor() {
         </label>
       </div>
       <div style={{ height: 20, marginBottom: 4, fontFamily: "serif", fontSize: 14, color: "#666" }}>
-        {hoverDp !== null ? `${dpToNoteName(hoverDp)}${accidentalSymbol(selectedAccidental)}` : "\u00A0"}
+        {hoverDp !== null ? (() => {
+          const letterIdx = ((hoverDp % 7) + 7) % 7;
+          const octave = Math.floor(hoverDp / 7);
+          const acc = accidentalSymbol(effectiveAccidental(selectedAccidental, hoverDp, keySig));
+          return `${LETTERS[letterIdx]}${acc}${octave}`;
+        })() : "\u00A0"}
       </div>
 
       {/* Interactive grand staff */}
@@ -1818,7 +1948,7 @@ export function NoteEditor() {
           }
 
           const wouldRemove = noteExists;
-          const ghostDur = (existingBeat && !existingBeat.isRest) ? existingBeat.duration : selectedDuration;
+          const ghostDur = (existingBeat && !existingBeat.isRest && existingBeat.duration === selectedDuration) ? existingBeat.duration : selectedDuration;
           return renderNotehead(hoverDp, ghostDur, x, sTopDp, sBotDp, yOff, selectedAccidental, wouldRemove ? 0.15 : 0.3);
         })()}
       </svg>

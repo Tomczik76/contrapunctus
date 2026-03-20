@@ -595,4 +595,14 @@ class AnalysisSuite extends munit.FunSuite:
       case Pulse.Atom(nel) => nel.head
     assertEquals(analyses.size, 1)
 
+  test("power chord C-G in C major yields only I⁵, not also V⁵⁶₄"):
+    import Note.*
+    val beat1 = Pulse.Atom(C(3), G(3))
+    val results = Analysis(NoteType.C, Scale.Major, beat1)
+    val analyses = results.toList.collect:
+      case Pulse.Atom(nel) => nel.head
+    val rns = analyses.head.chords.flatMap(_.romanNumerals.toList)
+    assert(rns.contains("I⁵"), s"Expected I⁵ in $rns")
+    assert(!rns.contains("V⁵⁶₄"), s"Should not contain V⁵⁶₄ in $rns")
+
 end AnalysisSuite

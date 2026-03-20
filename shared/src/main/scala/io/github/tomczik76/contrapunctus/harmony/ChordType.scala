@@ -52,7 +52,10 @@ trait ChordGroup:
   private def generateInversions(
       baseChordType: BaseChordType
   ): NonEmptyMap[NonEmptySet[Interval], NonEmptySet[ChordType]] =
-    val inversions = baseChordType.allInversions.map(chordType =>
+    val numPitchClasses = baseChordType.allInversions.head
+      .intervals.map(_.normalizedValue).toSortedSet.size
+    val dedupedInversions = baseChordType.allInversions.take(numPitchClasses)
+    val inversions = dedupedInversions.map(chordType =>
       NonEmptyMap.of(
         chordType.intervals -> NonEmptySet.of(chordType: ChordType)
       )
