@@ -645,6 +645,7 @@ interface PlacedNote {
 interface PlacedBeat {
   notes: PlacedNote[];
   duration: Duration;
+  dotted?: boolean;
   isRest?: boolean;
 }
 
@@ -680,9 +681,16 @@ const DURATION_VALUE: Record<Duration, number> = {
   sixteenth: 1 / 16,
 };
 
+/** Get the time value of a beat, accounting for dotted durations. */
+function beatValue(beat: PlacedBeat): number {
+  const base = DURATION_VALUE[beat.duration];
+  return beat.dotted ? base * 1.5 : base;
+}
+
 /** Which durations fit in a given remaining measure space. */
-function durationFits(dur: Duration, remaining: number): boolean {
-  return DURATION_VALUE[dur] <= remaining + 1e-9;
+function durationFits(dur: Duration, remaining: number, dotted = false): boolean {
+  const val = DURATION_VALUE[dur] * (dotted ? 1.5 : 1);
+  return val <= remaining + 1e-9;
 }
 
 /** Compute measure groupings: array of { startIdx, count } into the flat beats array. */
@@ -694,7 +702,7 @@ function computeMeasures(beats: PlacedBeat[], tsTop: number, tsBottom: number): 
     let used = 0;
     const start = i;
     while (i < beats.length) {
-      const val = DURATION_VALUE[beats[i].duration];
+      const val = beatValue(beats[i]);
       if (used + val > measureCapacity + 1e-9) break;
       used += val;
       i++;
@@ -712,22 +720,46 @@ function remainingInLastMeasure(beats: PlacedBeat[], tsTop: number, tsBottom: nu
   const last = measures[measures.length - 1];
   let used = 0;
   for (let i = last.startIdx; i < last.startIdx + last.count; i++) {
-    used += DURATION_VALUE[beats[i].duration];
+    used += beatValue(beats[i]);
   }
   const rem = measureCapacity - used;
   return rem < 1e-9 ? measureCapacity : rem; // if full, next beat starts a new measure
 }
 
 /** Fill remaining space in a measure with the largest rests that fit. */
-function fillWithRests(remaining: number): PlacedBeat[] {
+/** Fill space with rests, respecting beat alignment.
+ *  posInMeasure: how far into the measure the rest starts (fraction of whole note).
+ *  beatUnit: the beat value (e.g. 1/4 for quarter-note beats). */
+function fillWithRests(remaining: number, posInMeasure = 0, beatUnit = 1 / 4): PlacedBeat[] {
   const rests: PlacedBeat[] = [];
   const durs: Duration[] = ["whole", "half", "quarter", "eighth", "sixteenth"];
   let left = remaining;
+  let pos = posInMeasure;
+
   while (left > 1e-9) {
-    const dur = durs.find((d) => DURATION_VALUE[d] <= left + 1e-9);
-    if (!dur) break;
-    rests.push({ notes: [], duration: dur, isRest: true });
-    left -= DURATION_VALUE[dur];
+    // How much space to the next beat boundary?
+    const inBeat = pos % beatUnit;
+    const toNextBeat = inBeat < 1e-9 ? 0 : beatUnit - inBeat;
+
+    if (toNextBeat > 1e-9 && toNextBeat <= left + 1e-9) {
+      // Fill to the next beat boundary with small rests
+      let sub = toNextBeat;
+      while (sub > 1e-9) {
+        const dur = durs.find((d) => DURATION_VALUE[d] <= sub + 1e-9);
+        if (!dur) break;
+        rests.push({ notes: [], duration: dur, isRest: true });
+        sub -= DURATION_VALUE[dur];
+        left -= DURATION_VALUE[dur];
+        pos += DURATION_VALUE[dur];
+      }
+    } else {
+      // On a beat boundary (or toNextBeat > left): use largest rest that fits
+      const dur = durs.find((d) => DURATION_VALUE[d] <= left + 1e-9);
+      if (!dur) break;
+      rests.push({ notes: [], duration: dur, isRest: true });
+      left -= DURATION_VALUE[dur];
+      pos += DURATION_VALUE[dur];
+    }
   }
   return rests;
 }
@@ -740,7 +772,7 @@ function autoFillBeats(beats: PlacedBeat[], tsTop: number, tsBottom: number): Pl
   const last = measures[measures.length - 1];
   let used = 0;
   for (let i = last.startIdx; i < last.startIdx + last.count; i++) {
-    used += DURATION_VALUE[beats[i].duration];
+    used += beatValue(beats[i]);
   }
   const remaining = measureCap - used;
   if (remaining > 1e-9) {
@@ -752,11 +784,12 @@ function autoFillBeats(beats: PlacedBeat[], tsTop: number, tsBottom: number): Pl
     const trimmed = beats.slice(0, trimEnd);
     let usedAfterTrim = 0;
     for (let i = last.startIdx; i < trimmed.length; i++) {
-      usedAfterTrim += DURATION_VALUE[trimmed[i].duration];
+      usedAfterTrim += beatValue(trimmed[i]);
     }
     const remAfterTrim = measureCap - usedAfterTrim;
     if (remAfterTrim > 1e-9) {
-      return [...trimmed, ...fillWithRests(remAfterTrim)];
+      const bUnit = tsBottom > 0 ? 1 / tsBottom : 1 / 4;
+      return [...trimmed, ...fillWithRests(remAfterTrim, usedAfterTrim, bUnit)];
     }
     return trimmed;
   }
@@ -774,7 +807,7 @@ function beatTimeOffsets(beats: PlacedBeat[]): number[] {
   let t = 0;
   for (const b of beats) {
     times.push(timeKey(t));
-    t += DURATION_VALUE[b.duration];
+    t += beatValue(b);
   }
   return times;
 }
@@ -911,6 +944,7 @@ function NoteIcon({ duration, size }: { duration: Duration; size: number }) {
 export function NoteEditor() {
   const [selectedDuration, setSelectedDuration] = useState<Duration>("quarter");
   const [selectedAccidental, setSelectedAccidental] = useState<Accidental>("");
+  const [dottedMode, setDottedMode] = useState(false);
   const [deleteMode, setDeleteMode] = useState(false);
   const [restMode, setRestMode] = useState(false);
   const [tsTop, setTsTop] = useState(4);
@@ -1156,7 +1190,7 @@ export function NoteEditor() {
         const beat = beats[idx];
         if (beat.isRest) return [];
         // Check if the beat's duration extends past t
-        const beatEnd = times[idx] + DURATION_VALUE[beat.duration];
+        const beatEnd = times[idx] + beatValue(beat);
         if (beatEnd > t - 1e-9) return beat.notes;
         return [];
       }
@@ -1400,19 +1434,24 @@ export function NoteEditor() {
           const measureEnd = measure.startIdx + measure.count;
           let available = 0;
           for (let i = restStart; i < measureEnd; i++) {
-            if (working[i].isRest) available += DURATION_VALUE[working[i].duration];
+            if (working[i].isRest) available += beatValue(working[i]);
             else break;
           }
-          if (!durationFits(selectedDuration, available)) return prev;
+          if (!durationFits(selectedDuration, available, dottedMode)) return prev;
           let restsToRemove = 0;
           let spaceFreed = 0;
           for (let i = restStart; i < measureEnd && working[i].isRest; i++) {
             restsToRemove++;
-            spaceFreed += DURATION_VALUE[working[i].duration];
+            spaceFreed += beatValue(working[i]);
           }
-          const newBeat: PlacedBeat = { notes: [hoverNote], duration: selectedDuration };
-          const leftover = spaceFreed - DURATION_VALUE[selectedDuration];
-          const fillerRests = leftover > 1e-9 ? fillWithRests(leftover) : [];
+          const newBeat: PlacedBeat = { notes: [hoverNote], duration: selectedDuration, dotted: dottedMode || undefined };
+          const leftover = spaceFreed - beatValue(newBeat);
+          // Compute position in measure after the new beat for rest alignment
+          let posInMeasure = 0;
+          for (let i = measure.startIdx; i < restStart; i++) posInMeasure += beatValue(working[i]);
+          posInMeasure += beatValue(newBeat);
+          const bUnit = 1 / tsBottom;
+          const fillerRests = leftover > 1e-9 ? fillWithRests(leftover, posInMeasure, bUnit) : [];
           return [
             ...working.slice(0, restStart),
             newBeat,
@@ -1430,15 +1469,19 @@ export function NoteEditor() {
           const measureEnd = measure.startIdx + measure.count;
           // Free space from this beat onward (this beat + any consecutive rests after it)
           let beatsToRemove = 1;
-          let spaceFreed = DURATION_VALUE[beat.duration];
+          let spaceFreed = beatValue(beat);
           for (let i = hoverBeatIdx + 1; i < measureEnd && working[i].isRest; i++) {
             beatsToRemove++;
-            spaceFreed += DURATION_VALUE[working[i].duration];
+            spaceFreed += beatValue(working[i]);
           }
-          if (!durationFits(selectedDuration, spaceFreed)) return prev;
-          const newBeat: PlacedBeat = { notes: [...beat.notes], duration: selectedDuration };
-          const leftover = spaceFreed - DURATION_VALUE[selectedDuration];
-          const fillerRests = leftover > 1e-9 ? fillWithRests(leftover) : [];
+          if (!durationFits(selectedDuration, spaceFreed, dottedMode)) return prev;
+          const newBeat: PlacedBeat = { notes: [...beat.notes], duration: selectedDuration, dotted: dottedMode || undefined };
+          const leftover = spaceFreed - beatValue(newBeat);
+          let posInMeasure = 0;
+          for (let i = measure.startIdx; i < hoverBeatIdx; i++) posInMeasure += beatValue(working[i]);
+          posInMeasure += beatValue(newBeat);
+          const bUnit = 1 / tsBottom;
+          const fillerRests = leftover > 1e-9 ? fillWithRests(leftover, posInMeasure, bUnit) : [];
           return [
             ...working.slice(0, hoverBeatIdx),
             newBeat,
@@ -1472,9 +1515,9 @@ export function NoteEditor() {
         return updated;
       }
       // Past the end — start a new measure
-      return [...working, { notes: [hoverNote], duration: selectedDuration }];
+      return [...working, { notes: [hoverNote], duration: selectedDuration, dotted: dottedMode || undefined }];
     });
-  }, [hoverDp, hoverStaff, hoverBeatIdx, selectedDuration, selectedAccidental, deleteMode, restMode, tsTop, tsBottom, trebleBeats, bassBeats]);
+  }, [hoverDp, hoverStaff, hoverBeatIdx, selectedDuration, selectedAccidental, dottedMode, deleteMode, restMode, tsTop, tsBottom, trebleBeats, bassBeats, paddedTrebleBeats, paddedBassBeats]);
 
   const handleUndo = useCallback(() => {
     const { past, future } = historyRef.current;
@@ -1698,6 +1741,23 @@ export function NoteEditor() {
       }
     }
 
+    // Augmentation dot for dotted notes
+    if (beat.dotted) {
+      const allDps = [...trebleNotes, ...bassNotes].map((n) => n.dp);
+      const dotX = x + headW / 2 + 4;
+      for (const ndp of allDps) {
+        // If note is on a line, shift dot up to the space above
+        const dotDp = ndp % 2 === 0 ? ndp + 1 : ndp;
+        const staff = ndp >= ED_GRAND_THRESHOLD ? "treble" : "bass";
+        const sTop = staff === "treble" ? ED_TREBLE_TOP : ED_BASS_TOP;
+        const yO = staff === "treble" ? trebleYOffset : bassYOffset;
+        const dotY = dpToY(dotDp, sTop, yO);
+        elements.push(
+          <circle key={`dot-${ndp}`} cx={dotX} cy={dotY} r={1.5} fill="currentColor" opacity={opacity} />
+        );
+      }
+    }
+
     return <g>{elements}</g>;
   }
 
@@ -1779,6 +1839,11 @@ export function NoteEditor() {
             <NoteIcon duration={key} size={24} />
           </button>
         ))}
+        <button onClick={() => setDottedMode((d) => !d)}
+          style={{ ...btnOn(dottedMode), fontSize: 20, fontWeight: 700 }}
+          title="Dotted note">
+          .
+        </button>
         {sep}
         {([["n", "\u266E"], ["#", "\u266F"], ["b", "\u266D"]] as [Accidental, string][]).map(([acc, sym]) => (
           <button key={acc} onClick={() => setSelectedAccidental((prev) => prev === acc ? "" : acc)}
