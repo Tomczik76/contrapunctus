@@ -1,4 +1,4 @@
-import { useState, useRef, useCallback, useMemo } from "react";
+import { useState, useRef, useCallback, useMemo, useEffect } from "react";
 import type { RenderData, NoteRender, BeatRender, Staff as StaffDef, ContrapunctusApi } from "../contrapunctus";
 import { Contrapunctus } from "contrapunctus";
 
@@ -29,6 +29,8 @@ const LEDGER_HW = 8;
 const STEM_HEIGHT = 35 * (SPACE / 10);
 /** Stem thickness. */
 const STEM_W = 1.5;
+/** Vertical gap between systems (rows of staves). */
+const SYSTEM_GAP_V = 20;
 
 // ── Bravura glyph outlines (from VexFlow / SMuFL) ───────────────────
 // VexFlow outline format: "m x y", "l x y", "q endX endY cpX cpY",
@@ -961,6 +963,9 @@ export function NoteEditor() {
   function getStaffBeats(staff: "treble" | "bass") {
     return staff === "treble" ? trebleBeats : bassBeats;
   }
+  function getDisplayBeats(staff: "treble" | "bass") {
+    return staff === "treble" ? paddedTrebleBeats : paddedBassBeats;
+  }
 
   const [hoverDp, setHoverDp] = useState<number | null>(null);
   const [hoverStaff, setHoverStaff] = useState<"treble" | "bass" | null>(null);
@@ -968,6 +973,20 @@ export function NoteEditor() {
   const [tonicIdx, setTonicIdx] = useState(0); // C
   const [scaleName, setScaleName] = useState("major");
   const svgRef = useRef<SVGSVGElement>(null);
+  const containerRef = useRef<HTMLDivElement>(null);
+  const [containerWidth, setContainerWidth] = useState(880);
+
+  useEffect(() => {
+    const el = containerRef.current;
+    if (!el) return;
+    const ro = new ResizeObserver((entries) => {
+      for (const entry of entries) {
+        setContainerWidth(entry.contentRect.width);
+      }
+    });
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
 
   // Key signature
   const keySig = useMemo(() => getKeySig(tonicIdx, scaleName), [tonicIdx, scaleName]);
@@ -984,9 +1003,29 @@ export function NoteEditor() {
   const displayBotDp = 14;
   const staffHeight = bassYOffset + (ED_BASS_TOP - displayBotDp) * STEP + STEP * 2;
 
+  // Pad the shorter staff with whole-measure rests so both staves have equal measures
+  const [paddedTrebleBeats, paddedBassBeats] = useMemo(() => {
+    const measureCap = tsTop / tsBottom;
+    const tMeasures = computeMeasures(trebleBeats, tsTop, tsBottom);
+    const bMeasures = computeMeasures(bassBeats, tsTop, tsBottom);
+    const maxM = Math.max(tMeasures.length, bMeasures.length);
+    const padToMeasures = (beats: PlacedBeat[], mCount: number): PlacedBeat[] => {
+      if (mCount >= maxM) return beats;
+      const padding: PlacedBeat[] = [];
+      for (let i = mCount; i < maxM; i++) {
+        padding.push(...fillWithRests(measureCap));
+      }
+      return [...beats, ...padding];
+    };
+    return [
+      padToMeasures(trebleBeats, tMeasures.length),
+      padToMeasures(bassBeats, bMeasures.length),
+    ];
+  }, [trebleBeats, bassBeats, tsTop, tsBottom]);
+
   // Time-based beat positioning
-  const trebleTimes = useMemo(() => beatTimeOffsets(trebleBeats), [trebleBeats]);
-  const bassTimes = useMemo(() => beatTimeOffsets(bassBeats), [bassBeats]);
+  const trebleTimes = useMemo(() => beatTimeOffsets(paddedTrebleBeats), [paddedTrebleBeats]);
+  const bassTimes = useMemo(() => beatTimeOffsets(paddedBassBeats), [paddedBassBeats]);
 
   const allTimePoints = useMemo(() => {
     const set = new Set<number>();
@@ -995,73 +1034,106 @@ export function NoteEditor() {
     return [...set].sort((a, b) => a - b);
   }, [trebleTimes, bassTimes]);
 
-  // X positions: each unique time column gets equal spacing, with barline gaps
-  const timeToX = useMemo(() => {
+  // System layout: break music into rows that fit the container width
+  const systemLayout = useMemo(() => {
+    const staffW = containerWidth;
+    const noteAreaEnd = staffW - RIGHT_MARGIN;
     const measureCap = timeKey(tsTop / tsBottom);
-    const map = new Map<number, number>();
-    let x = edLeft + ED_NOTE_SPACING / 2;
-    for (const t of allTimePoints) {
-      // Check if we crossed a measure boundary since the last time point
-      const measureIdx = Math.floor(t / measureCap + 1e-9);
-      if (measureIdx > 0 && map.size > 0) {
-        const boundary = timeKey(measureIdx * measureCap);
-        // If t is exactly at a boundary and the previous time point was in the previous measure
-        const prevEntries = [...map.entries()];
-        const lastEntry = prevEntries[prevEntries.length - 1];
-        if (lastEntry) {
-          const prevMeasure = Math.floor(lastEntry[0] / measureCap + 1e-9);
-          if (measureIdx > prevMeasure) {
-            x += ED_BARLINE_GAP;
-          }
-        }
+
+    // Group time point indices by measure
+    const measures: { startIdx: number; endIdx: number }[] = [];
+    let mStart = 0;
+    for (let i = 1; i <= allTimePoints.length; i++) {
+      if (i === allTimePoints.length ||
+          Math.floor(allTimePoints[i] / measureCap + 1e-9) >
+          Math.floor(allTimePoints[i - 1] / measureCap + 1e-9)) {
+        measures.push({ startIdx: mStart, endIdx: i });
+        mStart = i;
       }
-      map.set(t, x);
-      x += ED_NOTE_SPACING;
     }
-    return map;
-  }, [allTimePoints, edLeft, tsTop, tsBottom]);
 
-  const trebleBeatPositions = useMemo(() =>
-    trebleTimes.map((t) => timeToX.get(t) ?? edLeft),
-    [trebleTimes, timeToX]
-  );
-  const bassBeatPositions = useMemo(() =>
-    bassTimes.map((t) => timeToX.get(t) ?? edLeft),
-    [bassTimes, timeToX]
-  );
+    // Assign measures to systems by fitting them within staffW
+    const systems: { startIdx: number; endIdx: number }[] = [];
+    let sysStart = 0;
+    let x = edLeft + ED_NOTE_SPACING / 2;
+    for (let m = 0; m < measures.length; m++) {
+      const mLen = measures[m].endIdx - measures[m].startIdx;
+      const mWidth = mLen * ED_NOTE_SPACING + ED_BARLINE_GAP;
+      if (x + mWidth > noteAreaEnd && measures[m].startIdx > sysStart) {
+        systems.push({ startIdx: sysStart, endIdx: measures[m].startIdx });
+        sysStart = measures[m].startIdx;
+        x = edLeft + ED_NOTE_SPACING / 2;
+      }
+      x += mWidth;
+    }
+    systems.push({ startIdx: sysStart, endIdx: allTimePoints.length });
 
-  // Barlines at measure boundaries
-  const barlineXs = useMemo(() => {
-    const measureCap = timeKey(tsTop / tsBottom);
-    const xs: number[] = [];
+    // Compute per-time-point positions: x and systemIdx
+    const positions = new Map<number, { x: number; systemIdx: number }>();
+    for (let s = 0; s < systems.length; s++) {
+      let lx = edLeft + ED_NOTE_SPACING / 2;
+      for (let i = systems[s].startIdx; i < systems[s].endIdx; i++) {
+        if (i > systems[s].startIdx) {
+          const prevM = Math.floor(allTimePoints[i - 1] / measureCap + 1e-9);
+          const curM = Math.floor(allTimePoints[i] / measureCap + 1e-9);
+          if (curM > prevM) lx += ED_BARLINE_GAP;
+        }
+        positions.set(allTimePoints[i], { x: lx, systemIdx: s });
+        lx += ED_NOTE_SPACING;
+      }
+    }
+
+    // Barlines per system
+    const barlines: { x: number; systemIdx: number }[] = [];
     for (let k = 1; ; k++) {
       const boundary = timeKey(k * measureCap);
-      // Find time points just before and after boundary
-      let beforeX: number | null = null;
-      let afterX: number | null = null;
+      let beforePos: { x: number; systemIdx: number } | null = null;
+      let afterPos: { x: number; systemIdx: number } | null = null;
       for (const t of allTimePoints) {
-        if (t < boundary - 1e-9) beforeX = timeToX.get(t)!;
-        if (t >= boundary - 1e-9 && afterX === null) afterX = timeToX.get(t)!;
+        if (t < boundary - 1e-9) beforePos = positions.get(t)!;
+        if (t >= boundary - 1e-9 && afterPos === null) afterPos = positions.get(t)!;
       }
-      if (beforeX === null || afterX === null) break;
-      xs.push((beforeX + afterX) / 2);
+      if (beforePos === null || afterPos === null) break;
+      if (beforePos.systemIdx === afterPos.systemIdx) {
+        barlines.push({ x: (beforePos.x + afterPos.x) / 2, systemIdx: beforePos.systemIdx });
+      }
     }
-    return xs;
-  }, [allTimePoints, timeToX, tsTop, tsBottom]);
 
-  const totalWidth = useMemo(() => {
-    if (allTimePoints.length === 0) return 600;
-    const lastX = timeToX.get(allTimePoints[allTimePoints.length - 1])!;
-    return Math.max(lastX + ED_NOTE_SPACING + RIGHT_MARGIN, 600);
-  }, [allTimePoints, timeToX]);
+    return { systems, positions, barlines, staffW, systemCount: Math.max(systems.length, 1) };
+  }, [allTimePoints, containerWidth, edLeft, tsTop, tsBottom]);
 
-  /** Get x for a beat index on a staff (existing or new). */
-  function staffBeatX(staff: "treble" | "bass", idx: number): number {
+  const { systems, barlines: barlineData, systemCount } = systemLayout;
+  const staffW = systemLayout.staffW;
+  const RN_SPACE = 32;
+  const systemTotalHeight = staffHeight + RN_SPACE + SYSTEM_GAP_V;
+  const svgHeight = systemCount * systemTotalHeight - SYSTEM_GAP_V;
+
+  // Legacy-compatible position lookups (include system info)
+  const timeToPos = systemLayout.positions;
+
+  const trebleBeatPositions = useMemo(() =>
+    trebleTimes.map((t) => {
+      const p = timeToPos.get(t);
+      return p ? { x: p.x, sys: p.systemIdx } : { x: edLeft, sys: 0 };
+    }),
+    [trebleTimes, timeToPos, edLeft]
+  );
+  const bassBeatPositions = useMemo(() =>
+    bassTimes.map((t) => {
+      const p = timeToPos.get(t);
+      return p ? { x: p.x, sys: p.systemIdx } : { x: edLeft, sys: 0 };
+    }),
+    [bassTimes, timeToPos, edLeft]
+  );
+
+  /** Get x and system for a beat index on a staff (existing or new). */
+  function staffBeatPos(staff: "treble" | "bass", idx: number): { x: number; sys: number } {
     const positions = staff === "treble" ? trebleBeatPositions : bassBeatPositions;
     if (idx < positions.length) return positions[idx];
     // New beat: past the end
-    if (positions.length === 0) return edLeft + ED_NOTE_SPACING / 2;
-    return positions[positions.length - 1] + ED_NOTE_SPACING;
+    if (positions.length === 0) return { x: edLeft + ED_NOTE_SPACING / 2, sys: 0 };
+    const last = positions[positions.length - 1];
+    return { x: last.x + ED_NOTE_SPACING, sys: last.sys };
   }
 
   // Compute Roman numeral analysis by merging notes at each time point,
@@ -1135,25 +1207,27 @@ export function NoteEditor() {
   const [rnSelections, setRnSelections] = useState<Record<number, number>>({});
 
   const hasRN = romanNumerals.some((rn) => rn.length > 0);
-  const RN_SPACE_ED = hasRN ? 32 : 0;
-  const editorStaffHeight = staffHeight + RN_SPACE_ED;
 
-  /** Convert mouse x to the nearest beat index for a given staff. */
-  function xToBeatIdx(mouseX: number, staff: "treble" | "bass"): number {
+  /** Convert mouse x to the nearest beat index for a given staff and system. */
+  function xToBeatIdx(mouseX: number, staff: "treble" | "bass", sysIdx: number): number {
     const positions = staff === "treble" ? trebleBeatPositions : bassBeatPositions;
-    const staffBeats = staff === "treble" ? trebleBeats : bassBeats;
-    if (staffBeats.length === 0) return 0;
-    // Only allow "new beat past the end" if the last measure is fully composed (no trailing rests)
-    const hasTrailingRest = staffBeats[staffBeats.length - 1].isRest;
+    const dBeats = getDisplayBeats(staff);
+    if (dBeats.length === 0) return 0;
+    // Allow "new beat past the end" if the last beat isn't a rest
+    const rawBeats = getStaffBeats(staff);
+    const hasTrailingRest = rawBeats.length > 0 && rawBeats[rawBeats.length - 1].isRest;
     let closest = 0;
     let closestDist = Infinity;
     if (!hasTrailingRest) {
-      const newX = staffBeatX(staff, staffBeats.length);
-      closest = staffBeats.length;
-      closestDist = Math.abs(mouseX - newX);
+      const newPos = staffBeatPos(staff, dBeats.length);
+      if (newPos.sys === sysIdx) {
+        closest = dBeats.length;
+        closestDist = Math.abs(mouseX - newPos.x);
+      }
     }
     for (let i = 0; i < positions.length; i++) {
-      const dist = Math.abs(mouseX - positions[i]);
+      if (positions[i].sys !== sysIdx) continue;
+      const dist = Math.abs(mouseX - positions[i].x);
       if (dist < closestDist) {
         closestDist = dist;
         closest = i;
@@ -1191,13 +1265,17 @@ export function NoteEditor() {
     const svg = svgRef.current;
     if (!svg) return;
     const rect = svg.getBoundingClientRect();
-    const mouseY = e.clientY - rect.top;
-    const mouseX = e.clientX - rect.left;
-    const { dp, staff } = yToDpAndStaff(mouseY);
+    const scaleY = svgHeight / rect.height;
+    const scaleX = staffW / rect.width;
+    const mouseY = (e.clientY - rect.top) * scaleY;
+    const mouseX = (e.clientX - rect.left) * scaleX;
+    const sysIdx = Math.min(Math.floor(mouseY / systemTotalHeight), systemCount - 1);
+    const localY = mouseY - sysIdx * systemTotalHeight;
+    const { dp, staff } = yToDpAndStaff(localY);
     if (dp >= displayBotDp && dp <= displayTopDp) {
       setHoverDp(dp);
       setHoverStaff(staff);
-      setHoverBeatIdx(xToBeatIdx(mouseX, staff));
+      setHoverBeatIdx(xToBeatIdx(mouseX, staff, sysIdx));
       if (dragRef.current) {
         if (dp !== dragRef.current.startDp || staff !== dragRef.current.startStaff) {
           dragRef.current.moved = true;
@@ -1208,7 +1286,7 @@ export function NoteEditor() {
       setHoverStaff(null);
       setHoverBeatIdx(null);
     }
-  }, [yToDpAndStaff, trebleBeatPositions, bassBeatPositions]);
+  }, [yToDpAndStaff, trebleBeatPositions, bassBeatPositions, svgHeight, staffW, systemTotalHeight, systemCount]);
 
   const handleMouseDown = useCallback((e: React.MouseEvent<SVGSVGElement>) => {
     if (hoverDp === null || hoverBeatIdx === null || hoverStaff === null) return;
@@ -1297,60 +1375,75 @@ export function NoteEditor() {
     }
 
     setter((prev) => {
-      if (hoverBeatIdx < prev.length) {
-        const beat = prev[hoverBeatIdx];
+      // If clicking a padded rest (beyond raw beats), expand prev to include it
+      let working = prev;
+      if (hoverBeatIdx >= prev.length) {
+        const dBeats = hoverStaff === "treble" ? paddedTrebleBeats : paddedBassBeats;
+        if (hoverBeatIdx < dBeats.length) {
+          working = dBeats.slice(0, hoverBeatIdx + 1);
+          // Ensure we include at least through the measure containing hoverBeatIdx
+          const measureCap = tsTop / tsBottom;
+          const measures = computeMeasures(dBeats, tsTop, tsBottom);
+          const measure = measures.find((m) => hoverBeatIdx >= m.startIdx && hoverBeatIdx < m.startIdx + m.count);
+          if (measure) {
+            working = dBeats.slice(0, measure.startIdx + measure.count);
+          }
+        }
+      }
+      if (hoverBeatIdx < working.length) {
+        const beat = working[hoverBeatIdx];
         if (beat.isRest) {
-          const measures = computeMeasures(prev, tsTop, tsBottom);
+          const measures = computeMeasures(working, tsTop, tsBottom);
           const measure = measures.find((m) => hoverBeatIdx >= m.startIdx && hoverBeatIdx < m.startIdx + m.count);
           if (!measure) return prev;
           const restStart = hoverBeatIdx;
           const measureEnd = measure.startIdx + measure.count;
           let available = 0;
           for (let i = restStart; i < measureEnd; i++) {
-            if (prev[i].isRest) available += DURATION_VALUE[prev[i].duration];
+            if (working[i].isRest) available += DURATION_VALUE[working[i].duration];
             else break;
           }
           if (!durationFits(selectedDuration, available)) return prev;
           let restsToRemove = 0;
           let spaceFreed = 0;
-          for (let i = restStart; i < measureEnd && prev[i].isRest; i++) {
+          for (let i = restStart; i < measureEnd && working[i].isRest; i++) {
             restsToRemove++;
-            spaceFreed += DURATION_VALUE[prev[i].duration];
+            spaceFreed += DURATION_VALUE[working[i].duration];
           }
           const newBeat: PlacedBeat = { notes: [hoverNote], duration: selectedDuration };
           const leftover = spaceFreed - DURATION_VALUE[selectedDuration];
           const fillerRests = leftover > 1e-9 ? fillWithRests(leftover) : [];
           return [
-            ...prev.slice(0, restStart),
+            ...working.slice(0, restStart),
             newBeat,
             ...fillerRests,
-            ...prev.slice(restStart + restsToRemove),
+            ...working.slice(restStart + restsToRemove),
           ];
         }
         // Different duration selected → replace beat with new note at selected duration
         if (beat.duration !== selectedDuration) {
           // Treat like clicking on the rest space: remove this beat and consecutive rests after it,
           // then insert the new note and fill remaining space
-          const measures = computeMeasures(prev, tsTop, tsBottom);
+          const measures = computeMeasures(working, tsTop, tsBottom);
           const measure = measures.find((m) => hoverBeatIdx >= m.startIdx && hoverBeatIdx < m.startIdx + m.count);
           if (!measure) return prev;
           const measureEnd = measure.startIdx + measure.count;
           // Free space from this beat onward (this beat + any consecutive rests after it)
           let beatsToRemove = 1;
           let spaceFreed = DURATION_VALUE[beat.duration];
-          for (let i = hoverBeatIdx + 1; i < measureEnd && prev[i].isRest; i++) {
+          for (let i = hoverBeatIdx + 1; i < measureEnd && working[i].isRest; i++) {
             beatsToRemove++;
-            spaceFreed += DURATION_VALUE[prev[i].duration];
+            spaceFreed += DURATION_VALUE[working[i].duration];
           }
           if (!durationFits(selectedDuration, spaceFreed)) return prev;
           const newBeat: PlacedBeat = { notes: [...beat.notes], duration: selectedDuration };
           const leftover = spaceFreed - DURATION_VALUE[selectedDuration];
           const fillerRests = leftover > 1e-9 ? fillWithRests(leftover) : [];
           return [
-            ...prev.slice(0, hoverBeatIdx),
+            ...working.slice(0, hoverBeatIdx),
             newBeat,
             ...fillerRests,
-            ...prev.slice(hoverBeatIdx + beatsToRemove),
+            ...working.slice(hoverBeatIdx + beatsToRemove),
           ];
         }
         // Same duration — toggle/add notes within the beat
@@ -1360,26 +1453,26 @@ export function NoteEditor() {
             // Toggle off this note
             const newNotes = beat.notes.filter((n) => !posMatch(n));
             if (newNotes.length === 0) {
-              const updated = [...prev];
+              const updated = [...working];
               updated[hoverBeatIdx] = { notes: [], duration: beat.duration, isRest: true };
               return updated;
             }
-            const updated = [...prev];
+            const updated = [...working];
             updated[hoverBeatIdx] = { ...beat, notes: newNotes };
             return updated;
           }
           // Change accidental on existing note
-          const updated = [...prev];
+          const updated = [...working];
           updated[hoverBeatIdx] = { ...beat, notes: beat.notes.map((n) => posMatch(n) ? hoverNote : n) };
           return updated;
         }
         // Add note to chord
-        const updated = [...prev];
+        const updated = [...working];
         updated[hoverBeatIdx] = { ...beat, notes: [...beat.notes, hoverNote] };
         return updated;
       }
       // Past the end — start a new measure
-      return [...prev, { notes: [hoverNote], duration: selectedDuration }];
+      return [...working, { notes: [hoverNote], duration: selectedDuration }];
     });
   }, [hoverDp, hoverStaff, hoverBeatIdx, selectedDuration, selectedAccidental, deleteMode, restMode, tsTop, tsBottom, trebleBeats, bassBeats]);
 
@@ -1611,347 +1704,369 @@ export function NoteEditor() {
   const durations: Duration[] = ["whole", "half", "quarter", "eighth", "sixteenth"];
 
   const btnBase: React.CSSProperties = {
-    width: 36, height: 36,
-    borderRadius: 4,
+    width: 34, height: 34,
+    borderRadius: 6,
     cursor: "pointer",
     display: "flex",
     alignItems: "center",
     justifyContent: "center",
     padding: 0,
+    border: "1px solid #d0ccc8",
+    background: "#faf9f7",
+    color: "#4a4a4a",
+    transition: "all 0.1s ease",
   };
   const btnOn = (on: boolean): React.CSSProperties => ({
     ...btnBase,
-    border: on ? "2px solid #333" : "1px solid #aaa",
-    background: on ? "#e0e0e0" : "#fff",
+    ...(on ? {
+      border: "1px solid #8b7e6e",
+      background: "#e8e4df",
+      color: "#2c2c2c",
+      boxShadow: "inset 0 1px 3px rgba(0,0,0,0.1)",
+    } : {}),
   });
+
+  const selectStyle: React.CSSProperties = {
+    fontFamily: "inherit",
+    fontSize: 13,
+    padding: "4px 8px",
+    borderRadius: 5,
+    border: "1px solid #d0ccc8",
+    background: "#faf9f7",
+    color: "#2c2c2c",
+    cursor: "pointer",
+  };
+
+  const textBtnStyle = (active: boolean, danger = false): React.CSSProperties => ({
+    ...btnBase,
+    width: "auto",
+    padding: "0 12px",
+    fontSize: 12,
+    fontFamily: "inherit",
+    fontWeight: 500,
+    letterSpacing: 0.3,
+    ...(danger && active ? {
+      border: "1px solid #d44",
+      background: "#fef0f0",
+      color: "#c33",
+    } : active ? {
+      border: "1px solid #8b7e6e",
+      background: "#e8e4df",
+      color: "#2c2c2c",
+      boxShadow: "inset 0 1px 3px rgba(0,0,0,0.1)",
+    } : {}),
+  });
+
+  const sep = <div style={{ width: 1, height: 24, background: "#ddd", margin: "0 4px" }} />;
 
   return (
     <div>
-      {/* Duration buttons */}
-      <div style={{ display: "flex", gap: 6, marginBottom: 12, alignItems: "center", flexWrap: "wrap" }}>
+      {/* Toolbar */}
+      <div style={{
+        display: "flex",
+        gap: 5,
+        marginBottom: 16,
+        alignItems: "center",
+        flexWrap: "wrap",
+        padding: "10px 12px",
+        background: "#f5f3f0",
+        borderRadius: 8,
+        border: "1px solid #e0dcd8",
+      }}>
         {durations.map((key) => (
           <button key={key} onClick={() => setSelectedDuration(key)}
             style={btnOn(selectedDuration === key)} title={key}>
-            <NoteIcon duration={key} size={28} />
+            <NoteIcon duration={key} size={24} />
           </button>
         ))}
-        <div style={{ width: 1, height: 36, background: "#ccc", margin: "0 2px" }} />
+        {sep}
         {([["n", "\u266E"], ["#", "\u266F"], ["b", "\u266D"]] as [Accidental, string][]).map(([acc, sym]) => (
           <button key={acc} onClick={() => setSelectedAccidental((prev) => prev === acc ? "" : acc)}
-            style={{ ...btnOn(selectedAccidental === acc), fontSize: 20 }}
+            style={{ ...btnOn(selectedAccidental === acc), fontSize: 18 }}
             title={acc === "#" ? "Sharp" : acc === "b" ? "Flat" : "Natural"}>
             {sym}
           </button>
         ))}
-        <div style={{ width: 1, height: 36, background: "#ccc", margin: "0 2px" }} />
+        {sep}
         <button
           onClick={() => { setRestMode((r) => !r); setDeleteMode(false); }}
-          style={{
-            ...btnBase,
-            width: "auto",
-            padding: "0 10px",
-            fontSize: 13,
-            border: restMode ? "2px solid #333" : "1px solid #aaa",
-            background: restMode ? "#e0e0e0" : "#fff",
-          }}
+          style={textBtnStyle(restMode)}
           title="Rest mode — click a note/chord to replace it with a rest"
         >
           Rest
         </button>
         <button
           onClick={() => { setDeleteMode((d) => !d); setRestMode(false); }}
-          style={{
-            ...btnBase,
-            width: "auto",
-            padding: "0 10px",
-            fontSize: 13,
-            border: deleteMode ? "2px solid #c00" : "1px solid #aaa",
-            background: deleteMode ? "#fee" : "#fff",
-            color: deleteMode ? "#c00" : "inherit",
-          }}
+          style={textBtnStyle(deleteMode, true)}
           title="Toggle delete mode — click notes to remove them"
         >
           Delete
         </button>
-        <button onClick={handleUndo} style={{ ...btnBase, width: "auto", padding: "0 10px", fontSize: 13 }} title="Undo (Ctrl+Z)">
-          Undo
-        </button>
-        <button onClick={handleRedo} style={{ ...btnBase, width: "auto", padding: "0 10px", fontSize: 13 }} title="Redo (Ctrl+Shift+Z)">
-          Redo
-        </button>
-        <button onClick={handleClear} style={{ ...btnBase, width: "auto", padding: "0 10px", fontSize: 13 }} title="Clear all">
-          Clear
-        </button>
-        <div style={{ width: 1, height: 36, background: "#ccc", margin: "0 2px" }} />
-        <label style={{ fontFamily: "serif", fontSize: 14 }}>
-          <select
-            value={tsTop}
-            onChange={(e) => setTsTop(Number(e.target.value))}
-            style={{ fontFamily: "serif", fontSize: 14, padding: "2px 4px", width: 40 }}
-          >
+        {sep}
+        <button onClick={handleUndo} style={textBtnStyle(false)} title="Undo (Ctrl+Z)">Undo</button>
+        <button onClick={handleRedo} style={textBtnStyle(false)} title="Redo (Ctrl+Shift+Z)">Redo</button>
+        <button onClick={handleClear} style={textBtnStyle(false)} title="Clear all">Clear</button>
+      </div>
+
+      {/* Settings row */}
+      <div style={{
+        display: "flex",
+        gap: 16,
+        marginBottom: 16,
+        alignItems: "center",
+        flexWrap: "wrap",
+        fontSize: 13,
+        color: "#5a5a5a",
+      }}>
+        <label style={{ display: "flex", alignItems: "center", gap: 6 }}>
+          <span>Time</span>
+          <select value={tsTop} onChange={(e) => setTsTop(Number(e.target.value))} style={selectStyle}>
             {[2, 3, 4, 5, 6, 7, 8, 9, 12].map((n) => (
               <option key={n} value={n}>{n}</option>
             ))}
           </select>
-          {" / "}
-          <select
-            value={tsBottom}
-            onChange={(e) => setTsBottom(Number(e.target.value))}
-            style={{ fontFamily: "serif", fontSize: 14, padding: "2px 4px", width: 40 }}
-          >
+          <span>/</span>
+          <select value={tsBottom} onChange={(e) => setTsBottom(Number(e.target.value))} style={selectStyle}>
             {[2, 4, 8, 16].map((n) => (
               <option key={n} value={n}>{n}</option>
             ))}
           </select>
         </label>
-        <div style={{ width: 1, height: 36, background: "#ccc", margin: "0 2px" }} />
-        <label style={{ fontFamily: "serif", fontSize: 14 }}>
-          Key:{" "}
-          <select
-            value={tonicIdx}
-            onChange={(e) => setTonicIdx(Number(e.target.value))}
-            style={{ fontFamily: "serif", fontSize: 14, padding: "2px 4px" }}
-          >
+        <label style={{ display: "flex", alignItems: "center", gap: 6 }}>
+          <span>Key</span>
+          <select value={tonicIdx} onChange={(e) => setTonicIdx(Number(e.target.value))} style={selectStyle}>
             {TONIC_OPTIONS.map((t, i) => (
               <option key={t.label} value={i}>{t.label}</option>
             ))}
           </select>
-        </label>
-        <label style={{ fontFamily: "serif", fontSize: 14 }}>
-          <select
-            value={scaleName}
-            onChange={(e) => setScaleName(e.target.value)}
-            style={{ fontFamily: "serif", fontSize: 14, padding: "2px 4px" }}
-          >
+          <select value={scaleName} onChange={(e) => setScaleName(e.target.value)} style={selectStyle}>
             {SCALE_OPTIONS.map((s) => (
               <option key={s.value} value={s.value}>{s.label}</option>
             ))}
           </select>
         </label>
-      </div>
-      <div style={{ height: 20, marginBottom: 4, fontFamily: "serif", fontSize: 14, color: "#666" }}>
-        {hoverDp !== null ? (() => {
-          const letterIdx = ((hoverDp % 7) + 7) % 7;
-          const octave = Math.floor(hoverDp / 7);
-          const acc = accidentalSymbol(effectiveAccidental(selectedAccidental, hoverDp, keySig));
-          return `${LETTERS[letterIdx]}${acc}${octave}`;
-        })() : "\u00A0"}
+        <span style={{ color: "#999", fontSize: 13, marginLeft: "auto" }}>
+          {hoverDp !== null ? (() => {
+            const letterIdx = ((hoverDp % 7) + 7) % 7;
+            const octave = Math.floor(hoverDp / 7);
+            const acc = accidentalSymbol(effectiveAccidental(selectedAccidental, hoverDp, keySig));
+            return `${LETTERS[letterIdx]}${acc}${octave}`;
+          })() : "\u00A0"}
+        </span>
       </div>
 
       {/* Interactive grand staff */}
+      <div ref={containerRef} style={{ width: "100%" }}>
       <svg
         ref={svgRef}
-        width={totalWidth}
-        height={editorStaffHeight}
-        viewBox={`0 0 ${totalWidth} ${editorStaffHeight}`}
-        style={{ fontFamily: "serif", cursor: deleteMode ? "not-allowed" : "crosshair" }}
+        width="100%"
+        height={svgHeight}
+        viewBox={`0 0 ${staffW} ${svgHeight}`}
+        preserveAspectRatio="xMinYMin meet"
+        style={{ fontFamily: "serif", cursor: deleteMode ? "not-allowed" : "crosshair", display: "block" }}
         onMouseMove={handleMouseMove}
         onMouseDown={handleMouseDown}
         onMouseUp={handleMouseUp}
         onMouseLeave={() => { dragRef.current = null; setHoverDp(null); setHoverStaff(null); setHoverBeatIdx(null); }}
       >
-        {/* Treble staff lines */}
-        {ED_TREBLE_LINES.map((dp) => {
-          const y = dpToY(dp, ED_TREBLE_TOP, trebleYOffset);
-          return <line key={`tl-${dp}`} x1={5} y1={y} x2={totalWidth - RIGHT_MARGIN} y2={y} stroke="currentColor" strokeWidth={LINE_W} />;
-        })}
-        {/* Bass staff lines */}
-        {ED_BASS_LINES.map((dp) => {
-          const y = dpToY(dp, ED_BASS_TOP, bassYOffset);
-          return <line key={`bl-${dp}`} x1={5} y1={y} x2={totalWidth - RIGHT_MARGIN} y2={y} stroke="currentColor" strokeWidth={LINE_W} />;
-        })}
-
-        {/* Clefs */}
-        <path d={TREBLE_CLEF_PATH} fill="currentColor" stroke="none"
-          transform={`translate(${ED_CLEF_X}, ${dpToY(32, ED_TREBLE_TOP, trebleYOffset)}) scale(${GLYPH_SCALE}, ${-GLYPH_SCALE})`} />
-        <path d={BASS_CLEF_PATH} fill="currentColor" stroke="none"
-          transform={`translate(${ED_CLEF_X}, ${dpToY(24, ED_BASS_TOP, bassYOffset)}) scale(${GLYPH_SCALE}, ${-GLYPH_SCALE})`} />
-
-        {/* Key signature */}
-        {keySig.count > 0 && Array.from({ length: keySig.count }, (_, i) => {
-          const trebleDp = keySig.type === "sharp" ? TREBLE_SHARP_DPS[i] : TREBLE_FLAT_DPS[i];
-          const bassDp = keySig.type === "sharp" ? BASS_SHARP_DPS[i] : BASS_FLAT_DPS[i];
-          const sym = keySig.type === "sharp" ? "\u266F" : "\u266D";
-          const x = CLEF_WIDTH + 4 + i * KS_ACCIDENTAL_W;
+        {Array.from({ length: systemCount }, (_, sysIdx) => {
+          const sysY = sysIdx * systemTotalHeight;
           return (
-            <g key={`ks-${i}`}>
-              <text x={x} y={dpToY(trebleDp, ED_TREBLE_TOP, trebleYOffset) + 4} fontSize={14} textAnchor="middle" fill="currentColor">{sym}</text>
-              <text x={x} y={dpToY(bassDp, ED_BASS_TOP, bassYOffset) + 4} fontSize={14} textAnchor="middle" fill="currentColor">{sym}</text>
+            <g key={`sys-${sysIdx}`} transform={`translate(0, ${sysY})`}>
+              {/* Treble staff lines */}
+              {ED_TREBLE_LINES.map((dp) => {
+                const y = dpToY(dp, ED_TREBLE_TOP, trebleYOffset);
+                return <line key={`tl-${dp}`} x1={5} y1={y} x2={staffW - RIGHT_MARGIN} y2={y} stroke="currentColor" strokeWidth={LINE_W} />;
+              })}
+              {/* Bass staff lines */}
+              {ED_BASS_LINES.map((dp) => {
+                const y = dpToY(dp, ED_BASS_TOP, bassYOffset);
+                return <line key={`bl-${dp}`} x1={5} y1={y} x2={staffW - RIGHT_MARGIN} y2={y} stroke="currentColor" strokeWidth={LINE_W} />;
+              })}
+
+              {/* Clefs */}
+              <path d={TREBLE_CLEF_PATH} fill="currentColor" stroke="none"
+                transform={`translate(${ED_CLEF_X}, ${dpToY(32, ED_TREBLE_TOP, trebleYOffset)}) scale(${GLYPH_SCALE}, ${-GLYPH_SCALE})`} />
+              <path d={BASS_CLEF_PATH} fill="currentColor" stroke="none"
+                transform={`translate(${ED_CLEF_X}, ${dpToY(24, ED_BASS_TOP, bassYOffset)}) scale(${GLYPH_SCALE}, ${-GLYPH_SCALE})`} />
+
+              {/* Key signature */}
+              {keySig.count > 0 && Array.from({ length: keySig.count }, (_, i) => {
+                const trebleDp = keySig.type === "sharp" ? TREBLE_SHARP_DPS[i] : TREBLE_FLAT_DPS[i];
+                const bassDp = keySig.type === "sharp" ? BASS_SHARP_DPS[i] : BASS_FLAT_DPS[i];
+                const sym = keySig.type === "sharp" ? "\u266F" : "\u266D";
+                const kx = CLEF_WIDTH + 4 + i * KS_ACCIDENTAL_W;
+                return (
+                  <g key={`ks-${i}`}>
+                    <text x={kx} y={dpToY(trebleDp, ED_TREBLE_TOP, trebleYOffset) + 4} fontSize={14} textAnchor="middle" fill="currentColor">{sym}</text>
+                    <text x={kx} y={dpToY(bassDp, ED_BASS_TOP, bassYOffset) + 4} fontSize={14} textAnchor="middle" fill="currentColor">{sym}</text>
+                  </g>
+                );
+              })}
+
+              {/* Time signature — first system only */}
+              {sysIdx === 0 && (() => {
+                const trebleTopLineY = dpToY(ED_TREBLE_LINES[4], ED_TREBLE_TOP, trebleYOffset);
+                const trebleMidLineY = dpToY(ED_TREBLE_LINES[2], ED_TREBLE_TOP, trebleYOffset);
+                const trebleBotLineY = dpToY(ED_TREBLE_LINES[0], ED_TREBLE_TOP, trebleYOffset);
+                const bassTopLineY = dpToY(ED_BASS_LINES[4], ED_BASS_TOP, bassYOffset);
+                const bassMidLineY = dpToY(ED_BASS_LINES[2], ED_BASS_TOP, bassYOffset);
+                const bassBotLineY = dpToY(ED_BASS_LINES[0], ED_BASS_TOP, bassYOffset);
+                return (
+                  <>
+                    <TsDigit digit={tsTop} x={edTsX} y={(trebleTopLineY + trebleMidLineY) / 2} />
+                    <TsDigit digit={tsBottom} x={edTsX} y={(trebleMidLineY + trebleBotLineY) / 2} />
+                    <TsDigit digit={tsTop} x={edTsX} y={(bassTopLineY + bassMidLineY) / 2} />
+                    <TsDigit digit={tsBottom} x={edTsX} y={(bassMidLineY + bassBotLineY) / 2} />
+                  </>
+                );
+              })()}
+
+              {/* Barlines */}
+              {barlineData.filter((b) => b.systemIdx === sysIdx).map((b, i) => {
+                const trebleTopY = dpToY(ED_TREBLE_LINES[4], ED_TREBLE_TOP, trebleYOffset);
+                const bassBotY = dpToY(ED_BASS_LINES[0], ED_BASS_TOP, bassYOffset);
+                return <line key={`bar-${i}`} x1={b.x} y1={trebleTopY} x2={b.x} y2={bassBotY} stroke="currentColor" strokeWidth={1} />;
+              })}
+
+              {/* Placed beats — treble staff */}
+              {(() => {
+                const trebleLineYs = ED_TREBLE_LINES.map((dp) => dpToY(dp, ED_TREBLE_TOP, trebleYOffset));
+                return paddedTrebleBeats.map((beat, i) => {
+                  const pos = trebleBeatPositions[i];
+                  if (!pos || pos.sys !== sysIdx) return null;
+                  const bx = pos.x;
+                  if (beat.isRest) {
+                    return <g key={`tb-${i}`}>{renderRestOnStaff(beat.duration, bx, trebleLineYs)}</g>;
+                  }
+                  const drag = dragRef.current;
+                  if (drag && drag.staff === "treble" && drag.beatIdx === i && drag.moved) {
+                    const filtered: PlacedBeat = {
+                      ...beat,
+                      notes: beat.notes.filter((n) => n.dp !== drag.note.dp),
+                    };
+                    return (
+                      <g key={`tb-${i}`}>
+                        {filtered.notes.length > 0 && renderBeat(filtered, bx)}
+                        {renderNotehead(drag.note.dp, beat.duration, bx, ED_TREBLE_TOP, ED_TREBLE_LINES[0], trebleYOffset, drag.note.accidental, 0.2)}
+                      </g>
+                    );
+                  }
+                  return <g key={`tb-${i}`}>{renderBeat(beat, bx)}</g>;
+                });
+              })()}
+
+              {/* Placed beats — bass staff */}
+              {(() => {
+                const bassLineYs = ED_BASS_LINES.map((dp) => dpToY(dp, ED_BASS_TOP, bassYOffset));
+                return paddedBassBeats.map((beat, i) => {
+                  const pos = bassBeatPositions[i];
+                  if (!pos || pos.sys !== sysIdx) return null;
+                  const bx = pos.x;
+                  if (beat.isRest) {
+                    return <g key={`bb-${i}`}>{renderRestOnStaff(beat.duration, bx, bassLineYs)}</g>;
+                  }
+                  const drag = dragRef.current;
+                  if (drag && drag.staff === "bass" && drag.beatIdx === i && drag.moved) {
+                    const filtered: PlacedBeat = {
+                      ...beat,
+                      notes: beat.notes.filter((n) => n.dp !== drag.note.dp),
+                    };
+                    return (
+                      <g key={`bb-${i}`}>
+                        {filtered.notes.length > 0 && renderBeat(filtered, bx)}
+                        {renderNotehead(drag.note.dp, beat.duration, bx, ED_BASS_TOP, ED_BASS_LINES[0], bassYOffset, drag.note.accidental, 0.2)}
+                      </g>
+                    );
+                  }
+                  return <g key={`bb-${i}`}>{renderBeat(beat, bx)}</g>;
+                });
+              })()}
+
+              {/* Roman numerals */}
+              {hasRN && allTimePoints.map((t, i) => {
+                const rns = romanNumerals[i];
+                if (!rns || rns.length === 0) return null;
+                const pos = timeToPos.get(t);
+                if (!pos || pos.systemIdx !== sysIdx) return null;
+                const rx = pos.x;
+                const rnY = staffHeight + 2;
+                const selIdx = rnSelections[i] ?? 0;
+                if (rns.length === 1) {
+                  return (
+                    <text key={`rn-${i}`} x={rx} y={rnY + 20} fontSize={18}
+                      fontStyle="normal" textAnchor="middle" fill="currentColor" fontFamily="serif">
+                      {rns[0]}
+                    </text>
+                  );
+                }
+                const foW = 68;
+                const foH = 28;
+                return (
+                  <foreignObject key={`rn-${i}`} x={rx - foW / 2} y={rnY} width={foW} height={foH}>
+                    <select
+                      value={selIdx}
+                      onChange={(e) => setRnSelections((s) => ({ ...s, [i]: Number(e.target.value) }))}
+                      style={{
+                        width: "100%", height: foH, fontSize: 15, fontFamily: "inherit",
+                        textAlign: "center", textAlignLast: "center",
+                        border: "1px solid #d0ccc8", borderRadius: 5, background: "#faf9f7",
+                        padding: 0, cursor: "pointer",
+                      }}
+                    >
+                      {rns.map((rn, j) => (
+                        <option key={j} value={j}>{rn}</option>
+                      ))}
+                    </select>
+                  </foreignObject>
+                );
+              })}
+
+              {/* Hover ghost note / drag preview */}
+              {hoverDp !== null && hoverStaff !== null && hoverBeatIdx !== null && (() => {
+                const hoverPos = staffBeatPos(hoverStaff, hoverBeatIdx);
+                if (hoverPos.sys !== sysIdx) return null;
+                const drag = dragRef.current;
+                const isDragging = drag && drag.moved;
+                const isTreble = hoverStaff === "treble";
+                const sTopDp = isTreble ? ED_TREBLE_TOP : ED_BASS_TOP;
+                const sBotDp = isTreble ? ED_TREBLE_LINES[0] : ED_BASS_LINES[0];
+                const yOff = isTreble ? trebleYOffset : bassYOffset;
+
+                if (isDragging && drag.staff === hoverStaff) {
+                  const dBeats = getDisplayBeats(drag.staff);
+                  const positions = drag.staff === "treble" ? trebleBeatPositions : bassBeatPositions;
+                  const dur = dBeats[drag.beatIdx]?.duration ?? selectedDuration;
+                  const dPos = positions[drag.beatIdx];
+                  if (!dPos || dPos.sys !== sysIdx) return null;
+                  return renderNotehead(hoverDp, dur, dPos.x, sTopDp, sBotDp, yOff, drag.note.accidental, 0.5);
+                }
+
+                const hx = hoverPos.x;
+                const displayBeats = getDisplayBeats(hoverStaff);
+                const existingBeat = displayBeats[hoverBeatIdx];
+                const noteExists = existingBeat && !existingBeat.isRest && existingBeat.notes.some((n) => n.dp === hoverDp);
+
+                if (deleteMode) {
+                  if (!noteExists) return null;
+                  const y = dpToY(hoverDp, sTopDp, yOff);
+                  return (
+                    <g opacity={0.6}>
+                      <line x1={hx - 8} y1={y - 8} x2={hx + 8} y2={y + 8} stroke="red" strokeWidth={2.5} />
+                      <line x1={hx - 8} y1={y + 8} x2={hx + 8} y2={y - 8} stroke="red" strokeWidth={2.5} />
+                    </g>
+                  );
+                }
+
+                const wouldRemove = noteExists;
+                const ghostDur = (existingBeat && !existingBeat.isRest && existingBeat.duration === selectedDuration) ? existingBeat.duration : selectedDuration;
+                return renderNotehead(hoverDp, ghostDur, hx, sTopDp, sBotDp, yOff, selectedAccidental, wouldRemove ? 0.15 : 0.3);
+              })()}
             </g>
           );
         })}
-
-        {/* Time signature */}
-        {(() => {
-          const trebleTopLineY = dpToY(ED_TREBLE_LINES[4], ED_TREBLE_TOP, trebleYOffset);
-          const trebleMidLineY = dpToY(ED_TREBLE_LINES[2], ED_TREBLE_TOP, trebleYOffset);
-          const trebleBotLineY = dpToY(ED_TREBLE_LINES[0], ED_TREBLE_TOP, trebleYOffset);
-          const bassTopLineY = dpToY(ED_BASS_LINES[4], ED_BASS_TOP, bassYOffset);
-          const bassMidLineY = dpToY(ED_BASS_LINES[2], ED_BASS_TOP, bassYOffset);
-          const bassBotLineY = dpToY(ED_BASS_LINES[0], ED_BASS_TOP, bassYOffset);
-          return (
-            <>
-              <TsDigit digit={tsTop} x={edTsX} y={(trebleTopLineY + trebleMidLineY) / 2} />
-              <TsDigit digit={tsBottom} x={edTsX} y={(trebleMidLineY + trebleBotLineY) / 2} />
-              <TsDigit digit={tsTop} x={edTsX} y={(bassTopLineY + bassMidLineY) / 2} />
-              <TsDigit digit={tsBottom} x={edTsX} y={(bassMidLineY + bassBotLineY) / 2} />
-            </>
-          );
-        })()}
-
-        {/* Barlines */}
-        {barlineXs.map((bx, i) => {
-          const trebleTopY = dpToY(ED_TREBLE_LINES[4], ED_TREBLE_TOP, trebleYOffset);
-          const bassBotY = dpToY(ED_BASS_LINES[0], ED_BASS_TOP, bassYOffset);
-          return <line key={`bar-${i}`} x1={bx} y1={trebleTopY} x2={bx} y2={bassBotY} stroke="currentColor" strokeWidth={1} />;
-        })}
-
-        {/* Placed beats — treble staff */}
-        {(() => {
-          const trebleLineYs = ED_TREBLE_LINES.map((dp) => dpToY(dp, ED_TREBLE_TOP, trebleYOffset));
-          return trebleBeats.map((beat, i) => {
-            const x = trebleBeatPositions[i];
-            if (beat.isRest) {
-              return <g key={`tb-${i}`}>{renderRestOnStaff(beat.duration, x, trebleLineYs)}</g>;
-            }
-            const drag = dragRef.current;
-            if (drag && drag.staff === "treble" && drag.beatIdx === i && drag.moved) {
-              const filtered: PlacedBeat = {
-                ...beat,
-                notes: beat.notes.filter((n) => n.dp !== drag.note.dp),
-              };
-              return (
-                <g key={`tb-${i}`}>
-                  {filtered.notes.length > 0 && renderBeat(filtered, x)}
-                  {renderNotehead(drag.note.dp, beat.duration, x, ED_TREBLE_TOP, ED_TREBLE_LINES[0], trebleYOffset, drag.note.accidental, 0.2)}
-                </g>
-              );
-            }
-            return <g key={`tb-${i}`}>{renderBeat(beat, x)}</g>;
-          });
-        })()}
-
-        {/* Placed beats — bass staff */}
-        {(() => {
-          const bassLineYs = ED_BASS_LINES.map((dp) => dpToY(dp, ED_BASS_TOP, bassYOffset));
-          return bassBeats.map((beat, i) => {
-            const x = bassBeatPositions[i];
-            if (beat.isRest) {
-              return <g key={`bb-${i}`}>{renderRestOnStaff(beat.duration, x, bassLineYs)}</g>;
-            }
-            const drag = dragRef.current;
-            if (drag && drag.staff === "bass" && drag.beatIdx === i && drag.moved) {
-              const filtered: PlacedBeat = {
-                ...beat,
-                notes: beat.notes.filter((n) => n.dp !== drag.note.dp),
-              };
-              return (
-                <g key={`bb-${i}`}>
-                  {filtered.notes.length > 0 && renderBeat(filtered, x)}
-                  {renderNotehead(drag.note.dp, beat.duration, x, ED_BASS_TOP, ED_BASS_LINES[0], bassYOffset, drag.note.accidental, 0.2)}
-                </g>
-              );
-            }
-            return <g key={`bb-${i}`}>{renderBeat(beat, x)}</g>;
-          });
-        })()}
-
-        {/* Roman numerals */}
-        {hasRN && allTimePoints.map((t, i) => {
-          const rns = romanNumerals[i];
-          if (!rns || rns.length === 0) return null;
-          const x = timeToX.get(t)!;
-          const rnY = editorStaffHeight - RN_SPACE_ED + 2;
-          const selIdx = rnSelections[i] ?? 0;
-          if (rns.length === 1) {
-            return (
-              <text
-                key={`rn-${i}`}
-                x={x}
-                y={rnY + 20}
-                fontSize={18}
-                fontStyle="normal"
-                textAnchor="middle"
-                fill="currentColor"
-                fontFamily="serif"
-              >
-                {rns[0]}
-              </text>
-            );
-          }
-          const foW = 68;
-          const foH = 28;
-          return (
-            <foreignObject
-              key={`rn-${i}`}
-              x={x - foW / 2}
-              y={rnY}
-              width={foW}
-              height={foH}
-            >
-              <select
-                value={selIdx}
-                onChange={(e) => setRnSelections((s) => ({ ...s, [i]: Number(e.target.value) }))}
-                style={{
-                  width: "100%",
-                  height: foH,
-                  fontSize: 16,
-                  fontFamily: "serif",
-                  textAlign: "center",
-                  textAlignLast: "center",
-                  border: "1px solid #ccc",
-                  borderRadius: 3,
-                  background: "#fff",
-                  padding: 0,
-                  cursor: "pointer",
-                }}
-              >
-                {rns.map((rn, j) => (
-                  <option key={j} value={j}>{rn}</option>
-                ))}
-              </select>
-            </foreignObject>
-          );
-        })}
-
-        {/* Hover ghost note / drag preview */}
-        {hoverDp !== null && hoverStaff !== null && hoverBeatIdx !== null && (() => {
-          const drag = dragRef.current;
-          const isDragging = drag && drag.moved;
-          const isTreble = hoverStaff === "treble";
-          const sTopDp = isTreble ? ED_TREBLE_TOP : ED_BASS_TOP;
-          const sBotDp = isTreble ? ED_TREBLE_LINES[0] : ED_BASS_LINES[0];
-          const yOff = isTreble ? trebleYOffset : bassYOffset;
-
-          if (isDragging && drag.staff === hoverStaff) {
-            const staffBeats = getStaffBeats(drag.staff);
-            const positions = drag.staff === "treble" ? trebleBeatPositions : bassBeatPositions;
-            const dur = staffBeats[drag.beatIdx]?.duration ?? selectedDuration;
-            const x = positions[drag.beatIdx];
-            return renderNotehead(hoverDp, dur, x, sTopDp, sBotDp, yOff, drag.note.accidental, 0.5);
-          }
-
-          const x = staffBeatX(hoverStaff, hoverBeatIdx);
-          const staffBeats = getStaffBeats(hoverStaff);
-          const existingBeat = staffBeats[hoverBeatIdx];
-          const noteExists = existingBeat && !existingBeat.isRest && existingBeat.notes.some((n) => n.dp === hoverDp);
-
-          if (deleteMode) {
-            if (!noteExists) return null;
-            const y = dpToY(hoverDp, sTopDp, yOff);
-            return (
-              <g opacity={0.6}>
-                <line x1={x - 8} y1={y - 8} x2={x + 8} y2={y + 8} stroke="red" strokeWidth={2.5} />
-                <line x1={x - 8} y1={y + 8} x2={x + 8} y2={y - 8} stroke="red" strokeWidth={2.5} />
-              </g>
-            );
-          }
-
-          const wouldRemove = noteExists;
-          const ghostDur = (existingBeat && !existingBeat.isRest && existingBeat.duration === selectedDuration) ? existingBeat.duration : selectedDuration;
-          return renderNotehead(hoverDp, ghostDur, x, sTopDp, sBotDp, yOff, selectedAccidental, wouldRemove ? 0.15 : 0.3);
-        })()}
       </svg>
+      </div>
     </div>
   );
 }
