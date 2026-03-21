@@ -82,15 +82,22 @@ export function SignupPage() {
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
 
+  const strength = {
+    length:  password.length >= 8,
+    number:  /\d/.test(password),
+    special: /[^a-zA-Z0-9]/.test(password),
+  };
+  const passwordValid = strength.length && strength.number && strength.special;
+
   async function handleSubmit(e: FormEvent) {
     e.preventDefault();
     setError(null);
-    if (password !== confirm) {
-      setError("Passwords do not match");
+    if (!passwordValid) {
+      setError("Password does not meet the requirements");
       return;
     }
-    if (password.length < 8) {
-      setError("Password must be at least 8 characters");
+    if (password !== confirm) {
+      setError("Passwords do not match");
       return;
     }
     setSubmitting(true);
@@ -99,6 +106,15 @@ export function SignupPage() {
     if (err) setError(err);
     else navigate("/");
   }
+
+  const reqStyle = (met: boolean): React.CSSProperties => ({
+    fontSize: 12,
+    color: met ? "#2a7d4f" : "#999",
+    display: "flex",
+    alignItems: "center",
+    gap: 4,
+    transition: "color 0.15s ease",
+  });
 
   return (
     <AuthShell title="Create Account">
@@ -133,6 +149,13 @@ export function SignupPage() {
             value={password}
             onChange={(e) => setPassword(e.target.value)}
           />
+          {password.length > 0 && (
+            <div style={{ display: "flex", gap: 16, marginTop: 8 }}>
+              <span style={reqStyle(strength.length)}>{strength.length ? "\u2713" : "\u00B7"} 8+ characters</span>
+              <span style={reqStyle(strength.number)}>{strength.number ? "\u2713" : "\u00B7"} Number</span>
+              <span style={reqStyle(strength.special)}>{strength.special ? "\u2713" : "\u00B7"} Special character</span>
+            </div>
+          )}
         </div>
         <div style={{ marginBottom: 24 }}>
           <label style={labelStyle}>Confirm Password</label>

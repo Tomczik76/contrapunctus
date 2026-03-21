@@ -1,6 +1,6 @@
 import { createContext, useContext, useState, useEffect, type ReactNode } from "react";
 
-const API_BASE = import.meta.env.DEV ? "http://localhost:8080" : "";
+export const API_BASE = import.meta.env.DEV ? "http://localhost:8080" : "";
 
 interface User {
   id: string;
@@ -85,3 +85,9 @@ export function useAuth(): AuthState {
   if (!ctx) throw new Error("useAuth must be used within AuthProvider");
   return ctx;
 }
+
+const ADMIN_KEY = "contrapunctus_admin_token";
+export const getAdminToken = () => sessionStorage.getItem(ADMIN_KEY);
+export const setAdminToken = (t: string) => sessionStorage.setItem(ADMIN_KEY, t);
+export const clearAdminToken = () => sessionStorage.removeItem(ADMIN_KEY);
+export const adminHeaders = () => ({ "X-Admin-Token": getAdminToken() ?? "" });

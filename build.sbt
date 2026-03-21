@@ -48,6 +48,7 @@ lazy val backend = (project in file("backend"))
       "org.scalameta"  %% "munit"               % MunitVersion % Test,
       "ch.qos.logback" %  "logback-classic"     % LogbackVersion,
       "org.tpolecat"   %% "skunk-core"          % SkunkVersion,
+      "org.tpolecat"   %% "skunk-circe"         % SkunkVersion,
       "org.flywaydb"   %  "flyway-core"         % FlywayVersion,
       "org.flywaydb"   %  "flyway-database-postgresql" % FlywayVersion,
       "org.postgresql"  %  "postgresql"          % PostgresVersion,

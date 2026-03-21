@@ -127,40 +127,40 @@ class AnalysisSuite extends munit.FunSuite:
 
   test("neighbor tone — diatonic whole step upper neighbor"):
     import Note.*
-    // In G major. Soprano: G→A→G over G major. A is a whole step upper neighbor.
-    val beat1 = Pulse.Atom(G(3), B(3), D(4), G(4))
-    val beat2 = Pulse.Atom(G(3), B(3), D(4), A(4))
-    val beat3 = Pulse.Atom(G(3), B(3), D(4), G(4))
+    // In C major. Soprano: E→F→E over C major. F is a half step upper neighbor.
+    val beat1 = Pulse.Atom(C(3), E(3), G(3), E(4))
+    val beat2 = Pulse.Atom(C(3), E(3), G(3), F(4))
+    val beat3 = Pulse.Atom(C(3), E(3), G(3), E(4))
 
-    val results = Analysis(NoteType.G, Scale.Major, beat1, beat2, beat3)
+    val results = Analysis(NoteType.C, Scale.Major, beat1, beat2, beat3)
     val analyses = results.toList.collect:
       case Pulse.Atom(nel) => nel.head
 
-    val aNote = analyses(1).notes.find(n =>
-      n.note.noteType == NoteType.A && n.note.octave == 4
+    val fNote = analyses(1).notes.find(n =>
+      n.note.noteType == NoteType.F && n.note.octave == 4
     )
     assert(
-      aNote.exists(
+      fNote.exists(
         _.nonChordToneType.contains(NonChordToneType.NeighborTone)
       )
     )
 
   test("passing tone — diatonic whole step ascending"):
     import Note.*
-    // In G major. Soprano: G→A→B over G major. A is a whole step from both.
-    val beat1 = Pulse.Atom(G(3), B(3), D(4), G(4))
-    val beat2 = Pulse.Atom(G(3), B(3), D(4), A(4))
-    val beat3 = Pulse.Atom(G(3), B(3), D(4), B(4))
+    // In C major. Soprano: E→F→G over C major. F is a passing tone.
+    val beat1 = Pulse.Atom(C(3), E(3), G(3), E(4))
+    val beat2 = Pulse.Atom(C(3), E(3), G(3), F(4))
+    val beat3 = Pulse.Atom(C(3), E(3), G(3), G(4))
 
-    val results = Analysis(NoteType.G, Scale.Major, beat1, beat2, beat3)
+    val results = Analysis(NoteType.C, Scale.Major, beat1, beat2, beat3)
     val analyses = results.toList.collect:
       case Pulse.Atom(nel) => nel.head
 
-    val aNote = analyses(1).notes.find(n =>
-      n.note.noteType == NoteType.A && n.note.octave == 4
+    val fNote = analyses(1).notes.find(n =>
+      n.note.noteType == NoteType.F && n.note.octave == 4
     )
     assert(
-      aNote.exists(
+      fNote.exists(
         _.nonChordToneType.contains(NonChordToneType.PassingTone)
       )
     )
@@ -245,23 +245,24 @@ class AnalysisSuite extends munit.FunSuite:
       )
     )
 
-  test("suspension 2-1 — D held over C major resolves to C"):
+  test("suspension 4-3 — F held over C major resolves to E (variant)"):
     import Note.*
-    // 9-8 suspension (simple interval: 2-1). D held from G major, resolves to C.
-    val beat1 = Pulse.Atom(G(3), B(3), D(4))
-    val beat2 = Pulse.Atom(C(3), E(3), G(3), D(4))
-    val beat3 = Pulse.Atom(C(3), E(3), G(3), C(4))
+    // 4-3 suspension. F held from previous chord, resolves to E over C major.
+    // {C, E, G, F} doesn't match any standard chord type (has both M3 and P4).
+    val beat1 = Pulse.Atom(F(3), A(3), C(4), F(4))
+    val beat2 = Pulse.Atom(C(3), E(3), G(3), F(4))
+    val beat3 = Pulse.Atom(C(3), E(3), G(3), E(4))
 
     val results = Analysis(NoteType.C, Scale.Major, beat1, beat2, beat3)
     val analyses = results.toList.collect:
       case Pulse.Atom(nel) => nel.head
 
-    val dNote = analyses(1).notes.find(n =>
-      n.note.noteType == NoteType.D && n.note.octave == 4
+    val fNote = analyses(1).notes.find(n =>
+      n.note.noteType == NoteType.F && n.note.octave == 4
     )
     assert(
-      dNote.exists(
-        _.nonChordToneType.contains(NonChordToneType.Suspension(2, 1))
+      fNote.exists(
+        _.nonChordToneType.contains(NonChordToneType.Suspension(4, 3))
       )
     )
 
@@ -270,9 +271,11 @@ class AnalysisSuite extends munit.FunSuite:
     // In C major. Soprano: E→F→D→E (upper neighbor, then lower neighbor of E).
     // F is step from E, leap to D → escape tone; D is leap from F, step to E → appoggiatura.
     // Post-processing reclassifies both as ChangingTone.
+    // {C, E, G, F} doesn't match any chord type, and {C, E, G, D} = Cadd9.
+    // Use incomplete triad {C, E} so D isn't absorbed into an add9 chord.
     val beat1 = Pulse.Atom(C(3), E(3), G(3), E(4))
     val beat2 = Pulse.Atom(C(3), E(3), G(3), F(4))
-    val beat3 = Pulse.Atom(C(3), E(3), G(3), D(4))
+    val beat3 = Pulse.Atom(C(3), G(3), D(4))
     val beat4 = Pulse.Atom(C(3), E(3), G(3), E(4))
 
     val results =
@@ -355,6 +358,48 @@ class AnalysisSuite extends munit.FunSuite:
     assertEquals(ScaleDegree.Tonic.romanNumeral, "I")
     assertEquals(ScaleDegree.Dominant.romanNumeral, "V")
     assertEquals(ScaleDegree.LeadingTone.romanNumeral, "VII")
+
+  test("add9 chord — C E G D in C major returns I⁹"):
+    import Note.*
+    val beat1 = Pulse.Atom(C(3), E(3), G(3), D(4))
+
+    val results = Analysis(NoteType.C, Scale.Major, beat1)
+    val analyses = results.toList.collect:
+      case Pulse.Atom(nel) => nel.head
+
+    val chordLabels = analyses.head.chords.flatMap(_.romanNumerals.toList)
+    assert(
+      chordLabels.exists(_.contains("I⁺⁹")),
+      s"Expected I⁹ but got: $chordLabels"
+    )
+
+  test("add11 chord — C E G F in C major returns I¹¹"):
+    import Note.*
+    val beat1 = Pulse.Atom(C(3), E(3), G(3), F(4))
+
+    val results = Analysis(NoteType.C, Scale.Major, beat1)
+    val analyses = results.toList.collect:
+      case Pulse.Atom(nel) => nel.head
+
+    val chordLabels = analyses.head.chords.flatMap(_.romanNumerals.toList)
+    assert(
+      chordLabels.exists(_.contains("I⁺¹¹")),
+      s"Expected I¹¹ but got: $chordLabels"
+    )
+
+  test("add13 chord — C E G A in C major returns I¹³"):
+    import Note.*
+    val beat1 = Pulse.Atom(C(3), E(3), G(3), A(4))
+
+    val results = Analysis(NoteType.C, Scale.Major, beat1)
+    val analyses = results.toList.collect:
+      case Pulse.Atom(nel) => nel.head
+
+    val chordLabels = analyses.head.chords.flatMap(_.romanNumerals.toList)
+    assert(
+      chordLabels.exists(_.contains("I⁺¹³")),
+      s"Expected I¹³ but got: $chordLabels"
+    )
 
   // ── Secondary dominant tests ──────────────────────────────────────────
 

@@ -10,6 +10,7 @@ case class AppConfig(
   dbPassword:      String,
   dbJdbcUrl:       String,
   jwtSecret:       String,
+  adminPassword:   String = "admin",
   dbSsl:           Boolean = true,
   dbAdminUser:     String = "yield",
   dbAdminPassword: String = "yield"

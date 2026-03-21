@@ -1,11 +1,11 @@
 - Add chord dictionary and suggestions of chords
 - Add checks for part writing errors
-- Add non chord tone detection
 - Counterpoint analysis
 - New project
+- Ability play song
 - Auto save
 - Export Midi
 - Report bug
 - Feature Request
 - Transforms to change modes 
-- AI assistant 
+- AThe I assistant 

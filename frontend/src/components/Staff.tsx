@@ -1,6 +1,7 @@
 import { useState, useRef, useCallback, useMemo, useEffect } from "react";
 import type { RenderData, NoteRender, BeatRender, Staff as StaffDef, ContrapunctusApi } from "../contrapunctus";
 import { Contrapunctus } from "contrapunctus";
+import { useAuth, API_BASE } from "../auth";
 
 const C = Contrapunctus as ContrapunctusApi;
 
@@ -1020,19 +1021,40 @@ function NoteIcon({ duration, size }: { duration: Duration; size: number }) {
   );
 }
 
-export function NoteEditor() {
+export function NoteEditor({ header }: { header?: React.ReactNode }) {
+  const { token } = useAuth();
+  // ── LocalStorage persistence ──────────────────────────────────────
+  const STORAGE_KEY = "contrapunctus_state";
+
+  function loadSaved() {
+    try {
+      const raw = localStorage.getItem(STORAGE_KEY);
+      if (raw) return JSON.parse(raw) as {
+        trebleBeats?: PlacedBeat[];
+        bassBeats?: PlacedBeat[];
+        tsTop?: number;
+        tsBottom?: number;
+        tonicIdx?: number;
+        scaleName?: string;
+      };
+    } catch { /* ignore corrupt data */ }
+    return null;
+  }
+
+  const saved = useRef(loadSaved());
+
   const [selectedDuration, setSelectedDuration] = useState<Duration>("quarter");
   const [selectedAccidental, setSelectedAccidental] = useState<Accidental>("");
   const [dottedMode, setDottedMode] = useState(false);
   const [deleteMode, setDeleteMode] = useState(false);
   const [restMode, setRestMode] = useState(false);
-  const [tsTop, setTsTop] = useState(4);
-  const [tsBottom, setTsBottom] = useState(4);
+  const [tsTop, setTsTop] = useState(saved.current?.tsTop ?? 4);
+  const [tsBottom, setTsBottom] = useState(saved.current?.tsBottom ?? 4);
 
   // Independent beat arrays for each staff
   const initRests = () => fillWithRests(4 / 4);
-  const [trebleBeats, setTrebleBeatsRaw] = useState<PlacedBeat[]>(initRests);
-  const [bassBeats, setBassBeatsRaw] = useState<PlacedBeat[]>(initRests);
+  const [trebleBeats, setTrebleBeatsRaw] = useState<PlacedBeat[]>(saved.current?.trebleBeats ?? initRests);
+  const [bassBeats, setBassBeatsRaw] = useState<PlacedBeat[]>(saved.current?.bassBeats ?? initRests);
 
   // Undo/redo history: snapshots of [trebleBeats, bassBeats]
   type Snapshot = [PlacedBeat[], PlacedBeat[]];
@@ -1083,11 +1105,20 @@ export function NoteEditor() {
   const [hoverDp, setHoverDp] = useState<number | null>(null);
   const [hoverStaff, setHoverStaff] = useState<"treble" | "bass" | null>(null);
   const [hoverBeatIdx, setHoverBeatIdx] = useState<number | null>(null);
-  const [tonicIdx, setTonicIdx] = useState(0); // C
-  const [scaleName, setScaleName] = useState("major");
+  const [tonicIdx, setTonicIdx] = useState(saved.current?.tonicIdx ?? 0);
+  const [scaleName, setScaleName] = useState(saved.current?.scaleName ?? "major");
   const svgRef = useRef<SVGSVGElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
+  const topBarRef = useRef<HTMLDivElement>(null);
+  const topBarSpacerRef = useRef<HTMLDivElement>(null);
   const [containerWidth, setContainerWidth] = useState(880);
+
+  // Save state to localStorage on changes
+  useEffect(() => {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify({
+      trebleBeats, bassBeats, tsTop, tsBottom, tonicIdx, scaleName,
+    }));
+  }, [trebleBeats, bassBeats, tsTop, tsBottom, tonicIdx, scaleName]);
 
   useEffect(() => {
     const el = containerRef.current;
@@ -1098,6 +1129,18 @@ export function NoteEditor() {
       }
     });
     ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
+
+  // Sync spacer height with fixed top bar
+  useEffect(() => {
+    const bar = topBarRef.current;
+    const spacer = topBarSpacerRef.current;
+    if (!bar || !spacer) return;
+    const sync = () => { spacer.style.height = bar.offsetHeight + "px"; };
+    sync();
+    const ro = new ResizeObserver(sync);
+    ro.observe(bar);
     return () => ro.disconnect();
   }, []);
 
@@ -1344,6 +1387,102 @@ export function NoteEditor() {
   const [rnSelections, setRnSelections] = useState<Record<number, number>>({});
   const [openRnDropdown, setOpenRnDropdown] = useState<number | null>(null);
   const [showNct, setShowNct] = useState(false);
+  const [bugReportOpen, setBugReportOpen] = useState(false);
+  const [bugReportDesc, setBugReportDesc] = useState("");
+  const [bugReportStatus, setBugReportStatus] = useState<"idle" | "sending" | "sent" | "error">("idle");
+  const [featureRequestOpen, setFeatureRequestOpen] = useState(false);
+  const [featureRequestDesc, setFeatureRequestDesc] = useState("");
+  const [featureRequestStatus, setFeatureRequestStatus] = useState<"idle" | "sending" | "sent" | "error">("idle");
+  const [roadmapOpen, setRoadmapOpen] = useState(false);
+  const [roadmapVotes, setRoadmapVotes] = useState<Record<string, number>>({});
+  const [roadmapUserVotes, setRoadmapUserVotes] = useState<Set<string>>(new Set());
+
+  const submitBugReport = async () => {
+    if (!token || !bugReportDesc.trim()) return;
+    setBugReportStatus("sending");
+    try {
+      const stateJson = {
+        trebleBeats,
+        bassBeats,
+        undoHistory: historyRef.current.past,
+        redoHistory: historyRef.current.future,
+        settings: {
+          selectedDuration, selectedAccidental, dottedMode, deleteMode, restMode,
+          tsTop, tsBottom, tonicIdx, scaleName, showNct, rnSelections,
+        },
+      };
+      const res = await fetch(`${API_BASE}/api/bug-reports`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ description: bugReportDesc, stateJson }),
+      });
+      if (res.ok) {
+        setBugReportStatus("sent");
+        setTimeout(() => { setBugReportOpen(false); setBugReportDesc(""); setBugReportStatus("idle"); }, 1500);
+      } else {
+        setBugReportStatus("error");
+      }
+    } catch {
+      setBugReportStatus("error");
+    }
+  };
+
+  const submitFeatureRequest = async () => {
+    if (!token || !featureRequestDesc.trim()) return;
+    setFeatureRequestStatus("sending");
+    try {
+      const res = await fetch(`${API_BASE}/api/feature-requests`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ description: featureRequestDesc }),
+      });
+      if (res.ok) {
+        setFeatureRequestStatus("sent");
+        setTimeout(() => { setFeatureRequestOpen(false); setFeatureRequestDesc(""); setFeatureRequestStatus("idle"); }, 1500);
+      } else {
+        setFeatureRequestStatus("error");
+      }
+    } catch {
+      setFeatureRequestStatus("error");
+    }
+  };
+
+  const fetchRoadmapVotes = async () => {
+    if (!token) return;
+    try {
+      const res = await fetch(`${API_BASE}/api/roadmap-votes`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setRoadmapVotes(data.counts ?? {});
+        setRoadmapUserVotes(new Set(data.userVotes ?? []));
+      }
+    } catch { /* ignore */ }
+  };
+
+  const toggleRoadmapVote = async (featureKey: string) => {
+    if (!token) return;
+    try {
+      const res = await fetch(`${API_BASE}/api/roadmap-votes/${encodeURIComponent(featureKey)}`, {
+        method: "POST",
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setRoadmapUserVotes((prev) => {
+          const next = new Set(prev);
+          if (data.voted) next.add(featureKey);
+          else next.delete(featureKey);
+          return next;
+        });
+        setRoadmapVotes((prev) => ({
+          ...prev,
+          [featureKey]: (prev[featureKey] ?? 0) + (data.voted ? 1 : -1),
+        }));
+      }
+    } catch { /* ignore */ }
+  };
 
   const hasRN = romanNumerals.some((rn) => rn.length > 0);
 
@@ -1941,18 +2080,26 @@ export function NoteEditor() {
 
   return (
     <div>
-      {/* Toolbar */}
-      <div style={{
-        display: "flex",
-        gap: 5,
-        marginBottom: 16,
-        alignItems: "center",
-        flexWrap: "wrap",
-        padding: "10px 12px",
+      {/* Fixed top bar */}
+      <div ref={topBarRef} style={{
+        position: "fixed",
+        top: 0,
+        left: 0,
+        right: 0,
+        zIndex: 100,
         background: "#f5f3f0",
-        borderRadius: 8,
-        border: "1px solid #e0dcd8",
+        borderBottom: "1px solid #e0dcd8",
+        padding: "0 16px",
       }}>
+        {header && <div style={{ padding: "8px 0" }}>{header}</div>}
+        {/* Toolbar */}
+        <div style={{
+          display: "flex",
+          gap: 5,
+          alignItems: "center",
+          flexWrap: "wrap",
+          padding: "8px 0",
+        }}>
         {durations.map((key) => (
           <button key={key} onClick={() => setSelectedDuration(key)}
             style={btnOn(selectedDuration === key)} title={key}>
@@ -1999,19 +2146,32 @@ export function NoteEditor() {
         >
           NCT
         </button>
-      </div>
-
-      {/* Settings row */}
-      <div style={{
-        display: "flex",
-        gap: 16,
-        marginBottom: 16,
-        alignItems: "center",
-        flexWrap: "wrap",
-        fontSize: 13,
-        color: "#5a5a5a",
-      }}>
-        <label style={{ display: "flex", alignItems: "center", gap: 6 }}>
+        {sep}
+        <button
+          onClick={() => { setBugReportOpen(true); setBugReportStatus("idle"); }}
+          style={textBtnStyle(false)}
+          title="Report a bug"
+        >
+          Report Bug
+        </button>
+        {sep}
+        <button
+          onClick={() => { setFeatureRequestOpen(true); setFeatureRequestStatus("idle"); }}
+          style={textBtnStyle(false)}
+          title="Request a feature"
+        >
+          Feature Request
+        </button>
+        {sep}
+        <button
+          onClick={() => { setRoadmapOpen(true); fetchRoadmapVotes(); }}
+          style={textBtnStyle(false)}
+          title="View roadmap"
+        >
+          Roadmap
+        </button>
+        {sep}
+        <label style={{ display: "flex", alignItems: "center", gap: 4, fontSize: 12, color: "#5a5a5a" }}>
           <span>Time</span>
           <select value={tsTop} onChange={(e) => setTsTop(Number(e.target.value))} style={selectStyle}>
             {[2, 3, 4, 5, 6, 7, 8, 9, 12].map((n) => (
@@ -2025,7 +2185,8 @@ export function NoteEditor() {
             ))}
           </select>
         </label>
-        <label style={{ display: "flex", alignItems: "center", gap: 6 }}>
+        {sep}
+        <label style={{ display: "flex", alignItems: "center", gap: 4, fontSize: 12, color: "#5a5a5a" }}>
           <span>Key</span>
           <select value={tonicIdx} onChange={(e) => {
             const newIdx = Number(e.target.value);
@@ -2052,7 +2213,7 @@ export function NoteEditor() {
             ))}
           </select>
         </label>
-        <span style={{ color: "#999", fontSize: 13, marginLeft: "auto" }}>
+        <span style={{ color: "#999", fontSize: 12, marginLeft: "auto" }}>
           {hoverDp !== null ? (() => {
             const letterIdx = ((hoverDp % 7) + 7) % 7;
             const octave = Math.floor(hoverDp / 7);
@@ -2061,6 +2222,212 @@ export function NoteEditor() {
           })() : "\u00A0"}
         </span>
       </div>
+
+      {/* Bug report modal */}
+      {bugReportOpen && (
+        <div style={{
+          position: "fixed", top: 0, left: 0, right: 0, bottom: 0,
+          background: "rgba(0,0,0,0.3)", display: "flex", alignItems: "center",
+          justifyContent: "center", zIndex: 1000,
+        }} onClick={() => { if (bugReportStatus !== "sending") { setBugReportOpen(false); setBugReportStatus("idle"); } }}>
+          <div style={{
+            background: "#fff", borderRadius: 8, padding: 24, width: 400,
+            maxWidth: "90vw", boxShadow: "0 4px 20px rgba(0,0,0,0.15)",
+          }} onClick={(e) => e.stopPropagation()}>
+            <h3 style={{ margin: "0 0 12px", fontSize: 16, fontFamily: "inherit" }}>Report a Bug</h3>
+            <p style={{ margin: "0 0 12px", fontSize: 13, color: "#666" }}>
+              Your current editor state and undo history will be included automatically.
+            </p>
+            <textarea
+              value={bugReportDesc}
+              onChange={(e) => setBugReportDesc(e.target.value)}
+              placeholder="Describe what went wrong..."
+              rows={4}
+              style={{
+                width: "100%", boxSizing: "border-box", padding: 8, fontSize: 13,
+                fontFamily: "inherit", border: "1px solid #ccc", borderRadius: 4,
+                resize: "vertical",
+              }}
+            />
+            <div style={{ display: "flex", gap: 8, marginTop: 12, justifyContent: "flex-end" }}>
+              <button
+                onClick={() => { setBugReportOpen(false); setBugReportStatus("idle"); }}
+                disabled={bugReportStatus === "sending"}
+                style={{ padding: "6px 16px", fontSize: 13, fontFamily: "inherit", cursor: "pointer", border: "1px solid #ccc", borderRadius: 4, background: "none" }}
+              >
+                Cancel
+              </button>
+              <button
+                onClick={submitBugReport}
+                disabled={bugReportStatus === "sending" || !bugReportDesc.trim()}
+                style={{
+                  padding: "6px 16px", fontSize: 13, fontFamily: "inherit", cursor: "pointer",
+                  border: "1px solid #333", borderRadius: 4,
+                  background: bugReportStatus === "sent" ? "#27ae60" : bugReportStatus === "error" ? "#c0392b" : "#333",
+                  color: "#fff",
+                }}
+              >
+                {bugReportStatus === "sending" ? "Sending..." : bugReportStatus === "sent" ? "Sent!" : bugReportStatus === "error" ? "Failed - Retry" : "Submit"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+      {/* Feature request modal */}
+      {featureRequestOpen && (
+        <div style={{
+          position: "fixed", top: 0, left: 0, right: 0, bottom: 0,
+          background: "rgba(0,0,0,0.3)", display: "flex", alignItems: "center",
+          justifyContent: "center", zIndex: 1000,
+        }} onClick={() => { if (featureRequestStatus !== "sending") { setFeatureRequestOpen(false); setFeatureRequestStatus("idle"); } }}>
+          <div style={{
+            background: "#fff", borderRadius: 8, padding: 24, width: 400,
+            maxWidth: "90vw", boxShadow: "0 4px 20px rgba(0,0,0,0.15)",
+          }} onClick={(e) => e.stopPropagation()}>
+            <h3 style={{ margin: "0 0 12px", fontSize: 16, fontFamily: "inherit" }}>Request a Feature</h3>
+            <p style={{ margin: "0 0 12px", fontSize: 13, color: "#666" }}>
+              Describe the feature you'd like to see in Contrapunctus.
+            </p>
+            <textarea
+              value={featureRequestDesc}
+              onChange={(e) => setFeatureRequestDesc(e.target.value)}
+              placeholder="Describe the feature..."
+              rows={4}
+              style={{
+                width: "100%", boxSizing: "border-box", padding: 8, fontSize: 13,
+                fontFamily: "inherit", border: "1px solid #ccc", borderRadius: 4,
+                resize: "vertical",
+              }}
+            />
+            <div style={{ display: "flex", gap: 8, marginTop: 12, justifyContent: "flex-end" }}>
+              <button
+                onClick={() => { setFeatureRequestOpen(false); setFeatureRequestStatus("idle"); }}
+                disabled={featureRequestStatus === "sending"}
+                style={{ padding: "6px 16px", fontSize: 13, fontFamily: "inherit", cursor: "pointer", border: "1px solid #ccc", borderRadius: 4, background: "none" }}
+              >
+                Cancel
+              </button>
+              <button
+                onClick={submitFeatureRequest}
+                disabled={featureRequestStatus === "sending" || !featureRequestDesc.trim()}
+                style={{
+                  padding: "6px 16px", fontSize: 13, fontFamily: "inherit", cursor: "pointer",
+                  border: "1px solid #333", borderRadius: 4,
+                  background: featureRequestStatus === "sent" ? "#27ae60" : featureRequestStatus === "error" ? "#c0392b" : "#333",
+                  color: "#fff",
+                }}
+              >
+                {featureRequestStatus === "sending" ? "Sending..." : featureRequestStatus === "sent" ? "Sent!" : featureRequestStatus === "error" ? "Failed - Retry" : "Submit"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Roadmap modal */}
+      {roadmapOpen && (
+        <div style={{
+          position: "fixed", top: 0, left: 0, right: 0, bottom: 0,
+          background: "rgba(0,0,0,0.3)", display: "flex", alignItems: "center",
+          justifyContent: "center", zIndex: 1000,
+        }} onClick={() => setRoadmapOpen(false)}>
+          <div style={{
+            background: "#fff", borderRadius: 8, padding: 28, width: 680,
+            maxWidth: "90vw", maxHeight: "80vh", overflow: "auto",
+            boxShadow: "0 4px 20px rgba(0,0,0,0.15)",
+          }} onClick={(e) => e.stopPropagation()}>
+            <h3 style={{ margin: "0 0 16px", fontSize: 18, fontFamily: "inherit" }}>Roadmap</h3>
+            {[
+              {
+                key: "chord-dictionary",
+                title: "Chord Dictionary & Suggestions",
+                desc: "Browse a comprehensive dictionary of chord types with audio playback. Get context-aware chord suggestions based on the current key, preceding harmony, and common progressions to help guide composition.",
+              },
+              {
+                key: "part-writing-errors",
+                title: "Part Writing Error Detection",
+                desc: "Automatic detection of parallel fifths and octaves, voice crossing, spacing errors, improper resolution of tendency tones, and other common part writing violations with inline annotations.",
+              },
+              {
+                key: "counterpoint-analysis",
+                title: "Counterpoint Analysis",
+                desc: "Species counterpoint validation and analysis. Check adherence to first through fifth species rules, identify dissonance treatment patterns, and get feedback on melodic contour and intervallic motion.",
+              },
+              {
+                key: "new-project",
+                title: "New Project & Auto Save",
+                desc: "Create, name, and manage multiple projects. Work is automatically saved to the cloud as you compose, with full version history so you never lose progress.",
+              },
+              {
+                key: "play-song",
+                title: "Ability to Play Song",
+                desc: "Listen to your composition with realistic instrument sounds. Play back individual voices or the full score, adjust tempo, and hear how your harmonic and melodic choices sound together.",
+              },
+              {
+                key: "export-midi",
+                title: "MIDI Export",
+                desc: "Export your composition as a standard MIDI file for playback in any DAW, notation software, or synthesizer. Supports multi-voice export preserving your exact voicings.",
+              },
+              {
+                key: "mode-transforms",
+                title: "Mode Transforms",
+                desc: "Transform your composition between parallel and relative modes — switch from major to minor, Dorian, Mixolydian, and other modes while intelligently adapting chord qualities and melodic intervals.",
+              },
+              {
+                key: "ai-assistant",
+                title: "AI Assistant",
+                desc: "An integrated AI assistant that can analyze your harmonic choices, suggest continuations, explain theoretical concepts in context, and help you explore compositional possibilities.",
+              },
+            ].map((item) => (
+              <div key={item.key} style={{ marginBottom: 16, display: "flex", gap: 12, alignItems: "flex-start" }}>
+                <button
+                  onClick={() => toggleRoadmapVote(item.key)}
+                  disabled={!token}
+                  title={!token ? "Sign in to vote" : roadmapUserVotes.has(item.key) ? "Remove vote" : "Vote for this feature"}
+                  style={{
+                    flexShrink: 0, width: 48, padding: "4px 0", fontSize: 13, fontFamily: "inherit",
+                    cursor: token ? "pointer" : "default", border: "1px solid #ccc", borderRadius: 4,
+                    background: roadmapUserVotes.has(item.key) ? "#333" : "#fff",
+                    color: roadmapUserVotes.has(item.key) ? "#fff" : "#333",
+                    display: "flex", flexDirection: "column", alignItems: "center", lineHeight: 1.2,
+                  }}
+                >
+                  <span style={{ fontSize: 14 }}>{roadmapUserVotes.has(item.key) ? "\u2764\uFE0F" : "\u2661"}</span>
+                  <span>{roadmapVotes[item.key] ?? 0}</span>
+                </button>
+                <div style={{ flex: 1 }}>
+                  <h4 style={{ margin: "0 0 4px", fontSize: 14, fontWeight: 600, color: "#1a1a1a" }}>{item.title}</h4>
+                  <p style={{ margin: 0, fontSize: 13, color: "#555", lineHeight: 1.5 }}>{item.desc}</p>
+                </div>
+              </div>
+            ))}
+            <div style={{ display: "flex", justifyContent: "flex-end", marginTop: 8 }}>
+              <button
+                onClick={() => setRoadmapOpen(false)}
+                style={{ padding: "6px 16px", fontSize: 13, fontFamily: "inherit", cursor: "pointer", border: "1px solid #ccc", borderRadius: 4, background: "none" }}
+              >
+                Close
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      </div>{/* end fixed top bar */}
+
+      {/* Spacer for fixed top bar */}
+      <div ref={topBarSpacerRef} />
+
+      {/* Page card */}
+      <div style={{
+        maxWidth: 960,
+        width: "100%",
+        margin: "24px auto",
+        padding: "36px 40px 48px",
+        background: "#fff",
+        borderRadius: 8,
+        boxShadow: "0 1px 3px rgba(0,0,0,0.12), 0 4px 12px rgba(0,0,0,0.08)",
+      }}>
 
       {/* Interactive grand staff */}
       <div ref={containerRef} style={{ width: "100%", position: "relative" }}>
@@ -2319,6 +2686,7 @@ export function NoteEditor() {
         );
       })()}
       </div>
+      </div>{/* end page card */}
     </div>
   );
 }

@@ -125,10 +125,10 @@ class ChordTypeSuite extends munit.FunSuite:
     assertEquals(Sevenths.DominantSeventh.figuredBassAt(3), "⁴₂")
 
   test("MajorSixth root position figured bass is ⁺⁶"):
-    assertEquals(Sevenths.MajorSixth.figuredBassAt(0), "⁺⁶")
+    assertEquals(Sevenths.MajorSixth.figuredBassAt(0), "⁺¹³")
 
   test("MinorSixth root position figured bass is ⁺⁶"):
-    assertEquals(Sevenths.MinorSixth.figuredBassAt(0), "⁺⁶")
+    assertEquals(Sevenths.MinorSixth.figuredBassAt(0), "⁺¹³")
 
   // --- Ninths ---
 

@@ -158,6 +158,8 @@ object ChordType:
     Triads,
     Sevenths,
     Ninths,
+    AddNinths,
+    AddElevenths,
     Elevenths,
     Thirteenths,
     AlteredChords
@@ -249,7 +251,7 @@ enum Sevenths(val rootIntervals: NonEmptySet[Interval])
       case MajorSixth | MinorSixth => true
       case _                       => false
     (isSixth, inversionIndex) match
-      case (true, 0)  => "⁺⁶"
+      case (true, 0)  => "⁺¹³"
       case (false, 0) => "⁷"
       case (_, 1)     => "⁶₅"
       case (_, 2)     => "⁴₃"
@@ -432,6 +434,58 @@ enum Ninths(val rootIntervals: NonEmptySet[Interval])
         )
       )
 end Ninths
+
+object AddNinths extends ChordGroup:
+  override def allBaseTypes: List[BaseChordType] = AddNinths.values.toList
+
+enum AddNinths(val rootIntervals: NonEmptySet[Interval])
+    extends InvertibleChordType:
+  protected def numInversions: Int = 4
+
+  def isMinorQuality: Boolean =
+    this match
+      case MinorAdd9 => true
+      case _         => false
+
+  def qualitySymbol: String = ""
+
+  def figuredBassAt(inversionIndex: Int): String = "⁺⁹"
+
+  case MajorAdd9
+      extends AddNinths(
+        NonEmptySet.of(PerfectUnison, MajorThird, PerfectFifth, Interval.MajorNinth)
+      )
+  case MinorAdd9
+      extends AddNinths(
+        NonEmptySet.of(PerfectUnison, MinorThird, PerfectFifth, Interval.MajorNinth)
+      )
+end AddNinths
+
+object AddElevenths extends ChordGroup:
+  override def allBaseTypes: List[BaseChordType] = AddElevenths.values.toList
+
+enum AddElevenths(val rootIntervals: NonEmptySet[Interval])
+    extends InvertibleChordType:
+  protected def numInversions: Int = 4
+
+  def isMinorQuality: Boolean =
+    this match
+      case MinorAdd11 => true
+      case _          => false
+
+  def qualitySymbol: String = ""
+
+  def figuredBassAt(inversionIndex: Int): String = "⁺¹¹"
+
+  case MajorAdd11
+      extends AddElevenths(
+        NonEmptySet.of(PerfectUnison, MajorThird, PerfectFifth, Interval.PerfectEleventh)
+      )
+  case MinorAdd11
+      extends AddElevenths(
+        NonEmptySet.of(PerfectUnison, MinorThird, PerfectFifth, Interval.PerfectEleventh)
+      )
+end AddElevenths
 
 object Elevenths extends ChordGroup:
   override def allBaseTypes: List[BaseChordType] = Elevenths.values.toList

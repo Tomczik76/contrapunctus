@@ -9,7 +9,7 @@ import io.github.tomczik76.contrapunctus.core.{
   Scale,
   ScaleDegree
 }
-import io.github.tomczik76.contrapunctus.harmony.{Chord, Inversion, Sevenths, Triads}
+import io.github.tomczik76.contrapunctus.harmony.{AddElevenths, AddNinths, Chord, Inversion, Sevenths, Triads}
 import io.github.tomczik76.contrapunctus.rhythm.{
   AlignedColumn,
   Pulse,
@@ -187,13 +187,30 @@ object Analysis:
         // Use neighbor's real chord if found, otherwise keep whatever we had
         neighbor.getOrElse(rawChords(i))
 
+    // Phase 2.75: Compute display chords — prefer add9/add11/add13 when the
+    // full note set matches, so labels show I⁹, I¹¹, I¹³. NCT classification
+    // still uses rawChords (which prefer plain triads).
+    val displayChords: List[Set[Chord]] = beats.zipWithIndex.map: (notes, i) =>
+      val fromAll = Chord.fromNotes(notes.head, notes.tail*)
+      val scalePitchClasses =
+        scale.intervals.toList.map(iv => (tonic.value + iv.value) % 12).toSet
+      val diatonic = fromAll.filter: chord =>
+        val rootOffset = chord.chordType.rootInterval.normalizedValue
+        chord.chordType.intervals.toSortedSet.forall: iv =>
+          val pc = (chord.root.value + (iv.normalizedValue - rootOffset + 12) % 12) % 12
+          scalePitchClasses.contains(pc)
+      val candidates = if diatonic.nonEmpty then diatonic else fromAll
+      val nonSus = candidates.filter(c => !c.chordType.qualitySymbol.contains("sus"))
+      val preferred = if nonSus.nonEmpty then nonSus else candidates
+      if preferred.nonEmpty then preferred else rawChords(i)
+
     // Phase 3: Classify each note as chord tone or NCT using melodic context.
-    // Use propagated chords for NCT classification but display only the
-    // directly identified chords as roman numerals.
+    // Use propagated chords for NCT classification but display chords for
+    // roman numeral labels (which include add9/add11/add13).
     val classified: List[Analysis] = beats.indices.toList.map: i =>
       val analyzedNotes = classifyBeatNotes(i, beats, chordsPerBeat)
       val analyzedChords =
-        rawChords(i).map(c => AnalyzedChord(c, tonic, scale))
+        displayChords(i).map(c => AnalyzedChord(c, tonic, scale))
       Analysis(analyzedChords, analyzedNotes)
 
     // Phase 3.5: Reclassify escape tone + appoggiatura pairs as changing tones
@@ -230,19 +247,33 @@ object Analysis:
       case Inversion(Triads.PowerChord, _, _, _) => true
       case _                                     => false
 
+    def isAddChord(c: Chord): Boolean = c.chordType match
+      case Inversion(_: AddNinths, _, _, _)    => true
+      case Inversion(_: AddElevenths, _, _, _) => true
+      case _                                   => false
+
     def preferNonSus(chords: Set[Chord]): Set[Chord] =
       val nonSus =
         chords.filter(c => !c.chordType.qualitySymbol.contains("sus"))
       if nonSus.nonEmpty then nonSus else chords
 
+    // Prefer triads/sevenths over add9/add11 chords so the added note
+    // can be classified as an NCT through melodic context.
+    def preferCoreChords(chords: Set[Chord]): Set[Chord] =
+      val core = chords.filter(c => !isAddChord(c))
+      if core.nonEmpty then core else chords
+
     val fromAll         = Chord.fromNotes(notes.head, notes.tail*)
     val diatonicFromAll = fromAll.filter(isDiatonic)
     if diatonicFromAll.nonEmpty then
-      val nonSus = preferNonSus(diatonicFromAll)
-      // If only sus chords were found from all notes, try subsets for real
-      // triads/sevenths so the NCT classifier can treat the sus note as an NCT
-      val allSus = nonSus.forall(c => c.chordType.qualitySymbol.contains("sus"))
-      if allSus then
+      val nonSus  = preferNonSus(diatonicFromAll)
+      val preferred = preferCoreChords(nonSus)
+      // If only sus/add chords were found from all notes, try subsets for real
+      // triads/sevenths so the NCT classifier can treat the extra note as an NCT
+      val needsSubsets = preferred.forall(c =>
+        c.chordType.qualitySymbol.contains("sus") || isAddChord(c)
+      )
+      if needsSubsets then
         val notesList = notes.toList
         val subsetNonSus = (for
           i <- notesList.indices.toList
@@ -253,10 +284,11 @@ object Analysis:
           if isDiatonic(chord)
           if !chord.chordType.qualitySymbol.contains("sus")
           if !isPowerChord(chord)
+          if !isAddChord(chord)
         yield chord).toSet
         if subsetNonSus.nonEmpty then subsetNonSus
-        else nonSus
-      else nonSus
+        else preferred
+      else preferred
     else
       val notesList = notes.toList
       val fromSubsets = for
