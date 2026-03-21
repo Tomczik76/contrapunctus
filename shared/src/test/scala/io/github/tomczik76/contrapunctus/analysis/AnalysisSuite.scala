@@ -605,4 +605,46 @@ class AnalysisSuite extends munit.FunSuite:
     assert(rns.contains("I⁵"), s"Expected I⁵ in $rns")
     assert(!rns.contains("V⁵⁶₄"), s"Should not contain V⁵⁶₄ in $rns")
 
+  test("passing tone — incomplete voicing C5-E4-C3-G3 then D5-C3-G3 then E5"):
+    import Note.*
+    // From real user input: soprano C5→D5→E5 over bass C3+G3.
+    // Beat 0 has a full C major chord {C,E,G}. Beat 1 has {C,D,G} — D is a
+    // passing tone, NOT a sus chord or power chord. Beat 2 has just E5.
+    val beat0 = Pulse.Atom(NonEmptyList.of(C(3), G(3), E(4), C(5)))
+    val beat1 = Pulse.Atom(NonEmptyList.of(C(3), G(3), D(5)))
+    val beat2 = Pulse.Atom(NonEmptyList.of(E(5)))
+    val rest: Pulse[Note] = Pulse.Rest
+
+    val measure = Pulse.Duplet(
+      Pulse.Triplet(beat0, beat1, beat2),
+      Pulse.Triplet(rest, rest, rest)
+    )
+    val results = Analysis.analyzeWithPartWriting(
+      NoteType.C, Scale.Major, NonEmptyList.one(measure)
+    )
+    val analyses = Pulse.flatten(results.head).map(_.head)
+
+    // Beat 0 should be I (C major)
+    val rns0 = analyses(0).chords.flatMap(_.romanNumerals.toList)
+    assert(rns0.contains("I"), s"Beat 0: expected I in $rns0")
+
+    // Beat 1: D5 should be a passing tone
+    val dNote = analyses(1).notes.find(n =>
+      n.note.noteType == NoteType.D && n.note.octave == 5
+    )
+    assert(
+      dNote.exists(_.nonChordToneType.contains(NonChordToneType.PassingTone)),
+      s"Beat 1: D5 should be PassingTone, got ${dNote.map(_.nonChordToneType)}"
+    )
+
+    // Beat 1 should NOT show I⁵ or V⁵
+    val rns1 = analyses(1).chords.flatMap(_.romanNumerals.toList)
+    assert(!rns1.contains("I⁵"), s"Beat 1: should not contain I⁵, got $rns1")
+    assert(!rns1.contains("V⁵"), s"Beat 1: should not contain V⁵, got $rns1")
+
+    // Beat 2 (single E5) should not display any chord — propagated chords
+    // are only used for NCT classification, not for roman numeral display
+    val rns2 = analyses(2).chords.flatMap(_.romanNumerals.toList)
+    assert(rns2.isEmpty, s"Beat 2: single E5 should have no chord label, got $rns2")
+
 end AnalysisSuite

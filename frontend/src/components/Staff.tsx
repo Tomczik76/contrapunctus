@@ -651,6 +651,15 @@ interface PlacedBeat {
 }
 
 const LETTERS = ["C", "D", "E", "F", "G", "A", "B"];
+// Semitone offset from C for each letter: C=0, D=2, E=4, F=5, G=7, A=9, B=11
+const LETTER_SEMITONES = [0, 2, 4, 5, 7, 9, 11];
+
+function dpToMidi(dp: number, acc: Accidental): number {
+  const letterIdx = ((dp % 7) + 7) % 7;
+  const octave = Math.floor(dp / 7);
+  const accOffset = acc === "#" ? 1 : acc === "b" ? -1 : 0;
+  return (octave + 1) * 12 + LETTER_SEMITONES[letterIdx] + accOffset;
+}
 
 function dpToNoteName(dp: number): string {
   const letterIdx = ((dp % 7) + 7) % 7;
@@ -1242,8 +1251,10 @@ export function NoteEditor() {
 
   // Compute Roman numeral analysis by merging notes at each time point,
   // including sustained notes from longer durations on either staff.
-  const romanNumerals = useMemo(() => {
-    if (trebleBeats.length === 0 && bassBeats.length === 0) return [];
+  // NCT data: per time-point, map from midi -> label
+  type NctMap = Record<number, string>;
+  const analysisData = useMemo((): { romanNumerals: string[][]; nctMaps: NctMap[] } => {
+    if (trebleBeats.length === 0 && bassBeats.length === 0) return { romanNumerals: [], nctMaps: [] };
     const tonic = TONIC_OPTIONS[tonicIdx];
     try {
       const measureCap = timeKey(tsTop / tsBottom);
@@ -1275,8 +1286,8 @@ export function NoteEditor() {
           currentMeasure = [];
         }
         // Collect all sounding notes (including sustained) from both staves
-        const trebleNotes = soundingNotes(trebleBeats, trebleTimes, t);
-        const bassNotes = soundingNotes(bassBeats, bassTimes, t);
+        const trebleNotes = soundingNotes(paddedTrebleBeats, trebleTimes, t);
+        const bassNotes = soundingNotes(paddedBassBeats, bassTimes, t);
         // Deduplicate by dp to avoid counting the same pitch twice
         const allNotes: PlacedNote[] = [...trebleNotes];
         for (const bn of bassNotes) {
@@ -1300,16 +1311,39 @@ export function NoteEditor() {
         });
         return C.measure(tsTop, tsBottom, jBeats);
       });
-      if (jMeasures.length === 0) return [];
+      if (jMeasures.length === 0) return { romanNumerals: [], nctMaps: [] };
       const data = C.renderWithAnalysis(jMeasures, tonic.letter, tonic.acc, scaleName);
-      return data.measures.flatMap((m) => m.beats.map((b) => b.romanNumerals));
-    } catch {
-      return [];
+      const romanNumerals = data.measures.flatMap((m: any) => m.beats.map((b: any) => b.romanNumerals as string[]));
+      const nctMaps: NctMap[] = data.measures.flatMap((m: any) =>
+        m.beats.map((b: any) => {
+          const map: NctMap = {};
+          for (const n of b.notes) {
+            if (n.nct) map[n.midi] = n.nct;
+          }
+          return map;
+        })
+      );
+      return { romanNumerals, nctMaps };
+    } catch (e) {
+      console.error("Analysis error:", e);
+      return { romanNumerals: [], nctMaps: [] };
     }
-  }, [trebleBeats, bassBeats, trebleTimes, bassTimes, allTimePoints, tonicIdx, scaleName, tsTop, tsBottom, keySig]);
+  }, [paddedTrebleBeats, paddedBassBeats, trebleTimes, bassTimes, allTimePoints, tonicIdx, scaleName, tsTop, tsBottom, keySig]);
+
+  const { romanNumerals, nctMaps } = analysisData;
+
+  // Map from time value to NCT map for that beat
+  const timeToNct = useMemo(() => {
+    const m = new Map<number, Record<number, string>>();
+    allTimePoints.forEach((t, i) => {
+      if (nctMaps[i] && Object.keys(nctMaps[i]).length > 0) m.set(t, nctMaps[i]);
+    });
+    return m;
+  }, [allTimePoints, nctMaps]);
 
   const [rnSelections, setRnSelections] = useState<Record<number, number>>({});
   const [openRnDropdown, setOpenRnDropdown] = useState<number | null>(null);
+  const [showNct, setShowNct] = useState(false);
 
   const hasRN = romanNumerals.some((rn) => rn.length > 0);
 
@@ -1716,7 +1750,7 @@ export function NoteEditor() {
   }
 
   /** Render a complete beat (chord) with shared stem and flag. */
-  function renderBeat(beat: PlacedBeat, x: number, opacity = 1) {
+  function renderBeat(beat: PlacedBeat, x: number, opacity = 1, nctMap?: Record<number, string>) {
     const dur = beat.duration;
     const s = GLYPH_SCALE;
     const head = dur === "whole" ? NOTEHEAD_WHOLE
@@ -1758,9 +1792,16 @@ export function NoteEditor() {
         stemGeometry(dps, ED_TREBLE_TOP, ED_TREBLE_MID, trebleYOffset);
 
       trebleNotes.forEach((n, i) => {
+        const y = dpToY(n.dp, ED_TREBLE_TOP, trebleYOffset);
+        const eff = effectiveAccidental(n.accidental, n.dp, keySig);
+        const midi = dpToMidi(n.dp, eff);
+        const nctLabel = nctMap?.[midi];
         elements.push(
           <g key={`t-${i}`}>
             {renderNotehead(n.dp, dur, x, ED_TREBLE_TOP, ED_TREBLE_LINES[0], trebleYOffset, n.accidental, opacity)}
+            {showNct && nctLabel && (
+              <text x={x + headW / 2 + 3} y={y + 3} fontSize={9} fill="#c0392b" fontFamily="sans-serif" fontWeight="bold">{nctLabel}</text>
+            )}
           </g>
         );
       });
@@ -1789,9 +1830,16 @@ export function NoteEditor() {
         stemGeometry(dps, ED_BASS_TOP, ED_BASS_MID, bassYOffset);
 
       bassNotes.forEach((n, i) => {
+        const y = dpToY(n.dp, ED_BASS_TOP, bassYOffset);
+        const eff = effectiveAccidental(n.accidental, n.dp, keySig);
+        const midi = dpToMidi(n.dp, eff);
+        const nctLabel = nctMap?.[midi];
         elements.push(
           <g key={`b-${i}`}>
             {renderNotehead(n.dp, dur, x, ED_BASS_TOP, ED_BASS_LINES[0], bassYOffset, n.accidental, opacity)}
+            {showNct && nctLabel && (
+              <text x={x + headW / 2 + 3} y={y + 3} fontSize={9} fill="#c0392b" fontFamily="sans-serif" fontWeight="bold">{nctLabel}</text>
+            )}
           </g>
         );
       });
@@ -1943,6 +1991,14 @@ export function NoteEditor() {
         <button onClick={handleUndo} style={textBtnStyle(false)} title="Undo (Ctrl+Z)">Undo</button>
         <button onClick={handleRedo} style={textBtnStyle(false)} title="Redo (Ctrl+Shift+Z)">Redo</button>
         <button onClick={handleClear} style={textBtnStyle(false)} title="Clear all">Clear</button>
+        {sep}
+        <button
+          onClick={() => setShowNct((v) => !v)}
+          style={textBtnStyle(showNct)}
+          title="Show non-chord tone labels"
+        >
+          NCT
+        </button>
       </div>
 
       {/* Settings row */}
@@ -2093,6 +2149,7 @@ export function NoteEditor() {
                   if (beat.isRest) {
                     return <g key={`tb-${i}`}>{renderRestOnStaff(beat.duration, bx, trebleLineYs)}</g>;
                   }
+                  const tNct = trebleTimes[i] !== undefined ? timeToNct.get(trebleTimes[i]) : undefined;
                   const drag = dragRef.current;
                   if (drag && drag.staff === "treble" && drag.beatIdx === i && drag.moved) {
                     const filtered: PlacedBeat = {
@@ -2101,12 +2158,12 @@ export function NoteEditor() {
                     };
                     return (
                       <g key={`tb-${i}`}>
-                        {filtered.notes.length > 0 && renderBeat(filtered, bx)}
+                        {filtered.notes.length > 0 && renderBeat(filtered, bx, 1, tNct)}
                         {renderNotehead(drag.note.dp, beat.duration, bx, ED_TREBLE_TOP, ED_TREBLE_LINES[0], trebleYOffset, drag.note.accidental, 0.2)}
                       </g>
                     );
                   }
-                  return <g key={`tb-${i}`}>{renderBeat(beat, bx)}</g>;
+                  return <g key={`tb-${i}`}>{renderBeat(beat, bx, 1, tNct)}</g>;
                 });
               })()}
 
@@ -2120,6 +2177,7 @@ export function NoteEditor() {
                   if (beat.isRest) {
                     return <g key={`bb-${i}`}>{renderRestOnStaff(beat.duration, bx, bassLineYs)}</g>;
                   }
+                  const bNct = bassTimes[i] !== undefined ? timeToNct.get(bassTimes[i]) : undefined;
                   const drag = dragRef.current;
                   if (drag && drag.staff === "bass" && drag.beatIdx === i && drag.moved) {
                     const filtered: PlacedBeat = {
@@ -2128,12 +2186,12 @@ export function NoteEditor() {
                     };
                     return (
                       <g key={`bb-${i}`}>
-                        {filtered.notes.length > 0 && renderBeat(filtered, bx)}
+                        {filtered.notes.length > 0 && renderBeat(filtered, bx, 1, bNct)}
                         {renderNotehead(drag.note.dp, beat.duration, bx, ED_BASS_TOP, ED_BASS_LINES[0], bassYOffset, drag.note.accidental, 0.2)}
                       </g>
                     );
                   }
-                  return <g key={`bb-${i}`}>{renderBeat(beat, bx)}</g>;
+                  return <g key={`bb-${i}`}>{renderBeat(beat, bx, 1, bNct)}</g>;
                 });
               })()}
 

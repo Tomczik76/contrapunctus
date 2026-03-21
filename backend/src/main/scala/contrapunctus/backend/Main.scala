@@ -2,7 +2,7 @@ package contrapunctus.backend
 
 import cats.effect.{ExitCode, IO, IOApp}
 import pureconfig.ConfigSource
-import contrapunctus.backend.db.{Database, Migrations}
+import contrapunctus.backend.db.{Bootstrap, Database, Migrations}
 
 object Main extends IOApp:
   def run(args: List[String]): IO[ExitCode] =
@@ -13,7 +13,11 @@ object Main extends IOApp:
         )
       }
     ).flatMap { cfg =>
-      Migrations.migrate(cfg.dbJdbcUrl, cfg.dbUser, cfg.dbPassword) *>
+      Bootstrap.ensureDatabase(
+        cfg.dbHost, cfg.dbPort, cfg.dbName, cfg.dbUser, cfg.dbPassword,
+        cfg.dbAdminUser, cfg.dbAdminPassword, cfg.dbSsl
+      ) *>
+        Migrations.migrate(cfg.dbJdbcUrl, cfg.dbUser, cfg.dbPassword) *>
         Database
           .pool(cfg.dbHost, cfg.dbPort, cfg.dbName, cfg.dbUser, cfg.dbPassword, cfg.dbSsl)
           .use(pool => Server.run(pool, cfg.jwtSecret))

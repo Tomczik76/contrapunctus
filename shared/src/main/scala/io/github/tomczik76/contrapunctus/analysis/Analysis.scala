@@ -162,14 +162,38 @@ object Analysis:
       measures.toList.flatMap(Pulse.flatten)
 
     // Phase 2: Identify chords, trying subsets if all notes don't match
-    val chordsPerBeat: List[Set[Chord]] =
+    val rawChords: List[Set[Chord]] =
       beats.map(identifyChords(_, tonic, scale))
 
-    // Phase 3: Classify each note as chord tone or NCT using melodic context
+    // Phase 2.5: Replace beats that have only sus/power chords (or no chords)
+    // with the nearest neighbor's real chord. This handles incomplete voicings
+    // and treats sus-forming notes as potential NCTs.
+    def hasRealChord(chords: Set[Chord]): Boolean =
+      chords.nonEmpty && chords.exists: c =>
+        !c.chordType.qualitySymbol.contains("sus") &&
+          (c.chordType match
+            case Inversion(Triads.PowerChord, _, _, _) => false
+            case _                                     => true)
+
+    val chordsPerBeat: List[Set[Chord]] = rawChords.indices.toList.map: i =>
+      if hasRealChord(rawChords(i)) then rawChords(i)
+      else
+        val maxDist = rawChords.size
+        val neighbor = (1 to maxDist).view.flatMap: d =>
+          val prev = Option.when(i - d >= 0)(rawChords(i - d)).filter(hasRealChord)
+          val next = Option.when(i + d < rawChords.size)(rawChords(i + d)).filter(hasRealChord)
+          prev.orElse(next)
+        .headOption
+        // Use neighbor's real chord if found, otherwise keep whatever we had
+        neighbor.getOrElse(rawChords(i))
+
+    // Phase 3: Classify each note as chord tone or NCT using melodic context.
+    // Use propagated chords for NCT classification but display only the
+    // directly identified chords as roman numerals.
     val classified: List[Analysis] = beats.indices.toList.map: i =>
       val analyzedNotes = classifyBeatNotes(i, beats, chordsPerBeat)
       val analyzedChords =
-        chordsPerBeat(i).map(c => AnalyzedChord(c, tonic, scale))
+        rawChords(i).map(c => AnalyzedChord(c, tonic, scale))
       Analysis(analyzedChords, analyzedNotes)
 
     // Phase 3.5: Reclassify escape tone + appoggiatura pairs as changing tones
@@ -202,6 +226,10 @@ object Analysis:
           (chord.root.value + (i.normalizedValue - rootOffset + 12) % 12) % 12
         scalePitchClasses.contains(pc)
 
+    def isPowerChord(c: Chord): Boolean = c.chordType match
+      case Inversion(Triads.PowerChord, _, _, _) => true
+      case _                                     => false
+
     def preferNonSus(chords: Set[Chord]): Set[Chord] =
       val nonSus =
         chords.filter(c => !c.chordType.qualitySymbol.contains("sus"))
@@ -209,7 +237,26 @@ object Analysis:
 
     val fromAll         = Chord.fromNotes(notes.head, notes.tail*)
     val diatonicFromAll = fromAll.filter(isDiatonic)
-    if diatonicFromAll.nonEmpty then preferNonSus(diatonicFromAll)
+    if diatonicFromAll.nonEmpty then
+      val nonSus = preferNonSus(diatonicFromAll)
+      // If only sus chords were found from all notes, try subsets for real
+      // triads/sevenths so the NCT classifier can treat the sus note as an NCT
+      val allSus = nonSus.forall(c => c.chordType.qualitySymbol.contains("sus"))
+      if allSus then
+        val notesList = notes.toList
+        val subsetNonSus = (for
+          i <- notesList.indices.toList
+          subset = notesList.patch(i, Nil, 1)
+          if subset.nonEmpty
+          chords = Chord.fromNotes(subset.head, subset.tail*)
+          chord <- chords
+          if isDiatonic(chord)
+          if !chord.chordType.qualitySymbol.contains("sus")
+          if !isPowerChord(chord)
+        yield chord).toSet
+        if subsetNonSus.nonEmpty then subsetNonSus
+        else nonSus
+      else nonSus
     else
       val notesList = notes.toList
       val fromSubsets = for
@@ -249,19 +296,18 @@ object Analysis:
     val notes        = beats(beatIndex)
     val primaryChord = chordsPerBeat(beatIndex).headOption
     val bass         = Some(notes.toList.minBy(_.midi))
-    // When the current beat has no identifiable chord (e.g. a single passing
-    // tone), fall back to a neighboring chord so NCT classification can proceed.
-    val effectiveChord = primaryChord
-      .orElse(
-        Option
-          .when(beatIndex > 0)(beatIndex - 1)
+    // When the current beat has no identifiable chord (e.g. passing tones or
+    // incomplete voicings), search outward for the nearest beat with a chord.
+    val effectiveChord = primaryChord.orElse:
+      // Search backwards then forwards, expanding distance
+      val maxDist = chordsPerBeat.size
+      (1 to maxDist).view.flatMap: d =>
+        val prev = Option.when(beatIndex - d >= 0)(beatIndex - d)
           .flatMap(chordsPerBeat(_).headOption)
-      )
-      .orElse(
-        Option
-          .when(beatIndex < chordsPerBeat.size - 1)(beatIndex + 1)
+        val next = Option.when(beatIndex + d < chordsPerBeat.size)(beatIndex + d)
           .flatMap(chordsPerBeat(_).headOption)
-      )
+        prev.orElse(next)
+      .headOption
 
     effectiveChord match
       case None =>
@@ -271,15 +317,19 @@ object Analysis:
           if primaryChord.isDefined && chord.isChordTone(note.noteType) then
             AnalyzedNote(note, None)
           else
-            val prevPair = for
-              i         <- Option.when(beatIndex > 0)(beatIndex - 1)
-              prevChord <- chordsPerBeat(i).headOption
-            yield (findClosestNote(note, beats(i)), prevChord)
+            // Search backwards for nearest beat with a chord
+            val prevPair = (1 to beatIndex).view.flatMap: d =>
+              val i = beatIndex - d
+              chordsPerBeat(i).headOption.map: prevChord =>
+                (findClosestNote(note, beats(i)), prevChord)
+            .headOption
 
-            val nextPair = for
-              i <- Option.when(beatIndex < beats.size - 1)(beatIndex + 1)
-              nextChord <- chordsPerBeat(i).headOption
-            yield (findClosestNote(note, beats(i)), nextChord)
+            // Search forwards for nearest beat with a chord
+            val nextPair = (1 until (beats.size - beatIndex)).view.flatMap: d =>
+              val i = beatIndex + d
+              chordsPerBeat(i).headOption.map: nextChord =>
+                (findClosestNote(note, beats(i)), nextChord)
+            .headOption
 
             val nctType = NonChordToneAnalysis.classify(
               prevPair,

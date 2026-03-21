@@ -5,46 +5,28 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 BACKEND_PID=""
 FRONTEND_PID=""
 
-# Find container runtime (prefer podman, fall back to docker)
-RUNTIME=""
-for candidate in podman docker; do
-  if command -v "$candidate" &>/dev/null; then
-    RUNTIME="$candidate"
-    break
-  fi
-done
-
-if [ -z "$RUNTIME" ]; then
-  echo "Error: neither podman nor docker found. Please install one and try again."
-  exit 1
-fi
-
-echo "Using: $RUNTIME"
-
-compose() {
-  "$RUNTIME" compose "$@"
-}
-
 cleanup() {
   echo ""
   echo "Shutting down..."
   [ -n "$FRONTEND_PID" ] && kill "$FRONTEND_PID" 2>/dev/null || true
   [ -n "$BACKEND_PID" ]  && kill "$BACKEND_PID"  2>/dev/null || true
-  compose -f "$ROOT/docker-compose.yml" stop
+  echo "Stopping Postgres..."
+  cd "$ROOT" && podman compose down 2>/dev/null || true
 }
 trap cleanup EXIT INT TERM
 
-echo "Starting PostgreSQL..."
-compose -f "$ROOT/docker-compose.yml" down -v --remove-orphans 2>/dev/null || true
-compose -f "$ROOT/docker-compose.yml" up -d
-
-echo "Waiting for PostgreSQL to be ready..."
-until compose -f "$ROOT/docker-compose.yml" exec -T db pg_isready -U contrapunctus -q; do
+# Start Postgres
+echo "Starting Postgres..."
+cd "$ROOT"
+podman compose up -d
+echo "Waiting for Postgres..."
+until podman compose exec db pg_isready -U postgres 2>/dev/null; do
   sleep 1
 done
 
 # Build Scala.js
 echo "Building Scala.js..."
+cd "$ROOT"
 sbt coreJS/fastLinkJS
 
 echo "Freeing port 8080..."

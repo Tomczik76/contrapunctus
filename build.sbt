@@ -27,7 +27,10 @@ lazy val core = crossProject(JVMPlatform, JSPlatform)
   )
   .jsSettings(
     scalaJSUseMainModuleInitializer := false,
-    scalaJSLinkerConfig ~= { _.withModuleKind(ModuleKind.ESModule) }
+    scalaJSLinkerConfig ~= {
+      _.withModuleKind(ModuleKind.ESModule)
+        .withSourceMap(true)
+    }
   )
 
 lazy val backend = (project in file("backend"))

@@ -5,7 +5,7 @@ import scala.scalajs.js.annotation.*
 import scala.scalajs.js.JSConverters.*
 import cats.data.NonEmptyList
 import io.github.tomczik76.contrapunctus.core.{Note, NoteType, Scale}
-import io.github.tomczik76.contrapunctus.analysis.Analysis
+import io.github.tomczik76.contrapunctus.analysis.{Analysis, AnalyzedNote, NonChordToneType}
 import io.github.tomczik76.contrapunctus.harmony.{Inversion, Sevenths}
 import io.github.tomczik76.contrapunctus.rhythm.{Measure, Pulse, TimeSignature}
 
@@ -40,6 +40,7 @@ trait JsNoteRender extends js.Object:
   val diatonicPosition: Int
   val midi: Int
   val staff: String
+  val nct: String  // non-chord tone label, empty if chord tone
 
 trait JsBeatRender extends js.Object:
   val notes: js.Array[JsNoteRender]
@@ -108,6 +109,18 @@ private object Helpers:
         val dur = end - start
         (value, (dur.num, dur.den))
 
+  def nctLabel(nct: Option[NonChordToneType]): String = nct match
+    case None                                => ""
+    case Some(NonChordToneType.PassingTone)   => "PT"
+    case Some(NonChordToneType.NeighborTone)  => "NT"
+    case Some(NonChordToneType.Appoggiatura)  => "APP"
+    case Some(NonChordToneType.EscapeTone)    => "ET"
+    case Some(NonChordToneType.ChangingTone)  => "CT"
+    case Some(NonChordToneType.Suspension(f, t)) => s"SUS $f-$t"
+    case Some(NonChordToneType.Retardation)   => "RET"
+    case Some(NonChordToneType.Anticipation)  => "ANT"
+    case Some(NonChordToneType.PedalTone)     => "PED"
+
 end Helpers
 
 // ── Exported API ────────────────────────────────────────────────────
@@ -147,7 +160,7 @@ object Contrapunctus:
       throw js.JavaScriptException(js.Error("At least one measure required"))
 
     val measures: NonEmptyList[Measure[Note]] = parseMeasures(jsMeasures)
-    buildRenderData(measures, None)
+    buildRenderData(measures, None, None)
 
   @JSExport
   def renderWithAnalysis(
@@ -187,36 +200,48 @@ object Contrapunctus:
           case (notes, analysis) => (notes, analysis.head)
 
     val romanNumeralOptions = flatBeats.zipWithIndex.map { case ((notes, analysis), i) =>
-      val chords = analysis.chords
-      // Sort so inversions come before add chords (MajorSixth/MinorSixth root position)
-      val sorted = chords.toList.sortBy: ac =>
-        ac.chord.chordType match
-          case Inversion(base, 0, _, _) if base == Sevenths.MajorSixth || base == Sevenths.MinorSixth => 1
-          case _ => 0
-      val baseLabels = sorted
-        .flatMap(_.romanNumerals.toList)
-        .distinct
+      // Skip roman numerals for beats that contain non-chord tones —
+      // the real harmony is on the neighboring beat
+      val hasNct = analysis.notes.exists(_.nonChordToneType.isDefined)
+      if hasNct then List.empty[String]
+      else
+        val chords = analysis.chords
+        // Sort so inversions come before add chords (MajorSixth/MinorSixth root position)
+        val sorted = chords.toList.sortBy: ac =>
+          ac.chord.chordType match
+            case Inversion(base, 0, _, _) if base == Sevenths.MajorSixth || base == Sevenths.MinorSixth => 1
+            case _ => 0
+        val baseLabels = sorted
+          .flatMap(_.romanNumerals.toList)
+          .distinct
 
-      // Add secondary dominant labels if applicable
-      val secDomLabels =
-        if i < flatBeats.size - 1 then
-          val (_, nextAnalysis) = flatBeats(i + 1)
-          Analysis.secondaryDominantLabels(
-            notes,
-            chords.map(_.chord),
-            nextAnalysis.chords.map(_.chord),
-            tonic,
-            scale
-          )
-        else Nil
+        // Add secondary dominant labels if applicable
+        val secDomLabels =
+          if i < flatBeats.size - 1 then
+            val (_, nextAnalysis) = flatBeats(i + 1)
+            Analysis.secondaryDominantLabels(
+              notes,
+              chords.map(_.chord),
+              nextAnalysis.chords.map(_.chord),
+              tonic,
+              scale
+            )
+          else Nil
 
-      // Add augmented sixth label if applicable
-      val aug6Label = Analysis.augmentedSixthLabel(notes, tonic).toList
+        // Add augmented sixth label if applicable
+        val aug6Label = Analysis.augmentedSixthLabel(notes, tonic).toList
 
-      (aug6Label ++ secDomLabels ++ baseLabels).distinct
+        (aug6Label ++ secDomLabels ++ baseLabels).distinct
     }
 
-    buildRenderData(measures, Some(romanNumeralOptions))
+    // Collect NCT info per beat: Map from midi -> nct label
+    val nctPerBeat: List[Map[Int, String]] = flatBeats.map: (_, analysis) =>
+      analysis.notes
+        .filter(_.nonChordToneType.isDefined)
+        .map(an => an.note.midi -> nctLabel(an.nonChordToneType))
+        .toMap
+
+    buildRenderData(measures, Some(romanNumeralOptions), Some(nctPerBeat))
 
   private def parseMeasures(
       jsMeasures: js.Array[JsMeasure]
@@ -229,22 +254,37 @@ object Contrapunctus:
     NonEmptyList.fromListUnsafe(parsed)
 
   private def buildPulse(beats: List[JsBeat]): Pulse[Note] =
-    beats match
-      case Nil =>
+    // Pad to the nearest supported size (power of 2 or multiple of 3)
+    val padded =
+      val n = beats.size
+      if n == 0 then
         throw js.JavaScriptException(js.Error("Measure must have at least one beat"))
+      else if n == 1 || n % 2 == 0 || n % 3 == 0 then beats
+      else
+        // Find next size that's a power of 2 or multiple of 3
+        val nextPow2 = Integer.highestOneBit(n) << 1
+        val nextMul3 = ((n / 3) + 1) * 3
+        val target = Math.min(nextPow2, nextMul3)
+        val restBeat = js.Dynamic.literal(
+          notes = js.Array[JsNote]()
+        ).asInstanceOf[JsBeat]
+        beats ++ List.fill(target - n)(restBeat)
+
+    padded match
       case single :: Nil =>
         beatToPulse(single)
-      case _ if beats.size % 2 == 0 =>
-        val (left, right) = beats.splitAt(beats.size / 2)
+      case _ if padded.size % 2 == 0 =>
+        val (left, right) = padded.splitAt(padded.size / 2)
         Pulse.Duplet(buildPulse(left), buildPulse(right))
-      case _ if beats.size % 3 == 0 =>
-        val third = beats.size / 3
-        val (a, rest) = beats.splitAt(third)
+      case _ if padded.size % 3 == 0 =>
+        val third = padded.size / 3
+        val (a, rest) = padded.splitAt(third)
         val (b, c) = rest.splitAt(third)
         Pulse.Triplet(buildPulse(a), buildPulse(b), buildPulse(c))
       case _ =>
+        // Should not happen after padding
         throw js.JavaScriptException(
-          js.Error(s"Unsupported beat count: ${beats.size} (use powers of 2, 3, or 6)")
+          js.Error(s"Unsupported beat count: ${padded.size}")
         )
 
   private def beatToPulse(jsBeat: JsBeat): Pulse[Note] =
@@ -256,7 +296,8 @@ object Contrapunctus:
 
   private def buildRenderData(
       measures: NonEmptyList[Measure[Note]],
-      romanNumerals: Option[List[List[String]]]
+      romanNumerals: Option[List[List[String]]],
+      nctData: Option[List[Map[Int, String]]]
   ): JsRenderData =
     val allNotes = measures.toList.flatMap: m =>
       Pulse.flatten(m.pulses).flatMap(_.toList)
@@ -298,12 +339,14 @@ object Contrapunctus:
       val jsBeats: js.Array[JsBeatRender] = leaves.map:
         case (maybeNotes, (durNum, durDen)) =>
           val rns = romanNumerals.flatMap(_.lift(rnIndex)).getOrElse(List.empty)
+          val beatNcts = nctData.flatMap(_.lift(rnIndex)).getOrElse(Map.empty)
           rnIndex += 1
           val (noteRenders, isRest) = maybeNotes match
             case None => (js.Array[JsNoteRender](), true)
             case Some(notes) =>
               val rendered = notes.toList.map: n =>
                 val dp = diatonicPos(n)
+                val nctStr = beatNcts.getOrElse(n.midi, "")
                 js.Dynamic
                   .literal(
                     letter = letterOf(n.noteType),
@@ -311,7 +354,8 @@ object Contrapunctus:
                     octave = n.octave,
                     diatonicPosition = dp,
                     midi = n.midi,
-                    staff = staffFor(dp, isGrand)
+                    staff = staffFor(dp, isGrand),
+                    nct = nctStr
                   )
                   .asInstanceOf[JsNoteRender]
               (rendered.toJSArray, false)

@@ -14,4 +14,10 @@ export default defineConfig({
       contrapunctus: path.resolve(__dirname, scalaJsPath),
     },
   },
+  build: {
+    sourcemap: true,
+  },
+  server: {
+    sourcemap: true,
+  },
 });
