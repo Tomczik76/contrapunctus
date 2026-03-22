@@ -153,6 +153,36 @@ const LANDING_CSS = `
 .landing-footer-link:hover {
   color: #1a1a1a;
 }
+.features-grid {
+  display: grid;
+  grid-template-columns: repeat(6, 1fr);
+  gap: 28px;
+}
+@media (max-width: 700px) {
+  .features-grid {
+    grid-template-columns: 1fr !important;
+  }
+  .features-grid > * {
+    grid-column: span 1 !important;
+  }
+  .landing-nav {
+    padding: 12px 16px !important;
+  }
+  .landing-nav-btns {
+    gap: 8px !important;
+  }
+  .landing-nav-btns a {
+    padding: 6px 12px !important;
+    font-size: 13px !important;
+  }
+  .landing-hero {
+    padding: 40px 16px 24px !important;
+  }
+  .landing-hero-btns a {
+    padding: 12px 24px !important;
+    font-size: 15px !important;
+  }
+}
 `;
 
 // ── Staff illustration ──────────────────────────────────────────────
@@ -289,7 +319,7 @@ function RevealSection({ children, delay = 0, style }: {
 const features = [
   {
     title: "Real-Time Harmonic Analysis",
-    desc: "See roman numeral analysis update instantly as you write. Every chord is identified in context: triads, sevenths, extensions, secondary dominants, and more.",
+    desc: "Roman numeral analysis updates instantly as you write. Triads, sevenths, extensions, secondary dominants, and more — all identified in context.",
   },
   {
     title: "Non-Chord Tone Detection",
@@ -297,11 +327,19 @@ const features = [
   },
   {
     title: "Multi-Voice Composition",
-    desc: "Write for up to four voices across treble and bass clefs with full control over rhythm, accidentals, and voicing.",
+    desc: "Write for any number of voices across treble and bass clefs with full control over rhythm, accidentals, and voicing.",
   },
   {
     title: "Key & Scale Awareness",
     desc: "Set your key signature and mode. Analysis adapts to major, minor, and modal contexts with correct diatonic chord labeling.",
+  },
+  {
+    title: "Part-Writing Error Detection",
+    desc: "Catch parallel fifths, voice crossing, spacing errors, unresolved tendency tones, and other part-writing violations as you write.",
+  },
+  {
+    title: "Music Playback",
+    desc: "Listen to your composition with sampled piano and other instruments. Set tempo, choose where to start, and hear your music come to life.",
   },
 ];
 
@@ -313,15 +351,16 @@ const personas = [
   {
     title: "Educators",
     desc: "Assign theory exercises and let Contrapunctus check the rules so you can focus on teaching.",
+    qualifier: "Interactive lessons coming soon",
   },
   {
     title: "Composers",
     desc: "Sketch ideas with real-time harmonic awareness. Export MIDI when you're ready.",
+    qualifier: "MIDI export coming soon",
   },
 ];
 
 const comingSoon = [
-  "Part-writing error detection",
   "Counterpoint analysis",
   "MIDI export",
   "AI composition assistant",
@@ -351,7 +390,7 @@ export function LandingPage() {
       <style>{LANDING_CSS}</style>
 
       {/* Nav */}
-      <nav style={{
+      <nav className="landing-nav" style={{
         display: "flex",
         alignItems: "center",
         justifyContent: "space-between",
@@ -363,7 +402,7 @@ export function LandingPage() {
         <span style={{ fontSize: 20, fontWeight: 700, letterSpacing: -0.5, color: "#1a1a1a" }}>
           Contrapunctus
         </span>
-        <div style={{ display: "flex", gap: 12 }}>
+        <div className="landing-nav-btns" style={{ display: "flex", gap: 12 }}>
           <Link to="/login" className="landing-cta" style={{
             padding: "8px 18px",
             fontSize: 14,
@@ -390,7 +429,7 @@ export function LandingPage() {
       </nav>
 
       {/* Hero */}
-      <section style={{
+      <section className="landing-hero" style={{
         display: "flex",
         flexDirection: "column",
         alignItems: "center",
@@ -426,10 +465,10 @@ export function LandingPage() {
           marginBottom: 32,
         }}>
           Contrapunctus is a music theory workbench that analyzes harmony in real time.
-          Write notes on a staff, and see roman numerals, chord extensions, and
-          non-chord tones appear as you compose.
+          Write notes on a staff, and see roman numerals, chord extensions,
+          non-chord tones, and part-writing errors appear as you compose.
         </p>
-        <div style={{ display: "flex", gap: 14, flexWrap: "wrap", justifyContent: "center" }}>
+        <div className="landing-hero-btns" style={{ display: "flex", gap: 14, flexWrap: "wrap", justifyContent: "center" }}>
           <Link to="/signup" className="landing-cta" style={{
             padding: "14px 32px",
             fontSize: 16,
@@ -482,13 +521,11 @@ export function LandingPage() {
             Built for music theory
           </h2>
         </RevealSection>
-        <div style={{
-          display: "grid",
-          gridTemplateColumns: "repeat(auto-fit, minmax(260px, 1fr))",
-          gap: 28,
-        }}>
+        <div className="features-grid">
           {features.map((f, i) => (
-            <RevealSection key={f.title} delay={i * 120}>
+            <RevealSection key={f.title} delay={i * 120} style={{
+              gridColumn: "span 2",
+            }}>
               <div className="landing-card" style={cardStyle}>
                 <h3 style={{ fontSize: 16, fontWeight: 700, marginBottom: 8, color: "#1a1a1a" }}>{f.title}</h3>
                 <p style={{ fontSize: 14, lineHeight: 1.6, color: "#555", margin: 0 }}>{f.desc}</p>
@@ -496,6 +533,52 @@ export function LandingPage() {
             </RevealSection>
           ))}
         </div>
+      </section>
+
+      {/* Interactive Lessons – Coming Soon */}
+      <section style={{
+        padding: "0 24px 72px",
+        maxWidth: 960,
+        margin: "0 auto",
+        width: "100%",
+      }}>
+        <RevealSection>
+          <div style={{ textAlign: "center", marginBottom: 40 }}>
+            <h2 style={{ ...sectionHeadingStyle, marginBottom: 12 }}>
+              Interactive Lessons
+            </h2>
+            <span style={{
+              display: "inline-block",
+              fontSize: 12,
+              fontWeight: 600,
+              letterSpacing: 0.5,
+              color: "#888",
+              background: "#f0eeeb",
+              padding: "4px 12px",
+              borderRadius: 12,
+              textTransform: "uppercase",
+            }}>
+              Coming Soon
+            </span>
+          </div>
+        </RevealSection>
+
+        <RevealSection delay={100}>
+          <div className="landing-card" style={cardStyle}>
+            <p style={{ fontSize: 15, lineHeight: 1.7, color: "#555", margin: "0 0 14px" }}>
+              Structured, pedagogical exercises that teach harmony and part writing from the ground up.
+              Instead of auto-detecting chords for you, lesson mode asks <em>you</em> to do the analysis —
+              identify chord qualities, label roman numerals, spot voice-leading errors, and harmonize
+              melodies and bass lines without breaking the rules.
+            </p>
+            <ul style={{ margin: 0, paddingLeft: 20, fontSize: 14, lineHeight: 1.8, color: "#555" }}>
+              <li>Analyze a given chorale and enter the correct roman numerals yourself</li>
+              <li>Find parallel fifths, crossed voices, and other part-writing mistakes in a score</li>
+              <li>Harmonize a soprano melody or figured bass line with proper voice leading</li>
+              <li>Progressive difficulty from basic triads through secondary dominants and modulation</li>
+            </ul>
+          </div>
+        </RevealSection>
       </section>
 
       {/* Who it's for */}
@@ -520,6 +603,11 @@ export function LandingPage() {
               <div className="landing-card" style={cardStyle}>
                 <h3 style={{ fontSize: 16, fontWeight: 700, marginBottom: 8, color: "#1a1a1a" }}>{p.title}</h3>
                 <p style={{ fontSize: 14, lineHeight: 1.6, color: "#555", margin: 0 }}>{p.desc}</p>
+                {p.qualifier && (
+                  <p style={{ fontSize: 12, color: "#999", marginTop: 8, marginBottom: 0, fontStyle: "italic" }}>
+                    {p.qualifier}
+                  </p>
+                )}
               </div>
             </RevealSection>
           ))}
@@ -535,9 +623,10 @@ export function LandingPage() {
       }}>
         <RevealSection>
           <h2 style={{ ...sectionHeadingStyle, marginBottom: 28 }}>
-            Coming soon
+            Also coming soon
           </h2>
         </RevealSection>
+
         <RevealSection delay={100}>
           <div style={{
             display: "flex",
@@ -577,25 +666,20 @@ export function LandingPage() {
           gap: "24px 48px",
         }}>
           <div>
-            <span style={{ fontSize: 16, fontWeight: 700, color: "#1a1a1a", display: "block", marginBottom: 6 }}>
+            <span style={{ fontSize: 16, fontWeight: 700, color: "#1a1a1a", display: "block", marginBottom: 4 }}>
               Contrapunctus
             </span>
-            <span style={{ fontSize: 13, color: "#888" }}>
+            <span style={{ fontSize: 13, color: "#888", display: "block", marginBottom: 2 }}>
               Real-time harmonic analysis for the modern musician.
+            </span>
+            <span style={{ fontSize: 12, color: "#aaa" }}>
+              Made for musicians.
             </span>
           </div>
           <div style={{ display: "flex", gap: 24, flexWrap: "wrap" }}>
             <Link to="/login" className="landing-footer-link" style={{ fontSize: 13 }}>Sign In</Link>
             <Link to="/signup" className="landing-footer-link" style={{ fontSize: 13 }}>Get Started</Link>
           </div>
-        </div>
-        <div style={{
-          maxWidth: 960,
-          margin: "16px auto 0",
-          fontSize: 12,
-          color: "#aaa",
-        }}>
-          Made for musicians.
         </div>
       </footer>
     </div>

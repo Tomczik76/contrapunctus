@@ -32,6 +32,8 @@ export interface NoteRender {
   readonly midi: number;
   /** Which staff this note is assigned to. */
   readonly staff: "treble" | "bass";
+  /** Part-writing error labels for this note (e.g. "∥5", "VX"). */
+  readonly errors: string[];
 }
 
 /** A rendered beat with its notes and duration. */
@@ -41,6 +43,10 @@ export interface BeatRender {
   readonly durationFraction: [number, number];
   readonly isRest: boolean;
   readonly romanNumerals: string[];
+  /** Chord names (e.g. "Am7", "C", "G7"). */
+  readonly chordNames: string[];
+  /** Chord-level part-writing error labels (e.g. "2R", "2×5"). */
+  readonly chordErrors: string[];
 }
 
 /** A rendered measure. */

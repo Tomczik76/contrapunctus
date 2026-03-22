@@ -5,8 +5,9 @@ import scala.scalajs.js.annotation.*
 import scala.scalajs.js.JSConverters.*
 import cats.data.NonEmptyList
 import io.github.tomczik76.contrapunctus.core.{Note, NoteType, Scale}
-import io.github.tomczik76.contrapunctus.analysis.{Analysis, AnalyzedNote, NonChordToneType}
-import io.github.tomczik76.contrapunctus.harmony.{Inversion, Sevenths}
+import io.github.tomczik76.contrapunctus.analysis.{Analysis, AnalyzedNote, ChordError, NonChordToneType, NoteError}
+import io.github.tomczik76.contrapunctus.analysis.AnalyzedChord
+import io.github.tomczik76.contrapunctus.harmony.{AddElevenths, AddNinths, AlteredChords, Elevenths, Inversion, Ninths, Sevenths, Thirteenths, Triads}
 import io.github.tomczik76.contrapunctus.rhythm.{Measure, Pulse, TimeSignature}
 
 // ── JS-facing data types ─────────────────────────────────────────────
@@ -41,12 +42,15 @@ trait JsNoteRender extends js.Object:
   val midi: Int
   val staff: String
   val nct: String  // non-chord tone label, empty if chord tone
+  val errors: js.Array[String]  // part-writing error labels
 
 trait JsBeatRender extends js.Object:
   val notes: js.Array[JsNoteRender]
   val durationFraction: js.Array[Int]
   val isRest: Boolean
   val romanNumerals: js.Array[String]
+  val chordNames: js.Array[String]
+  val chordErrors: js.Array[String]  // chord-level part-writing errors
 
 trait JsMeasureRender extends js.Object:
   val timeSignature: js.Dynamic
@@ -121,6 +125,72 @@ private object Helpers:
     case Some(NonChordToneType.Anticipation)  => "ANT"
     case Some(NonChordToneType.PedalTone)     => "PED"
 
+  def chordNameLabel(ac: AnalyzedChord): String =
+    val root = letterOf(ac.chord.root) + accidentalOf(ac.chord.root)
+    val inv = ac.chord.chordType.asInstanceOf[Inversion]
+    val suffix = inv.base match
+      case Triads.Major              => ""
+      case Triads.Minor              => "m"
+      case Triads.Diminished         => "dim"
+      case Triads.Augmented          => "aug"
+      case Triads.Sus2               => "sus2"
+      case Triads.Sus4               => "sus4"
+      case Triads.PowerChord         => "5"
+      case Sevenths.MinorSeventh          => "m7"
+      case Sevenths.DominantSeventh       => "7"
+      case Sevenths.MajorSeventh          => "maj7"
+      case Sevenths.MinorMajorSeventh     => "mMaj7"
+      case Sevenths.DiminishedSeventh     => "dim7"
+      case Sevenths.HalfDiminishedSeventh => "m7b5"
+      case Sevenths.AugmentedSeventh      => "aug7"
+      case Sevenths.AugmentedMajorSeventh => "augMaj7"
+      case Sevenths.MajorSixth            => "6"
+      case Sevenths.MinorSixth            => "m6"
+      case Ninths.MinorNinth | Ninths.MinorNinthOmit5             => "m9"
+      case Ninths.DominantNinth | Ninths.DominantNinthOmit5       => "9"
+      case Ninths.MajorNinth | Ninths.MajorNinthOmit5             => "maj9"
+      case Ninths.MinorMajorNinth | Ninths.MinorMajorNinthOmit5   => "mMaj9"
+      case AddNinths.MajorAdd9       => "add9"
+      case AddNinths.MinorAdd9       => "madd9"
+      case AddElevenths.MajorAdd11   => "add11"
+      case AddElevenths.MinorAdd11   => "madd11"
+      case Elevenths.DominantEleventh => "11"
+      case Elevenths.MajorEleventh    => "maj11"
+      case Elevenths.MinorEleventh    => "m11"
+      case Thirteenths.DominantThirteenth => "13"
+      case Thirteenths.MajorThirteenth    => "maj13"
+      case Thirteenths.MinorThirteenth    => "m13"
+      case AlteredChords.SevenFlatNine           => "7b9"
+      case AlteredChords.SevenSharpNine          => "7#9"
+      case AlteredChords.SevenFlatFive           => "7b5"
+      case AlteredChords.SevenFlatFiveFlatNine   => "7b5b9"
+      case AlteredChords.SevenSharpFiveSharpNine => "aug7#9"
+      case _ => ac.chord.chordType.qualitySymbol + ac.chord.chordType.figuredBass
+    val slash = if inv.index > 0 then
+      // Find the bass note for slash chord notation
+      val bassInterval = inv.rootInterval
+      val bassPc = (ac.chord.root.value + bassInterval.value) % 12
+      NoteType.values.find(_.value == bassPc) match
+        case Some(bassNote) => "/" + letterOf(bassNote) + accidentalOf(bassNote)
+        case None => ""
+    else ""
+    root + suffix + slash
+
+  def noteErrorLabel(err: NoteError): String = err match
+    case NoteError.ParallelFifths         => "∥5"
+    case NoteError.ParallelOctaves        => "∥8"
+    case NoteError.DirectFifths           => "→5"
+    case NoteError.DirectOctaves          => "→8"
+    case NoteError.VoiceCrossing          => "VX"
+    case NoteError.SpacingError(_)        => "Sp"
+    case NoteError.DoubledLeadingTone     => "2LT"
+    case NoteError.UnresolvedLeadingTone  => "LT↑"
+    case NoteError.UnresolvedChordal7th   => "7↓"
+
+  def chordErrorLabel(err: ChordError): String = err match
+    case ChordError.RootNotDoubledInRootPosition       => "2R"
+    case ChordError.FifthNotDoubledInSecondInversion    => "2×5"
+
 end Helpers
 
 // ── Exported API ────────────────────────────────────────────────────
@@ -160,7 +230,7 @@ object Contrapunctus:
       throw js.JavaScriptException(js.Error("At least one measure required"))
 
     val measures: NonEmptyList[Measure[Note]] = parseMeasures(jsMeasures)
-    buildRenderData(measures, None, None)
+    buildRenderData(measures, None, None, None, None, None)
 
   @JSExport
   def renderWithAnalysis(
@@ -234,6 +304,19 @@ object Contrapunctus:
         (aug6Label ++ secDomLabels ++ baseLabels).distinct
     }
 
+    // Chord name labels (e.g. "Am7", "C", "G7") — parallel to roman numerals
+    val chordNameOptions = flatBeats.zipWithIndex.map { case ((notes, analysis), i) =>
+      val hasNct = analysis.notes.exists(_.nonChordToneType.isDefined)
+      if hasNct then List.empty[String]
+      else
+        val chords = analysis.chords
+        val sorted = chords.toList.sortBy: ac =>
+          ac.chord.chordType match
+            case Inversion(base, 0, _, _) if base == Sevenths.MajorSixth || base == Sevenths.MinorSixth => 1
+            case _ => 0
+        sorted.map(chordNameLabel).distinct
+    }
+
     // Collect NCT info per beat: Map from midi -> nct label
     val nctPerBeat: List[Map[Int, String]] = flatBeats.map: (_, analysis) =>
       analysis.notes
@@ -241,7 +324,19 @@ object Contrapunctus:
         .map(an => an.note.midi -> nctLabel(an.nonChordToneType))
         .toMap
 
-    buildRenderData(measures, Some(romanNumeralOptions), Some(nctPerBeat))
+    // Collect part-writing errors per beat
+    val noteErrorsPerBeat: List[Map[Int, List[String]]] = flatBeats.map: (_, analysis) =>
+      analysis.notes
+        .filter(_.errors.nonEmpty)
+        .groupBy(_.note.midi)
+        .view
+        .mapValues(_.flatMap(_.errors).map(noteErrorLabel).distinct)
+        .toMap
+
+    val chordErrorsPerBeat: List[List[String]] = flatBeats.map: (_, analysis) =>
+      analysis.errors.map(chordErrorLabel)
+
+    buildRenderData(measures, Some(romanNumeralOptions), Some(chordNameOptions), Some(nctPerBeat), Some(noteErrorsPerBeat), Some(chordErrorsPerBeat))
 
   private def parseMeasures(
       jsMeasures: js.Array[JsMeasure]
@@ -297,7 +392,10 @@ object Contrapunctus:
   private def buildRenderData(
       measures: NonEmptyList[Measure[Note]],
       romanNumerals: Option[List[List[String]]],
-      nctData: Option[List[Map[Int, String]]]
+      chordNames: Option[List[List[String]]],
+      nctData: Option[List[Map[Int, String]]],
+      noteErrorData: Option[List[Map[Int, List[String]]]],
+      chordErrorData: Option[List[List[String]]]
   ): JsRenderData =
     val allNotes = measures.toList.flatMap: m =>
       Pulse.flatten(m.pulses).flatMap(_.toList)
@@ -339,7 +437,10 @@ object Contrapunctus:
       val jsBeats: js.Array[JsBeatRender] = leaves.map:
         case (maybeNotes, (durNum, durDen)) =>
           val rns = romanNumerals.flatMap(_.lift(rnIndex)).getOrElse(List.empty)
+          val cns = chordNames.flatMap(_.lift(rnIndex)).getOrElse(List.empty)
           val beatNcts = nctData.flatMap(_.lift(rnIndex)).getOrElse(Map.empty)
+          val beatNoteErrors = noteErrorData.flatMap(_.lift(rnIndex)).getOrElse(Map.empty)
+          val beatChordErrors = chordErrorData.flatMap(_.lift(rnIndex)).getOrElse(List.empty)
           rnIndex += 1
           val (noteRenders, isRest) = maybeNotes match
             case None => (js.Array[JsNoteRender](), true)
@@ -347,6 +448,7 @@ object Contrapunctus:
               val rendered = notes.toList.map: n =>
                 val dp = diatonicPos(n)
                 val nctStr = beatNcts.getOrElse(n.midi, "")
+                val errLabels = beatNoteErrors.getOrElse(n.midi, Nil)
                 js.Dynamic
                   .literal(
                     letter = letterOf(n.noteType),
@@ -355,7 +457,8 @@ object Contrapunctus:
                     diatonicPosition = dp,
                     midi = n.midi,
                     staff = staffFor(dp, isGrand),
-                    nct = nctStr
+                    nct = nctStr,
+                    errors = errLabels.toJSArray
                   )
                   .asInstanceOf[JsNoteRender]
               (rendered.toJSArray, false)
@@ -364,7 +467,9 @@ object Contrapunctus:
               notes = noteRenders,
               durationFraction = js.Array(durNum.toInt, durDen.toInt),
               isRest = isRest,
-              romanNumerals = rns.toJSArray
+              romanNumerals = rns.toJSArray,
+              chordNames = cns.toJSArray,
+              chordErrors = beatChordErrors.toJSArray
             )
             .asInstanceOf[JsBeatRender]
       .toJSArray

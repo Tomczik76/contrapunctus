@@ -2,6 +2,7 @@ import { useState, useRef, useCallback, useMemo, useEffect } from "react";
 import type { RenderData, NoteRender, BeatRender, Staff as StaffDef, ContrapunctusApi } from "../contrapunctus";
 import { Contrapunctus } from "contrapunctus";
 import { useAuth, API_BASE } from "../auth";
+import * as Tone from "tone";
 
 const C = Contrapunctus as ContrapunctusApi;
 
@@ -969,7 +970,6 @@ const TONIC_OPTIONS = [
 const SCALE_OPTIONS = [
   { label: "Major", value: "major" },
   { label: "Minor", value: "minor" },
-  { label: "Harmonic Minor", value: "harmonicMinor" },
   { label: "Dorian", value: "dorian" },
   { label: "Phrygian", value: "phrygian" },
   { label: "Lydian", value: "lydian" },
@@ -1260,7 +1260,8 @@ export function NoteEditor({ header }: { header?: React.ReactNode }) {
 
   const { systems, barlines: barlineData, systemCount } = systemLayout;
   const staffW = systemLayout.staffW;
-  const RN_SPACE = 32;
+  const [showErrors, setShowErrors] = useState(false);
+  const RN_SPACE = showErrors ? 48 : 32;
   const systemTotalHeight = staffHeight + RN_SPACE + SYSTEM_GAP_V;
   const svgHeight = systemCount * systemTotalHeight - SYSTEM_GAP_V;
 
@@ -1296,8 +1297,10 @@ export function NoteEditor({ header }: { header?: React.ReactNode }) {
   // including sustained notes from longer durations on either staff.
   // NCT data: per time-point, map from midi -> label
   type NctMap = Record<number, string>;
-  const analysisData = useMemo((): { romanNumerals: string[][]; nctMaps: NctMap[] } => {
-    if (trebleBeats.length === 0 && bassBeats.length === 0) return { romanNumerals: [], nctMaps: [] };
+  // Error data: per time-point, map from midi -> error labels; plus chord-level errors
+  type NoteErrorMap = Record<number, string[]>;
+  const analysisData = useMemo((): { romanNumerals: string[][]; chordNames: string[][]; nctMaps: NctMap[]; noteErrorMaps: NoteErrorMap[]; chordErrors: string[][] } => {
+    if (trebleBeats.length === 0 && bassBeats.length === 0) return { romanNumerals: [], chordNames: [], nctMaps: [], noteErrorMaps: [], chordErrors: [] };
     const tonic = TONIC_OPTIONS[tonicIdx];
     try {
       const measureCap = timeKey(tsTop / tsBottom);
@@ -1354,7 +1357,7 @@ export function NoteEditor({ header }: { header?: React.ReactNode }) {
         });
         return C.measure(tsTop, tsBottom, jBeats);
       });
-      if (jMeasures.length === 0) return { romanNumerals: [], nctMaps: [] };
+      if (jMeasures.length === 0) return { romanNumerals: [], chordNames: [], nctMaps: [], noteErrorMaps: [], chordErrors: [] };
       const data = C.renderWithAnalysis(jMeasures, tonic.letter, tonic.acc, scaleName);
       const romanNumerals = data.measures.flatMap((m: any) => m.beats.map((b: any) => b.romanNumerals as string[]));
       const nctMaps: NctMap[] = data.measures.flatMap((m: any) =>
@@ -1366,14 +1369,29 @@ export function NoteEditor({ header }: { header?: React.ReactNode }) {
           return map;
         })
       );
-      return { romanNumerals, nctMaps };
+      const noteErrorMaps: NoteErrorMap[] = data.measures.flatMap((m: any) =>
+        m.beats.map((b: any) => {
+          const map: NoteErrorMap = {};
+          for (const n of b.notes) {
+            if (n.errors && n.errors.length > 0) map[n.midi] = [...n.errors];
+          }
+          return map;
+        })
+      );
+      const chordErrors: string[][] = data.measures.flatMap((m: any) =>
+        m.beats.map((b: any) => (b.chordErrors ? [...b.chordErrors] : []) as string[])
+      );
+      const chordNames: string[][] = data.measures.flatMap((m: any) =>
+        m.beats.map((b: any) => (b.chordNames ? [...b.chordNames] : []) as string[])
+      );
+      return { romanNumerals, chordNames, nctMaps, noteErrorMaps, chordErrors };
     } catch (e) {
       console.error("Analysis error:", e);
-      return { romanNumerals: [], nctMaps: [] };
+      return { romanNumerals: [], chordNames: [], nctMaps: [], noteErrorMaps: [], chordErrors: [] };
     }
   }, [paddedTrebleBeats, paddedBassBeats, trebleTimes, bassTimes, allTimePoints, tonicIdx, scaleName, tsTop, tsBottom, keySig]);
 
-  const { romanNumerals, nctMaps } = analysisData;
+  const { romanNumerals, chordNames, nctMaps, noteErrorMaps, chordErrors } = analysisData;
 
   // Map from time value to NCT map for that beat
   const timeToNct = useMemo(() => {
@@ -1384,18 +1402,320 @@ export function NoteEditor({ header }: { header?: React.ReactNode }) {
     return m;
   }, [allTimePoints, nctMaps]);
 
+  // Map from time value to note error map for that beat
+  const timeToNoteErrors = useMemo(() => {
+    const m = new Map<number, Record<number, string[]>>();
+    allTimePoints.forEach((t, i) => {
+      if (noteErrorMaps[i] && Object.keys(noteErrorMaps[i]).length > 0) m.set(t, noteErrorMaps[i]);
+    });
+    return m;
+  }, [allTimePoints, noteErrorMaps]);
+
+  // Map from time value to chord errors for that beat
+  const timeToChordErrors = useMemo(() => {
+    const m = new Map<number, string[]>();
+    allTimePoints.forEach((t, i) => {
+      if (chordErrors[i] && chordErrors[i].length > 0) m.set(t, chordErrors[i]);
+    });
+    return m;
+  }, [allTimePoints, chordErrors]);
+
   const [rnSelections, setRnSelections] = useState<Record<number, number>>({});
   const [openRnDropdown, setOpenRnDropdown] = useState<number | null>(null);
   const [showNct, setShowNct] = useState(false);
+  const [labelMode, setLabelMode] = useState<"roman" | "chord">("roman");
   const [bugReportOpen, setBugReportOpen] = useState(false);
   const [bugReportDesc, setBugReportDesc] = useState("");
   const [bugReportStatus, setBugReportStatus] = useState<"idle" | "sending" | "sent" | "error">("idle");
   const [featureRequestOpen, setFeatureRequestOpen] = useState(false);
   const [featureRequestDesc, setFeatureRequestDesc] = useState("");
   const [featureRequestStatus, setFeatureRequestStatus] = useState<"idle" | "sending" | "sent" | "error">("idle");
+  const [legendOpen, setLegendOpen] = useState(false);
   const [roadmapOpen, setRoadmapOpen] = useState(false);
   const [roadmapVotes, setRoadmapVotes] = useState<Record<string, number>>({});
   const [roadmapUserVotes, setRoadmapUserVotes] = useState<Set<string>>(new Set());
+
+  // ── Playback state ──────────────────────────────────────────────────
+  type InstrumentName = "piano" | "epiano" | "organ" | "strings" | "synth";
+  const INSTRUMENTS: { value: InstrumentName; label: string }[] = [
+    { value: "piano", label: "Piano" },
+    { value: "epiano", label: "E. Piano" },
+    { value: "organ", label: "Organ" },
+    { value: "strings", label: "Strings" },
+    { value: "synth", label: "Synth" },
+  ];
+
+  const [isPlaying, setIsPlaying] = useState(false);
+  const [isPaused, setIsPaused] = useState(false);
+  const [playbackTimeIdx, setPlaybackTimeIdx] = useState<number | null>(null);
+  const [tempo, setTempo] = useState(120);
+  const [playbackStartIdx, setPlaybackStartIdx] = useState(0);
+  const [instrument, setInstrument] = useState<InstrumentName>("piano");
+  type SynthLike = { triggerAttackRelease(notes: string | string[], duration: number | string, time?: number, velocity?: number): any; releaseAll: () => void; dispose: () => void };
+  const synthRef = useRef<SynthLike | null>(null);
+  const synthInstrumentRef = useRef<InstrumentName | null>(null);
+  const samplerLoadedRef = useRef(false);
+  const rafRef = useRef<number>(0);
+  const playbackRef = useRef<{ startTimeVal: number; wholeNoteSec: number; startIdx: number } | null>(null);
+
+  function getOrCreateSynth(): SynthLike {
+    if (synthRef.current && synthInstrumentRef.current === instrument) {
+      return synthRef.current;
+    }
+    // Dispose old synth if instrument changed
+    if (synthRef.current) {
+      synthRef.current.releaseAll();
+      synthRef.current.dispose();
+      synthRef.current = null;
+    }
+    samplerLoadedRef.current = false;
+
+    let synth: SynthLike;
+    switch (instrument) {
+      case "piano": {
+        const sampler = new Tone.Sampler({
+          urls: {
+            A0: "A0.mp3", C1: "C1.mp3", "D#1": "Ds1.mp3", "F#1": "Fs1.mp3",
+            A1: "A1.mp3", C2: "C2.mp3", "D#2": "Ds2.mp3", "F#2": "Fs2.mp3",
+            A2: "A2.mp3", C3: "C3.mp3", "D#3": "Ds3.mp3", "F#3": "Fs3.mp3",
+            A3: "A3.mp3", C4: "C4.mp3", "D#4": "Ds4.mp3", "F#4": "Fs4.mp3",
+            A4: "A4.mp3", C5: "C5.mp3", "D#5": "Ds5.mp3", "F#5": "Fs5.mp3",
+            A5: "A5.mp3", C6: "C6.mp3", "D#6": "Ds6.mp3", "F#6": "Fs6.mp3",
+            A6: "A6.mp3", C7: "C7.mp3", "D#7": "Ds7.mp3", "F#7": "Fs7.mp3",
+            A7: "A7.mp3", C8: "C8.mp3",
+          },
+          release: 1,
+          baseUrl: "https://tonejs.github.io/audio/salamander/",
+          onload: () => { samplerLoadedRef.current = true; },
+        }).toDestination();
+        synth = sampler;
+        break;
+      }
+      case "epiano": {
+        const ps = new Tone.PolySynth(Tone.FMSynth, {
+          harmonicity: 2,
+          modulationIndex: 1.5,
+          oscillator: { type: "sine" },
+          envelope: { attack: 0.01, decay: 0.6, sustain: 0.2, release: 1.5 },
+          modulation: { type: "triangle" },
+          modulationEnvelope: { attack: 0.01, decay: 0.3, sustain: 0.1, release: 0.8 },
+          volume: -8,
+        }).toDestination();
+        ps.maxPolyphony = 32;
+        samplerLoadedRef.current = true;
+        synth = ps;
+        break;
+      }
+      case "organ": {
+        const ps = new Tone.PolySynth(Tone.Synth, {
+          oscillator: { type: "sine4" },
+          envelope: { attack: 0.05, decay: 0.1, sustain: 0.9, release: 0.3 },
+          volume: -10,
+        }).toDestination();
+        ps.maxPolyphony = 32;
+        samplerLoadedRef.current = true;
+        synth = ps;
+        break;
+      }
+      case "strings": {
+        const ps = new Tone.PolySynth(Tone.Synth, {
+          oscillator: { type: "sawtooth8" },
+          envelope: { attack: 0.15, decay: 0.3, sustain: 0.6, release: 1.0 },
+          volume: -12,
+        }).toDestination();
+        ps.maxPolyphony = 32;
+        samplerLoadedRef.current = true;
+        synth = ps;
+        break;
+      }
+      case "synth":
+      default: {
+        const ps = new Tone.PolySynth(Tone.Synth, {
+          oscillator: { type: "triangle" },
+          envelope: { attack: 0.01, decay: 0.15, sustain: 0.4, release: 0.8 },
+          volume: -6,
+        }).toDestination();
+        ps.maxPolyphony = 32;
+        samplerLoadedRef.current = true;
+        synth = ps;
+        break;
+      }
+    }
+    synthRef.current = synth;
+    synthInstrumentRef.current = instrument;
+    return synth;
+  }
+
+  function midiToNoteName(midi: number): string {
+    const names = ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"];
+    const oct = Math.floor(midi / 12) - 1;
+    return `${names[midi % 12]}${oct}`;
+  }
+
+  const handlePlay = useCallback(async () => {
+    await Tone.start();
+    const transport = Tone.getTransport();
+
+    if (isPaused) {
+      transport.start();
+      setIsPaused(false);
+      setIsPlaying(true);
+      // Resume RAF tracking
+      const ref = playbackRef.current;
+      if (ref) {
+        const tick = () => {
+          if (Tone.getTransport().state !== "started") return;
+          const elapsed = Tone.getTransport().seconds;
+          const curTime = ref.startTimeVal + elapsed / ref.wholeNoteSec;
+          let idx = ref.startIdx;
+          for (let i = ref.startIdx; i < allTimePoints.length; i++) {
+            if (allTimePoints[i] <= curTime + 1e-9) idx = i;
+            else break;
+          }
+          setPlaybackTimeIdx(idx);
+          rafRef.current = requestAnimationFrame(tick);
+        };
+        rafRef.current = requestAnimationFrame(tick);
+      }
+      return;
+    }
+
+    // Fresh start
+    transport.cancel();
+    transport.stop();
+    transport.position = 0;
+
+    const s = getOrCreateSynth();
+
+    // Wait for sampler to finish loading (piano samples from CDN)
+    if (!samplerLoadedRef.current) {
+      await new Promise<void>((resolve) => {
+        const check = () => {
+          if (samplerLoadedRef.current) resolve();
+          else setTimeout(check, 50);
+        };
+        check();
+      });
+    }
+    s.releaseAll();
+    const wholeNoteSec = (60 / tempo) * 4;
+    const startTime = allTimePoints[playbackStartIdx] ?? 0;
+
+    // Schedule treble notes
+    for (let i = 0; i < paddedTrebleBeats.length; i++) {
+      const beat = paddedTrebleBeats[i];
+      if (beat.isRest || beat.notes.length === 0) continue;
+      if (trebleTimes[i] < startTime - 1e-9) continue;
+      const offset = (trebleTimes[i] - startTime) * wholeNoteSec;
+      const dur = Math.max(0.05, beatValue(beat) * wholeNoteSec * 0.9);
+      const noteNames = beat.notes.map((n) => {
+        const eff = effectiveAccidental(n.accidental, n.dp, keySig);
+        return midiToNoteName(dpToMidi(n.dp, eff));
+      });
+      transport.schedule((time) => { s.triggerAttackRelease(noteNames, dur, time); }, offset);
+    }
+
+    // Schedule bass notes
+    for (let i = 0; i < paddedBassBeats.length; i++) {
+      const beat = paddedBassBeats[i];
+      if (beat.isRest || beat.notes.length === 0) continue;
+      if (bassTimes[i] < startTime - 1e-9) continue;
+      const offset = (bassTimes[i] - startTime) * wholeNoteSec;
+      const dur = Math.max(0.05, beatValue(beat) * wholeNoteSec * 0.9);
+      const noteNames = beat.notes.map((n) => {
+        const eff = effectiveAccidental(n.accidental, n.dp, keySig);
+        return midiToNoteName(dpToMidi(n.dp, eff));
+      });
+      transport.schedule((time) => { s.triggerAttackRelease(noteNames, dur, time); }, offset);
+    }
+
+    // Compute total duration
+    let maxEnd = 0;
+    for (let i = 0; i < paddedTrebleBeats.length; i++) {
+      if (trebleTimes[i] < startTime - 1e-9) continue;
+      const end = trebleTimes[i] + beatValue(paddedTrebleBeats[i]);
+      if (end > maxEnd) maxEnd = end;
+    }
+    for (let i = 0; i < paddedBassBeats.length; i++) {
+      if (bassTimes[i] < startTime - 1e-9) continue;
+      const end = bassTimes[i] + beatValue(paddedBassBeats[i]);
+      if (end > maxEnd) maxEnd = end;
+    }
+    const totalSec = (maxEnd - startTime) * wholeNoteSec;
+
+    // Schedule stop — inline to avoid stale closure
+    transport.schedule(() => {
+      Tone.getDraw().schedule(() => {
+        const tr = Tone.getTransport();
+        tr.stop();
+        tr.cancel();
+        cancelAnimationFrame(rafRef.current);
+        synthRef.current?.releaseAll();
+        setIsPlaying(false);
+        setIsPaused(false);
+        setPlaybackTimeIdx(null);
+        playbackRef.current = null;
+      }, Tone.now());
+    }, totalSec + 0.1);
+
+    playbackRef.current = { startTimeVal: startTime, wholeNoteSec, startIdx: playbackStartIdx };
+    transport.start();
+    setIsPlaying(true);
+    setIsPaused(false);
+    setPlaybackTimeIdx(playbackStartIdx);
+
+    // RAF position tracking
+    const tick = () => {
+      if (Tone.getTransport().state !== "started") return;
+      const elapsed = Tone.getTransport().seconds;
+      const curTime = startTime + elapsed / wholeNoteSec;
+      let idx = playbackStartIdx;
+      for (let i = playbackStartIdx; i < allTimePoints.length; i++) {
+        if (allTimePoints[i] <= curTime + 1e-9) idx = i;
+        else break;
+      }
+      setPlaybackTimeIdx(idx);
+      rafRef.current = requestAnimationFrame(tick);
+    };
+    rafRef.current = requestAnimationFrame(tick);
+  }, [isPaused, tempo, playbackStartIdx, allTimePoints, paddedTrebleBeats, paddedBassBeats, trebleTimes, bassTimes, keySig, instrument]);
+
+  const handlePause = useCallback(() => {
+    Tone.getTransport().pause();
+    cancelAnimationFrame(rafRef.current);
+    setIsPaused(true);
+    setIsPlaying(false);
+  }, []);
+
+  const handleStop = useCallback(() => {
+    const transport = Tone.getTransport();
+    transport.stop();
+    transport.cancel();
+    cancelAnimationFrame(rafRef.current);
+    synthRef.current?.releaseAll();
+    setIsPlaying(false);
+    setIsPaused(false);
+    setPlaybackTimeIdx(null);
+    playbackRef.current = null;
+  }, []);
+
+  // Stop playback when notes change
+  useEffect(() => {
+    if (isPlaying || isPaused) handleStop();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [trebleBeats, bassBeats]);
+
+  // Cleanup on unmount
+  useEffect(() => {
+    return () => {
+      cancelAnimationFrame(rafRef.current);
+      Tone.getTransport().stop();
+      Tone.getTransport().cancel();
+      synthRef.current?.releaseAll();
+      synthRef.current?.dispose();
+      synthRef.current = null;
+    };
+  }, []);
 
   const submitBugReport = async () => {
     if (!token || !bugReportDesc.trim()) return;
@@ -1408,7 +1728,7 @@ export function NoteEditor({ header }: { header?: React.ReactNode }) {
         redoHistory: historyRef.current.future,
         settings: {
           selectedDuration, selectedAccidental, dottedMode, deleteMode, restMode,
-          tsTop, tsBottom, tonicIdx, scaleName, showNct, rnSelections,
+          tsTop, tsBottom, tonicIdx, scaleName, showNct, showErrors, rnSelections,
         },
       };
       const res = await fetch(`${API_BASE}/api/bug-reports`, {
@@ -1484,7 +1804,8 @@ export function NoteEditor({ header }: { header?: React.ReactNode }) {
     } catch { /* ignore */ }
   };
 
-  const hasRN = romanNumerals.some((rn) => rn.length > 0);
+  const activeLabels = labelMode === "chord" ? chordNames : romanNumerals;
+  const hasRN = activeLabels.some((rn) => rn.length > 0);
 
   /** Convert mouse x to the nearest beat index for a given staff and system. */
   function xToBeatIdx(mouseX: number, staff: "treble" | "bass", sysIdx: number): number {
@@ -1889,7 +2210,7 @@ export function NoteEditor({ header }: { header?: React.ReactNode }) {
   }
 
   /** Render a complete beat (chord) with shared stem and flag. */
-  function renderBeat(beat: PlacedBeat, x: number, opacity = 1, nctMap?: Record<number, string>) {
+  function renderBeat(beat: PlacedBeat, x: number, opacity = 1, nctMap?: Record<number, string>, noteErrorMap?: Record<number, string[]>) {
     const dur = beat.duration;
     const s = GLYPH_SCALE;
     const head = dur === "whole" ? NOTEHEAD_WHOLE
@@ -1935,9 +2256,17 @@ export function NoteEditor({ header }: { header?: React.ReactNode }) {
         const eff = effectiveAccidental(n.accidental, n.dp, keySig);
         const midi = dpToMidi(n.dp, eff);
         const nctLabel = nctMap?.[midi];
+        const noteErrs = noteErrorMap?.[midi];
+        const hasError = showErrors && noteErrs && noteErrs.length > 0;
         elements.push(
           <g key={`t-${i}`}>
             {renderNotehead(n.dp, dur, x, ED_TREBLE_TOP, ED_TREBLE_LINES[0], trebleYOffset, n.accidental, opacity)}
+            {hasError && (
+              <>
+                <circle cx={x} cy={y} r={headW / 2 + 3} fill="none" stroke="#e74c3c" strokeWidth={1.5} opacity={0.8} />
+                <text x={x + headW / 2 + 3} y={y - 6} fontSize={8} fill="#e74c3c" fontFamily="sans-serif" fontWeight="bold">{noteErrs!.join(", ")}</text>
+              </>
+            )}
             {showNct && nctLabel && (
               <text x={x + headW / 2 + 3} y={y + 3} fontSize={9} fill="#c0392b" fontFamily="sans-serif" fontWeight="bold">{nctLabel}</text>
             )}
@@ -1973,9 +2302,17 @@ export function NoteEditor({ header }: { header?: React.ReactNode }) {
         const eff = effectiveAccidental(n.accidental, n.dp, keySig);
         const midi = dpToMidi(n.dp, eff);
         const nctLabel = nctMap?.[midi];
+        const noteErrs = noteErrorMap?.[midi];
+        const hasError = showErrors && noteErrs && noteErrs.length > 0;
         elements.push(
           <g key={`b-${i}`}>
             {renderNotehead(n.dp, dur, x, ED_BASS_TOP, ED_BASS_LINES[0], bassYOffset, n.accidental, opacity)}
+            {hasError && (
+              <>
+                <circle cx={x} cy={y} r={headW / 2 + 3} fill="none" stroke="#e74c3c" strokeWidth={1.5} opacity={0.8} />
+                <text x={x + headW / 2 + 3} y={y - 6} fontSize={8} fill="#e74c3c" fontFamily="sans-serif" fontWeight="bold">{noteErrs!.join(", ")}</text>
+              </>
+            )}
             {showNct && nctLabel && (
               <text x={x + headW / 2 + 3} y={y + 3} fontSize={9} fill="#c0392b" fontFamily="sans-serif" fontWeight="bold">{nctLabel}</text>
             )}
@@ -2140,11 +2477,32 @@ export function NoteEditor({ header }: { header?: React.ReactNode }) {
         <button onClick={handleClear} style={textBtnStyle(false)} title="Clear all">Clear</button>
         {sep}
         <button
+          onClick={() => setLabelMode((m) => m === "roman" ? "chord" : "roman")}
+          style={textBtnStyle(labelMode === "chord")}
+          title="Toggle between roman numerals and chord names"
+        >
+          {labelMode === "chord" ? "Chords" : "RN"}
+        </button>
+        <button
           onClick={() => setShowNct((v) => !v)}
           style={textBtnStyle(showNct)}
           title="Show non-chord tone labels"
         >
           NCT
+        </button>
+        <button
+          onClick={() => setShowErrors((v) => !v)}
+          style={textBtnStyle(showErrors)}
+          title="Show part-writing errors"
+        >
+          Errors
+        </button>
+        <button
+          onClick={() => setLegendOpen(true)}
+          style={textBtnStyle(false)}
+          title="Show legend for abbreviations"
+        >
+          Legend
         </button>
         {sep}
         <button
@@ -2171,6 +2529,57 @@ export function NoteEditor({ header }: { header?: React.ReactNode }) {
           Roadmap
         </button>
         {sep}
+        {/* Playback controls */}
+        <div style={{ display: "flex", alignItems: "center", gap: 5 }}>
+        <button
+          onClick={isPlaying ? handlePause : handlePlay}
+          style={textBtnStyle(isPlaying)}
+          title={isPlaying ? "Pause" : isPaused ? "Resume" : "Play"}
+        >
+          {isPlaying ? "\u23F8" : "\u25B6"}
+        </button>
+        <button
+          onClick={handleStop}
+          style={textBtnStyle(false)}
+          title="Stop"
+          disabled={!isPlaying && !isPaused}
+        >
+          {"\u23F9"}
+        </button>
+        <label style={{ display: "flex", alignItems: "center", gap: 4, fontSize: 14, color: "#5a5a5a" }}>
+          <span style={{ fontSize: 15 }}>{"\u2669"}</span>
+          <span>=</span>
+          <input
+            type="number"
+            min={40}
+            max={240}
+            value={tempo}
+            onChange={(e) => setTempo(Math.max(40, Math.min(240, Number(e.target.value))))}
+            style={{
+              width: 58,
+              fontSize: 14,
+              fontFamily: "inherit",
+              border: "1px solid #d0ccc8",
+              borderRadius: 4,
+              padding: "5px 8px",
+              textAlign: "center",
+              background: "#faf9f7",
+            }}
+          />
+        </label>
+        <select
+          value={instrument}
+          onChange={(e) => setInstrument(e.target.value as InstrumentName)}
+          style={selectStyle}
+          title="Instrument"
+        >
+          {INSTRUMENTS.map((inst) => (
+            <option key={inst.value} value={inst.value}>{inst.label}</option>
+          ))}
+        </select>
+        </div>
+        {sep}
+        <div style={{ display: "flex", alignItems: "center", gap: 5 }}>
         <label style={{ display: "flex", alignItems: "center", gap: 4, fontSize: 12, color: "#5a5a5a" }}>
           <span>Time</span>
           <select value={tsTop} onChange={(e) => setTsTop(Number(e.target.value))} style={selectStyle}>
@@ -2213,6 +2622,7 @@ export function NoteEditor({ header }: { header?: React.ReactNode }) {
             ))}
           </select>
         </label>
+        </div>
         <span style={{ color: "#999", fontSize: 12, marginLeft: "auto" }}>
           {hoverDp !== null ? (() => {
             const letterIdx = ((hoverDp % 7) + 7) % 7;
@@ -2339,19 +2749,9 @@ export function NoteEditor({ header }: { header?: React.ReactNode }) {
             <h3 style={{ margin: "0 0 16px", fontSize: 18, fontFamily: "inherit" }}>Roadmap</h3>
             {[
               {
-                key: "chord-dictionary",
-                title: "Chord Dictionary & Suggestions",
-                desc: "Browse a comprehensive dictionary of chord types with audio playback. Get context-aware chord suggestions based on the current key, preceding harmony, and common progressions to help guide composition.",
-              },
-              {
-                key: "part-writing-errors",
-                title: "Part Writing Error Detection",
-                desc: "Automatic detection of parallel fifths and octaves, voice crossing, spacing errors, improper resolution of tendency tones, and other common part writing violations with inline annotations.",
-              },
-              {
-                key: "counterpoint-analysis",
-                title: "Counterpoint Analysis",
-                desc: "Species counterpoint validation and analysis. Check adherence to first through fifth species rules, identify dissonance treatment patterns, and get feedback on melodic contour and intervallic motion.",
+                key: "lessons",
+                title: "Interactive Lessons",
+                desc: "Guided exercises in harmony and part writing. Analyze chords yourself instead of auto-detection, find part-writing errors in a given score, harmonize a melody or bass line without breaking voice-leading rules, and more.",
               },
               {
                 key: "new-project",
@@ -2359,14 +2759,19 @@ export function NoteEditor({ header }: { header?: React.ReactNode }) {
                 desc: "Create, name, and manage multiple projects. Work is automatically saved to the cloud as you compose, with full version history so you never lose progress.",
               },
               {
-                key: "play-song",
-                title: "Ability to Play Song",
-                desc: "Listen to your composition with realistic instrument sounds. Play back individual voices or the full score, adjust tempo, and hear how your harmonic and melodic choices sound together.",
-              },
-              {
                 key: "export-midi",
                 title: "MIDI Export",
                 desc: "Export your composition as a standard MIDI file for playback in any DAW, notation software, or synthesizer. Supports multi-voice export preserving your exact voicings.",
+              },
+              {
+                key: "counterpoint-analysis",
+                title: "Counterpoint Analysis",
+                desc: "Species counterpoint validation and analysis. Check adherence to first through fifth species rules, identify dissonance treatment patterns, and get feedback on melodic contour and intervallic motion.",
+              },
+              {
+                key: "chord-dictionary",
+                title: "Chord Dictionary & Suggestions",
+                desc: "Browse a comprehensive dictionary of chord types with audio playback. Get context-aware chord suggestions based on the current key, preceding harmony, and common progressions to help guide composition.",
               },
               {
                 key: "mode-transforms",
@@ -2404,6 +2809,80 @@ export function NoteEditor({ header }: { header?: React.ReactNode }) {
             <div style={{ display: "flex", justifyContent: "flex-end", marginTop: 8 }}>
               <button
                 onClick={() => setRoadmapOpen(false)}
+                style={{ padding: "6px 16px", fontSize: 13, fontFamily: "inherit", cursor: "pointer", border: "1px solid #ccc", borderRadius: 4, background: "none" }}
+              >
+                Close
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Legend modal */}
+      {legendOpen && (
+        <div style={{
+          position: "fixed", top: 0, left: 0, right: 0, bottom: 0,
+          background: "rgba(0,0,0,0.3)", display: "flex", alignItems: "center",
+          justifyContent: "center", zIndex: 1000,
+        }} onClick={() => setLegendOpen(false)}>
+          <div style={{
+            background: "#fff", borderRadius: 8, padding: 28, width: 520,
+            maxWidth: "90vw", maxHeight: "80vh", overflow: "auto",
+            boxShadow: "0 4px 20px rgba(0,0,0,0.15)",
+          }} onClick={(e) => e.stopPropagation()}>
+            <h3 style={{ margin: "0 0 16px", fontSize: 18, fontFamily: "inherit" }}>Legend</h3>
+
+            <h4 style={{ margin: "0 0 8px", fontSize: 14, fontWeight: 600, color: "#1a1a1a" }}>Part-Writing Errors</h4>
+            <table style={{ width: "100%", fontSize: 13, lineHeight: 1.6, marginBottom: 20, borderCollapse: "collapse" }}>
+              <tbody>
+                {[
+                  ["\u2225 5", "Parallel Fifths", "Two voices move in parallel motion maintaining a perfect fifth."],
+                  ["\u2225 8", "Parallel Octaves", "Two voices move in parallel motion maintaining a perfect octave/unison."],
+                  ["\u2192 5", "Direct Fifths", "Soprano and bass move in similar motion by leap to a perfect fifth."],
+                  ["\u2192 8", "Direct Octaves", "Soprano and bass move in similar motion by leap to a perfect octave."],
+                  ["VX", "Voice Crossing", "A higher voice sounds below a lower voice."],
+                  ["Sp", "Spacing Error", "Adjacent upper voices are more than an octave apart (or bass-tenor more than two octaves)."],
+                  ["2LT", "Doubled Leading Tone", "The leading tone appears in more than one voice."],
+                  ["LT\u2191", "Unresolved Leading Tone", "The leading tone in a dominant chord does not resolve up by step to tonic."],
+                  ["7\u2193", "Unresolved Chordal 7th", "The 7th of a chord does not resolve down by step."],
+                  ["2R", "Root Not Doubled", "In a root-position chord with doublings, the root is not the doubled note."],
+                  ["2\u00D75", "Fifth Not Doubled", "In a second-inversion chord with doublings, the fifth (bass note) is not doubled."],
+                ].map(([code, name, desc]) => (
+                  <tr key={code} style={{ borderBottom: "1px solid #eee" }}>
+                    <td style={{ padding: "4px 12px 4px 0", fontWeight: 700, color: "#e74c3c", whiteSpace: "nowrap", verticalAlign: "top" }}>{code}</td>
+                    <td style={{ padding: "4px 12px 4px 0", fontWeight: 600, color: "#1a1a1a", whiteSpace: "nowrap", verticalAlign: "top" }}>{name}</td>
+                    <td style={{ padding: "4px 0", color: "#555" }}>{desc}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+
+            <h4 style={{ margin: "0 0 8px", fontSize: 14, fontWeight: 600, color: "#1a1a1a" }}>Non-Chord Tones</h4>
+            <table style={{ width: "100%", fontSize: 13, lineHeight: 1.6, marginBottom: 16, borderCollapse: "collapse" }}>
+              <tbody>
+                {[
+                  ["PT", "Passing Tone", "Stepwise motion connecting two chord tones in the same direction."],
+                  ["NT", "Neighbor Tone", "Stepwise motion away from and back to the same chord tone."],
+                  ["APP", "Appoggiatura", "Approached by leap, resolved by step in the opposite direction."],
+                  ["ET", "Escape Tone", "Approached by step, resolved by leap in the opposite direction."],
+                  ["CT", "Changing Tone", "A neighbor-tone group that changes direction (double neighbor)."],
+                  ["SUS", "Suspension", "A chord tone held over into the next chord, then resolved down by step. Labeled with the intervals (e.g. SUS 4-3)."],
+                  ["RET", "Retardation", "Like a suspension, but resolves upward by step."],
+                  ["ANT", "Anticipation", "A note that arrives early, sounding before the chord it belongs to."],
+                  ["PED", "Pedal Tone", "A sustained or repeated note (usually bass) held through changing harmonies."],
+                ].map(([code, name, desc]) => (
+                  <tr key={code} style={{ borderBottom: "1px solid #eee" }}>
+                    <td style={{ padding: "4px 12px 4px 0", fontWeight: 700, color: "#c0392b", whiteSpace: "nowrap", verticalAlign: "top" }}>{code}</td>
+                    <td style={{ padding: "4px 12px 4px 0", fontWeight: 600, color: "#1a1a1a", whiteSpace: "nowrap", verticalAlign: "top" }}>{name}</td>
+                    <td style={{ padding: "4px 0", color: "#555" }}>{desc}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+
+            <div style={{ display: "flex", justifyContent: "flex-end" }}>
+              <button
+                onClick={() => setLegendOpen(false)}
                 style={{ padding: "6px 16px", fontSize: 13, fontFamily: "inherit", cursor: "pointer", border: "1px solid #ccc", borderRadius: 4, background: "none" }}
               >
                 Close
@@ -2458,6 +2937,43 @@ export function NoteEditor({ header }: { header?: React.ReactNode }) {
                 const y = dpToY(dp, ED_BASS_TOP, bassYOffset);
                 return <line key={`bl-${dp}`} x1={5} y1={y} x2={staffW - RIGHT_MARGIN} y2={y} stroke="currentColor" strokeWidth={LINE_W} />;
               })}
+
+              {/* Playback highlight — blue column on the currently playing beat */}
+              {playbackTimeIdx !== null && (() => {
+                const t = allTimePoints[playbackTimeIdx];
+                const pos = timeToPos.get(t);
+                if (!pos || pos.systemIdx !== sysIdx) return null;
+                const trebleTopY = dpToY(ED_TREBLE_LINES[4], ED_TREBLE_TOP, trebleYOffset);
+                const bassBotY = dpToY(ED_BASS_LINES[0], ED_BASS_TOP, bassYOffset);
+                const hw = ED_NOTE_SPACING / 2;
+                return (
+                  <rect
+                    x={pos.x - hw} y={trebleTopY - 4}
+                    width={ED_NOTE_SPACING} height={bassBotY - trebleTopY + 8}
+                    fill="#3498db" opacity={0.12} rx={3}
+                    style={{ pointerEvents: "none" }}
+                  />
+                );
+              })()}
+
+              {/* Playback start position marker — small blue triangle */}
+              {!isPlaying && !isPaused && (() => {
+                const t = allTimePoints[playbackStartIdx];
+                if (t === undefined) return null;
+                const pos = timeToPos.get(t);
+                if (!pos || pos.systemIdx !== sysIdx) return null;
+                const bassBotY = dpToY(ED_BASS_LINES[0], ED_BASS_TOP, bassYOffset);
+                const mx = pos.x;
+                const my = bassBotY + 8;
+                return (
+                  <polygon
+                    points={`${mx},${my} ${mx - 5},${my + 8} ${mx + 5},${my + 8}`}
+                    fill="#3498db" opacity={0.6}
+                  />
+                );
+              })()}
+
+              {/* (playback click areas moved after RN labels) */}
 
               {/* Clefs */}
               <path d={TREBLE_CLEF_PATH} fill="currentColor" stroke="none"
@@ -2517,6 +3033,8 @@ export function NoteEditor({ header }: { header?: React.ReactNode }) {
                     return <g key={`tb-${i}`}>{renderRestOnStaff(beat.duration, bx, trebleLineYs)}</g>;
                   }
                   const tNct = trebleTimes[i] !== undefined ? timeToNct.get(trebleTimes[i]) : undefined;
+                  const tNoteErrs = trebleTimes[i] !== undefined ? timeToNoteErrors.get(trebleTimes[i]) : undefined;
+
                   const drag = dragRef.current;
                   if (drag && drag.staff === "treble" && drag.beatIdx === i && drag.moved) {
                     const filtered: PlacedBeat = {
@@ -2525,12 +3043,12 @@ export function NoteEditor({ header }: { header?: React.ReactNode }) {
                     };
                     return (
                       <g key={`tb-${i}`}>
-                        {filtered.notes.length > 0 && renderBeat(filtered, bx, 1, tNct)}
+                        {filtered.notes.length > 0 && renderBeat(filtered, bx, 1, tNct, tNoteErrs)}
                         {renderNotehead(drag.note.dp, beat.duration, bx, ED_TREBLE_TOP, ED_TREBLE_LINES[0], trebleYOffset, drag.note.accidental, 0.2)}
                       </g>
                     );
                   }
-                  return <g key={`tb-${i}`}>{renderBeat(beat, bx, 1, tNct)}</g>;
+                  return <g key={`tb-${i}`}>{renderBeat(beat, bx, 1, tNct, tNoteErrs)}</g>;
                 });
               })()}
 
@@ -2545,6 +3063,8 @@ export function NoteEditor({ header }: { header?: React.ReactNode }) {
                     return <g key={`bb-${i}`}>{renderRestOnStaff(beat.duration, bx, bassLineYs)}</g>;
                   }
                   const bNct = bassTimes[i] !== undefined ? timeToNct.get(bassTimes[i]) : undefined;
+                  const bNoteErrs = bassTimes[i] !== undefined ? timeToNoteErrors.get(bassTimes[i]) : undefined;
+
                   const drag = dragRef.current;
                   if (drag && drag.staff === "bass" && drag.beatIdx === i && drag.moved) {
                     const filtered: PlacedBeat = {
@@ -2553,26 +3073,29 @@ export function NoteEditor({ header }: { header?: React.ReactNode }) {
                     };
                     return (
                       <g key={`bb-${i}`}>
-                        {filtered.notes.length > 0 && renderBeat(filtered, bx, 1, bNct)}
+                        {filtered.notes.length > 0 && renderBeat(filtered, bx, 1, bNct, bNoteErrs)}
                         {renderNotehead(drag.note.dp, beat.duration, bx, ED_BASS_TOP, ED_BASS_LINES[0], bassYOffset, drag.note.accidental, 0.2)}
                       </g>
                     );
                   }
-                  return <g key={`bb-${i}`}>{renderBeat(beat, bx, 1, bNct)}</g>;
+                  return <g key={`bb-${i}`}>{renderBeat(beat, bx, 1, bNct, bNoteErrs)}</g>;
                 });
               })()}
 
-              {/* Roman numerals */}
-              {hasRN && allTimePoints.map((t, i) => {
-                const rns = romanNumerals[i];
-                if (!rns || rns.length === 0) return null;
+              {/* Roman numerals + chord errors */}
+              {allTimePoints.map((t, i) => {
+                const rns = activeLabels[i];
+                const hasRn = hasRN && rns && rns.length > 0;
+                const beatChordErrs = showErrors ? timeToChordErrors.get(t) : undefined;
+                const hasChordErr = beatChordErrs && beatChordErrs.length > 0;
+                if (!hasRn && !hasChordErr) return null;
                 const pos = timeToPos.get(t);
                 if (!pos || pos.systemIdx !== sysIdx) return null;
                 const rx = pos.x;
                 const rnY = staffHeight + 2;
                 const selIdx = rnSelections[i] ?? 0;
-                const label = rns[selIdx] ?? rns[0];
-                const hasAlts = rns.length > 1;
+                const label = hasRn ? (rns![selIdx] ?? rns![0]) : "";
+                const hasAlts = hasRn && rns!.length > 1;
                 return (
                   <g key={`rn-${i}`}
                     style={hasAlts ? { cursor: "pointer" } : undefined}
@@ -2583,11 +3106,41 @@ export function NoteEditor({ header }: { header?: React.ReactNode }) {
                       return <rect x={rx - boxW / 2} y={rnY + 2} width={boxW} height={26} rx={4} ry={4}
                         fill="none" stroke="#c0bbb5" strokeWidth={1} />;
                     })()}
-                    <text x={rx} y={rnY + 20} fontSize={16}
-                      fontStyle="normal" textAnchor="middle" fill="currentColor" fontFamily="serif">
-                      {label}
-                    </text>
+                    {hasRn && (
+                      <text x={rx} y={rnY + 20} fontSize={labelMode === "chord" ? 14 : 16}
+                        fontStyle="normal" textAnchor="middle" fill="currentColor"
+                        fontFamily={labelMode === "chord" ? "sans-serif" : "serif"}>
+                        {label}
+                      </text>
+                    )}
+                    {hasChordErr && (
+                      <text x={rx} y={rnY + (hasRn ? 36 : 20)} fontSize={9}
+                        textAnchor="middle" fill="#e74c3c" fontFamily="sans-serif" fontWeight="bold">
+                        {beatChordErrs!.join(", ")}
+                      </text>
+                    )}
                   </g>
+                );
+              })}
+
+              {/* Clickable areas to set playback start position — covers RN area + gap below bass staff */}
+              {!isPlaying && !isPaused && allTimePoints.map((t, i) => {
+                const pos = timeToPos.get(t);
+                if (!pos || pos.systemIdx !== sysIdx) return null;
+                const bassBotY = dpToY(ED_BASS_LINES[0], ED_BASS_TOP, bassYOffset);
+                const hw = ED_NOTE_SPACING / 2;
+                return (
+                  <rect
+                    key={`pb-click-${i}`}
+                    x={pos.x - hw} y={bassBotY - 6}
+                    width={ED_NOTE_SPACING} height={RN_SPACE + 12}
+                    fill="transparent"
+                    style={{ cursor: "pointer" }}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setPlaybackStartIdx(i);
+                    }}
+                  />
                 );
               })}
 
@@ -2638,7 +3191,7 @@ export function NoteEditor({ header }: { header?: React.ReactNode }) {
       {/* RN dropdown rendered outside SVG so it's not clipped */}
       {openRnDropdown !== null && (() => {
         const i = openRnDropdown;
-        const rns = romanNumerals[i];
+        const rns = activeLabels[i];
         if (!rns || rns.length < 2) return null;
         const t = allTimePoints[i];
         const pos = timeToPos.get(t);

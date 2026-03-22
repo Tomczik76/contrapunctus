@@ -3,9 +3,7 @@
 - Counterpoint analysis
 - New project
 - Ability play song
-- Auto save
+- Save to Server
 - Export Midi
-- Report bug
-- Feature Request
 - Transforms to change modes 
-- AThe I assistant 
+- AI assistant 
