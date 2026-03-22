@@ -38,7 +38,7 @@ object PartWriting:
   private[analysis] def annotateAnalyses(
       analyses: List[Analysis],
       columns: List[AlignedColumn[Note]],
-      voices: List[List[Note]],
+      voices: List[List[Option[Note]]],
       tonic: NoteType,
       scale: Scale,
       checkCrossing: Boolean = true
@@ -83,32 +83,57 @@ object PartWriting:
   /** Infer voice assignment from a sequence of aligned columns. Sorts notes by
     * pitch (high to low) and tracks voices across beats by nearest-note
     * matching to minimize MIDI distance.
+    *
+    * Returns `List[List[Option[Note]]]` where each inner list has one entry per
+    * beat. `None` marks a beat where that voice is silent (the chord has fewer
+    * notes than the maximum voice count).
     */
   def inferVoices(
       columns: List[AlignedColumn[Note]]
-  ): List[List[Note]] =
+  ): List[List[Option[Note]]] =
     val beats = columnNotes(columns)
     if beats.isEmpty then Nil
     else
       val numVoices = beats.map(_.size).max
-      val initial =
-        beats.head.sortBy(-_.midi).padTo(numVoices, beats.head.last)
-      val voiceArrays = Array.fill(numVoices)(List.newBuilder[Note])
-      initial.zipWithIndex.foreach: (n, i) =>
-        voiceArrays(i) += n
-      var prev = initial
+      val voiceArrays = Array.fill(numVoices)(List.newBuilder[Option[Note]])
+
+      // Initialize from first beat
+      val firstSorted = beats.head.sortBy(-_.midi)
+      val initial = Array.ofDim[Option[Note]](numVoices)
+      for i <- 0 until numVoices do
+        initial(i) = firstSorted.lift(i)
+        voiceArrays(i) += initial(i)
+
+      // Track the last known note for each voice (for nearest-match)
+      val lastKnown = Array.ofDim[Note](numVoices)
+      firstSorted.zipWithIndex.foreach { (n, i) => lastKnown(i) = n }
+      // For voices beyond the first beat's size, set a reasonable default
+      if firstSorted.size < numVoices then
+        for i <- firstSorted.size until numVoices do
+          lastKnown(i) = firstSorted.last
+
       for notes <- beats.tail do
-        val sorted  = notes.sortBy(-_.midi).padTo(numVoices, notes.last)
-        val used    = Array.fill(sorted.size)(false)
-        val current = Array.ofDim[Note](numVoices)
-        for i <- prev.indices do
-          val (_, bestIdx) = sorted.zipWithIndex
-            .filterNot { case (_, j) => used(j) }
-            .minBy { case (n, _) => Math.abs(n.midi - prev(i).midi) }
-          current(i) = sorted(bestIdx)
-          used(bestIdx) = true
+        val sorted = notes.sortBy(-_.midi)
+        val realCount = sorted.size
+        val used = Array.fill(realCount)(false)
+        val current = Array.fill[Option[Note]](numVoices)(None)
+
+        // Match each voice to its nearest available note
+        // Process voices that had notes most recently first for stability
+        val voiceOrder = (0 until numVoices).sortBy(i => if initial.lift(i).flatten.isDefined then 0 else 1)
+        for i <- 0 until numVoices do
+          val candidates = sorted.zipWithIndex.filterNot { case (_, j) => used(j) }
+          if candidates.nonEmpty then
+            val (bestNote, bestIdx) = candidates.minBy { case (n, _) =>
+              Math.abs(n.midi - lastKnown(i).midi)
+            }
+            current(i) = Some(bestNote)
+            used(bestIdx) = true
+            lastKnown(i) = bestNote
+
         current.zipWithIndex.foreach { (n, i) => voiceArrays(i) += n }
-        prev = current.toList
+      end for
+
       voiceArrays.toList.map(_.result())
     end if
   end inferVoices
@@ -148,7 +173,7 @@ object PartWriting:
     Math.abs(a.midi - b.midi) % 12
 
   private def checkParallels(
-      voices: List[List[Note]]
+      voices: List[List[Option[Note]]]
   ): List[(Int, Note, NoteError)] =
     val numVoices = voices.size
     val numBeats  = if voices.nonEmpty then voices.head.size else 0
@@ -156,10 +181,10 @@ object PartWriting:
       beat <- (1 until numBeats).toList
       i    <- (0 until numVoices).toList
       j    <- (i + 1 until numVoices).toList
-      prev1 = voices(i)(beat - 1)
-      prev2 = voices(j)(beat - 1)
-      curr1 = voices(i)(beat)
-      curr2 = voices(j)(beat)
+      prev1 <- voices(i)(beat - 1).toList
+      prev2 <- voices(j)(beat - 1).toList
+      curr1 <- voices(i)(beat).toList
+      curr2 <- voices(j)(beat).toList
       if prev1.midi != curr1.midi && prev2.midi != curr2.midi
       prevInterval = intervalClass(prev1, prev2)
       currInterval = intervalClass(curr1, curr2)
@@ -181,7 +206,7 @@ object PartWriting:
   end checkParallels
 
   private def checkDirectMotion(
-      voices: List[List[Note]]
+      voices: List[List[Option[Note]]]
   ): List[(Int, Note, NoteError)] =
     if voices.size < 2 then Nil
     else
@@ -190,10 +215,10 @@ object PartWriting:
       val numBeats = voices.head.size
       for
         beat <- (1 until numBeats).toList
-        sPrev   = voices(soprano)(beat - 1)
-        sCurr   = voices(soprano)(beat)
-        bPrev   = voices(bass)(beat - 1)
-        bCurr   = voices(bass)(beat)
+        sPrev <- voices(soprano)(beat - 1).toList
+        sCurr <- voices(soprano)(beat).toList
+        bPrev <- voices(bass)(beat - 1).toList
+        bCurr <- voices(bass)(beat).toList
         sMotion = sCurr.midi - sPrev.midi
         bMotion = bCurr.midi - bPrev.midi
         if sMotion != 0 && bMotion != 0
@@ -216,17 +241,19 @@ object PartWriting:
       end for
 
   private def checkVoiceCrossing(
-      voices: List[List[Note]]
+      voices: List[List[Option[Note]]]
   ): List[(Int, Note, NoteError)] =
     val numVoices = voices.size
     val numBeats  = if voices.nonEmpty then voices.head.size else 0
     for
       beat <- (0 until numBeats).toList
       i    <- (0 until numVoices - 1).toList
-      if voices(i)(beat).midi < voices(i + 1)(beat).midi
+      a    <- voices(i)(beat).toList
+      b    <- voices(i + 1)(beat).toList
+      if a.midi < b.midi
       err <- List(
-        (beat, voices(i)(beat), NoteError.VoiceCrossing),
-        (beat, voices(i + 1)(beat), NoteError.VoiceCrossing)
+        (beat, a, NoteError.VoiceCrossing),
+        (beat, b, NoteError.VoiceCrossing)
       )
     yield err
 
@@ -317,7 +344,7 @@ object PartWriting:
     * do not resolve up by a semitone to tonic when the chord changes.
     */
   private def checkLeadingToneResolution(
-      voices: List[List[Note]],
+      voices: List[List[Option[Note]]],
       analyses: List[Analysis],
       tonic: NoteType,
       scale: Scale
@@ -332,17 +359,14 @@ object PartWriting:
       for
         voice <- voices
         beat  <- (0 until numBeats - 1).toList
-        note      = voice(beat)
+        note     <- voice(beat).toList
         if note.noteType.value % 12 == ltPc
         chord    <- analyses.lift(beat).flatMap(_.chords.headOption).toList
-        // Only dominant-function chords: V (root=5th) or vii° (root=LT)
         chordRootPc = chord.chord.root.value % 12
         if chordRootPc == domPc || chordRootPc == ltPc
-        nextNote  = voice(beat + 1)
+        nextNote <- voice(beat + 1).toList
         nextChord  = analyses.lift(beat + 1).flatMap(_.chords.headOption)
-        // Don't flag if the chord sustains unchanged
         if !nextChord.exists(sameChord(chord, _))
-        // Flag if it doesn't step up by a semitone to tonic
         if !(nextNote.midi - note.midi == 1 && nextNote.noteType.value % 12 == tonicPc)
       yield (beat, note, NoteError.UnresolvedLeadingTone)
   end checkLeadingToneResolution
@@ -351,21 +375,19 @@ object PartWriting:
     * semitones) when the chord changes.
     */
   private def checkChordal7thResolution(
-      voices: List[List[Note]],
+      voices: List[List[Option[Note]]],
       analyses: List[Analysis]
   ): List[(Int, Note, NoteError)] =
     val numBeats = if voices.nonEmpty then voices.head.size else 0
     for
       voice <- voices
       beat  <- (0 until numBeats - 1).toList
-      note      = voice(beat)
+      note     <- voice(beat).toList
       chord    <- analyses.lift(beat).flatMap(_.chords.headOption).toList
       if isChordal7th(note, chord.chord)
-      nextNote  = voice(beat + 1)
+      nextNote <- voice(beat + 1).toList
       nextChord  = analyses.lift(beat + 1).flatMap(_.chords.headOption)
-      // Don't flag if the chord sustains unchanged
       if !nextChord.exists(sameChord(chord, _))
-      // Flag if it doesn't resolve down by a step
       diff = note.midi - nextNote.midi
       if diff != 1 && diff != 2
     yield (beat, note, NoteError.UnresolvedChordal7th)

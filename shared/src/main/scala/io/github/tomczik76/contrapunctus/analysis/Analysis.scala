@@ -94,7 +94,7 @@ object Analysis:
     val harmonic = apply(tonic, scale, combined)
     val beatAnalyses =
       harmonic.toList.flatMap(Pulse.flatten).map(_.head)
-    val voiceLists = PartWriting.extractVoiceLists(columns)
+    val voiceLists = PartWriting.extractVoiceLists(columns).map(_.map(Some(_)))
     val annotated =
       PartWriting.annotateAnalyses(
         beatAnalyses,

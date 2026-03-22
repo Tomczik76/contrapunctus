@@ -2,7 +2,6 @@
 - Add checks for part writing errors
 - Counterpoint analysis
 - New project
-- Ability play song
 - Save to Server
 - Export Midi
 - Transforms to change modes 

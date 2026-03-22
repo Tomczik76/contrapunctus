@@ -186,14 +186,13 @@ class PartWritingSuite extends munit.FunSuite:
     assert(hasNoteError(analyses, NoteError.ParallelFifths))
 
   test("analyzeWithPartWriting — parallel fifths detected via inferred voices"):
-    import cats.data.NonEmptyList as NEL
     // Two consecutive chords with parallel fifths: C4+F3 → D4+G3 (both P5)
     val beat1: Pulse[Note] = Pulse.Atom(C(4), F(3))
     val beat2: Pulse[Note] = Pulse.Atom(D(4), G(3))
     val result = Analysis.analyzeWithPartWriting(
       NoteType.C,
       Scale.Major,
-      NEL.of(beat1, beat2)
+      NonEmptyList.of(beat1, beat2)
     )
     val analyses = flatAnalyses(result)
     assert(hasNoteError(analyses, NoteError.ParallelFifths))
@@ -450,5 +449,66 @@ class PartWritingSuite extends munit.FunSuite:
     )
     val analyses = flatAnalyses(result)
     assert(!hasNoteError(analyses, NoteError.UnresolvedLeadingTone))
+
+  // --- Voice count changes (inferVoices padding bug) ---
+
+  test("voice count decrease 4→3 — no false parallel octaves"):
+    // I → ii: C3-E3-G3-C4 → D3-A3-D4.
+    // The C3 voice drops out. D3 and D4 are an octave, and C3 and C4
+    // were an octave, but there's no voice-to-voice parallel motion —
+    // C3 simply ceases. Should NOT flag parallel octaves.
+    val beat1: Pulse[Note] = Pulse.Atom(C(4), G(3), E(3), C(3))
+    val beat2: Pulse[Note] = Pulse.Atom(D(4), A(3), D(3))
+    val result = Analysis.analyzeWithPartWriting(
+      NoteType.C, Scale.Major, NonEmptyList.of(beat1, beat2)
+    )
+    val analyses = flatAnalyses(result)
+    assert(!hasNoteError(analyses, NoteError.ParallelOctaves))
+
+  test("voice count decrease 4→3 — no false parallel fifths"):
+    // I → V: C3-E3-G3-C4 → G2-B3-D4.
+    // Bass voice drops from C3. Should NOT flag parallel fifths
+    // from phantom padded voice.
+    val beat1: Pulse[Note] = Pulse.Atom(C(4), G(3), E(3), C(3))
+    val beat2: Pulse[Note] = Pulse.Atom(D(4), B(3), G(2))
+    val result = Analysis.analyzeWithPartWriting(
+      NoteType.C, Scale.Major, NonEmptyList.of(beat1, beat2)
+    )
+    val analyses = flatAnalyses(result)
+    assert(!hasNoteError(analyses, NoteError.ParallelFifths))
+
+  test("voice count increase 3→4 — real parallel octaves still caught"):
+    // C3-G3-C4 → D3-A3-D4-F4. A new voice (F4) enters, but
+    // C3→D3 and C4→D4 are real parallel octaves among existing voices.
+    val beat1: Pulse[Note] = Pulse.Atom(C(4), G(3), C(3))
+    val beat2: Pulse[Note] = Pulse.Atom(F(4), D(4), A(3), D(3))
+    val result = Analysis.analyzeWithPartWriting(
+      NoteType.C, Scale.Major, NonEmptyList.of(beat1, beat2)
+    )
+    val analyses = flatAnalyses(result)
+    assert(hasNoteError(analyses, NoteError.ParallelOctaves))
+
+  test("voice count decrease 3→2 — no false parallel octaves"):
+    // C3-E4-C5 → D4-G4. Soprano and bass drop out.
+    // Should not create phantom parallels.
+    val beat1: Pulse[Note] = Pulse.Atom(C(5), E(4), C(3))
+    val beat2: Pulse[Note] = Pulse.Atom(G(4), D(4))
+    val result = Analysis.analyzeWithPartWriting(
+      NoteType.C, Scale.Major, NonEmptyList.of(beat1, beat2)
+    )
+    val analyses = flatAnalyses(result)
+    assert(!hasNoteError(analyses, NoteError.ParallelOctaves))
+    assert(!hasNoteError(analyses, NoteError.ParallelFifths))
+
+  test("equal voice count with real parallel octaves — still detected"):
+    // Sanity check: 3→3 voices with real parallel octaves.
+    // C3-E4-C5 → D3-F4-D5. C3→D3 and C5→D5 are parallel octaves.
+    val beat1: Pulse[Note] = Pulse.Atom(C(5), E(4), C(3))
+    val beat2: Pulse[Note] = Pulse.Atom(D(5), F(4), D(3))
+    val result = Analysis.analyzeWithPartWriting(
+      NoteType.C, Scale.Major, NonEmptyList.of(beat1, beat2)
+    )
+    val analyses = flatAnalyses(result)
+    assert(hasNoteError(analyses, NoteError.ParallelOctaves))
 
 end PartWritingSuite
