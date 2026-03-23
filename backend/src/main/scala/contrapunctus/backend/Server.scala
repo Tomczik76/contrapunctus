@@ -11,8 +11,8 @@ import org.http4s.server.Router
 import org.http4s.server.middleware.{CORS, Logger}
 import org.http4s.ember.server.EmberServerBuilder
 import skunk.Session
-import contrapunctus.backend.routes.{AdminRoutes, BugReportRoutes, FeatureRequestRoutes, LoginRoutes, RoadmapRoutes, SignupRoutes}
-import contrapunctus.backend.services.{BugReportService, FeatureRequestService, UserService}
+import contrapunctus.backend.routes.{AdminRoutes, BugReportRoutes, FeatureRequestRoutes, LessonRoutes, LoginRoutes, RoadmapRoutes, SignupRoutes}
+import contrapunctus.backend.services.{BugReportService, FeatureRequestService, LessonService, UserService}
 
 object Server:
   def run(pool: Resource[IO, Session[IO]], jwtSecret: String, adminPassword: String): IO[Nothing] =
@@ -21,6 +21,7 @@ object Server:
     val userService           = UserService.make(pool, jwtSecret)
     val bugReportService      = BugReportService.make(pool)
     val featureRequestService = FeatureRequestService.make(pool)
+    val lessonService         = LessonService.make(pool)
 
     val healthRoutes = HttpRoutes.of[IO] { case GET -> Root / "health" => Ok("ok") }
     val apiRoutes    = SignupRoutes.routes(userService)
@@ -28,6 +29,8 @@ object Server:
                    <+> BugReportRoutes.routes(bugReportService, jwtSecret)
                    <+> FeatureRequestRoutes.routes(featureRequestService, jwtSecret)
                    <+> RoadmapRoutes.routes(pool, jwtSecret)
+                   <+> LessonRoutes.publicRoutes(lessonService)
+                   <+> LessonRoutes.adminRoutes(lessonService, adminPassword)
                    <+> AdminRoutes.routes(pool, adminPassword)
 
     val loggedApiRoutes = Logger.httpRoutes(logHeaders = false, logBody = false)(apiRoutes)

@@ -1,5 +1,6 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { API_BASE, getAdminToken, setAdminToken, clearAdminToken, adminHeaders } from "../auth";
+import { NoteEditor, type PlacedBeat } from "./Staff";
 
 interface User {
   id: string;
@@ -23,7 +24,25 @@ interface FeatureRequest {
   createdAt: string;
 }
 
-type Tab = "users" | "bug-reports" | "feature-requests" | "roadmap-votes";
+interface AdminLesson {
+  id: string;
+  title: string;
+  description: string;
+  difficulty: string;
+  template: string;
+  tonicIdx: number;
+  scaleName: string;
+  tsTop: number;
+  tsBottom: number;
+  sopranoBeats: unknown;
+  sortOrder: number;
+  createdAt: string;
+}
+
+type Tab = "users" | "bug-reports" | "feature-requests" | "roadmap-votes" | "lessons";
+
+const TONIC_LABELS = ["C", "C#", "Db", "D", "Eb", "E", "F", "F#", "Gb", "G", "Ab", "A", "Bb", "B"];
+
 
 export function AdminPage() {
   const [token, setToken] = useState(getAdminToken() ?? "");
@@ -37,6 +56,8 @@ export function AdminPage() {
   const [featureRequests, setFeatureRequests] = useState<FeatureRequest[]>([]);
   const [selectedReport, setSelectedReport] = useState<BugReport | null>(null);
   const [roadmapVotes, setRoadmapVotes] = useState<Record<string, number>>({});
+  const [lessons, setLessons] = useState<AdminLesson[]>([]);
+  const [lessonsRefresh, setLessonsRefresh] = useState(0);
 
   function handleLogin() {
     setAdminToken(password);
@@ -89,6 +110,14 @@ export function AdminPage() {
       });
   }, [authed]);
 
+  useEffect(() => {
+    if (!authed) return;
+    fetch(`${API_BASE}/api/admin/lessons`, { headers: adminHeaders() })
+      .then(async (res) => {
+        if (res.ok) setLessons(await res.json());
+      });
+  }, [authed, lessonsRefresh]);
+
   if (!authed) {
     return (
       <div style={{ display: "flex", justifyContent: "center", alignItems: "center", minHeight: "100vh", background: "#f5f5f5" }}>
@@ -115,7 +144,13 @@ export function AdminPage() {
   }
 
   const userMap = Object.fromEntries(users.map((u) => [u.id, u]));
-  const tabLabels: Record<Tab, string> = { users: "Users", "bug-reports": "Bug Reports", "feature-requests": "Feature Requests", "roadmap-votes": "Roadmap Votes" };
+  const tabLabels: Record<Tab, string> = {
+    users: "Users",
+    "bug-reports": "Bug Reports",
+    "feature-requests": "Feature Requests",
+    "roadmap-votes": "Roadmap Votes",
+    lessons: "Lessons",
+  };
 
   return (
     <div style={{ minHeight: "100vh", background: "#f5f5f5" }}>
@@ -128,7 +163,7 @@ export function AdminPage() {
 
       <div style={{ display: "flex", gap: 0, padding: "24px 24px" }}>
         <div style={{ display: "flex", flexDirection: "column", gap: 4, marginRight: 24 }}>
-          {(["users", "bug-reports", "feature-requests", "roadmap-votes"] as Tab[]).map((t) => (
+          {(["users", "bug-reports", "feature-requests", "roadmap-votes", "lessons"] as Tab[]).map((t) => (
             <button
               key={t}
               onClick={() => { setTab(t); setSelectedReport(null); }}
@@ -161,6 +196,7 @@ export function AdminPage() {
           )}
           {tab === "feature-requests" && <FeatureRequestsTab requests={featureRequests} userMap={userMap} />}
           {tab === "roadmap-votes" && <RoadmapVotesTab votes={roadmapVotes} />}
+          {tab === "lessons" && <LessonsTab lessons={lessons} onRefresh={() => setLessonsRefresh((n) => n + 1)} />}
         </div>
       </div>
     </div>
@@ -315,5 +351,311 @@ function RoadmapVotesTab({ votes }: { votes: Record<string, number> }) {
         )}
       </tbody>
     </table>
+  );
+}
+
+function LessonsTab({ lessons, onRefresh }: { lessons: AdminLesson[]; onRefresh: () => void }) {
+  const [editing, setEditing] = useState<AdminLesson | "new" | null>(null);
+
+  if (editing) {
+    return (
+      <LessonForm
+        lesson={editing === "new" ? null : editing}
+        onDone={() => { setEditing(null); onRefresh(); }}
+        onCancel={() => setEditing(null)}
+      />
+    );
+  }
+
+  return (
+    <div>
+      <div style={{ padding: "12px 12px 0", display: "flex", justifyContent: "flex-end" }}>
+        <button
+          onClick={() => setEditing("new")}
+          style={{
+            padding: "6px 14px", fontSize: 13, fontWeight: 600,
+            background: "#333", color: "#fff", border: "none", borderRadius: 4, cursor: "pointer",
+          }}
+        >
+          Create Lesson
+        </button>
+      </div>
+      <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
+        <thead>
+          <tr style={{ borderBottom: "2px solid #eee", textAlign: "left" }}>
+            <th style={{ padding: "10px 12px" }}>Title</th>
+            <th style={{ padding: "10px 12px" }}>Template</th>
+            <th style={{ padding: "10px 12px" }}>Key</th>
+            <th style={{ padding: "10px 12px" }}>Difficulty</th>
+            <th style={{ padding: "10px 12px" }}>Order</th>
+            <th style={{ padding: "10px 12px" }}>Actions</th>
+          </tr>
+        </thead>
+        <tbody>
+          {lessons.map((l) => (
+            <tr key={l.id} style={{ borderBottom: "1px solid #f0f0f0" }}>
+              <td style={{ padding: "8px 12px", fontWeight: 600 }}>{l.title}</td>
+              <td style={{ padding: "8px 12px" }}>{l.template}</td>
+              <td style={{ padding: "8px 12px" }}>{TONIC_LABELS[l.tonicIdx] ?? l.tonicIdx} {l.scaleName}</td>
+              <td style={{ padding: "8px 12px" }}>{l.difficulty}</td>
+              <td style={{ padding: "8px 12px" }}>{l.sortOrder}</td>
+              <td style={{ padding: "8px 12px", display: "flex", gap: 6 }}>
+                <button
+                  onClick={() => setEditing(l)}
+                  style={{ padding: "3px 8px", fontSize: 12, background: "none", border: "1px solid #ccc", borderRadius: 3, cursor: "pointer" }}
+                >
+                  Edit
+                </button>
+                <button
+                  onClick={async () => {
+                    if (!confirm("Delete this lesson?")) return;
+                    await fetch(`${API_BASE}/api/admin/lessons/${l.id}`, {
+                      method: "DELETE",
+                      headers: adminHeaders(),
+                    });
+                    onRefresh();
+                  }}
+                  style={{ padding: "3px 8px", fontSize: 12, background: "none", border: "1px solid #ccc", borderRadius: 3, cursor: "pointer", color: "#c00" }}
+                >
+                  Delete
+                </button>
+              </td>
+            </tr>
+          ))}
+          {lessons.length === 0 && (
+            <tr><td colSpan={6} style={{ padding: 24, textAlign: "center", color: "#999" }}>No lessons yet</td></tr>
+          )}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+function LessonForm({
+  lesson,
+  onDone,
+  onCancel,
+}: {
+  lesson: AdminLesson | null;
+  onDone: () => void;
+  onCancel: () => void;
+}) {
+  const isEdit = !!lesson;
+  const [title, setTitle] = useState(lesson?.title ?? "");
+  const [description, setDescription] = useState(lesson?.description ?? "");
+  const [difficulty, setDifficulty] = useState(lesson?.difficulty ?? "beginner");
+  const [template, setTemplate] = useState(lesson?.template ?? "harmonize_melody");
+  const [tonicIdx, setTonicIdx] = useState(lesson?.tonicIdx ?? 0);
+  const [scaleName, setScaleName] = useState(lesson?.scaleName ?? "major");
+  const [tsTop, setTsTop] = useState(lesson?.tsTop ?? 4);
+  const [tsBottom, setTsBottom] = useState(lesson?.tsBottom ?? 4);
+  const [sopranoBeats, setSopranoBeats] = useState<PlacedBeat[]>(
+    lesson ? (lesson.sopranoBeats as PlacedBeat[]) : []
+  );
+  const [sortOrder, setSortOrder] = useState(lesson?.sortOrder ?? 0);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState("");
+  const [showJson, setShowJson] = useState(false);
+  const [editorKey, setEditorKey] = useState(0);
+
+  const handleTrebleBeatsChanged = useCallback((beats: PlacedBeat[]) => {
+    // Only keep non-rest beats with actual notes as the soprano melody
+    const soprano = beats.filter((b) => !b.isRest && b.notes.length > 0);
+    setSopranoBeats(beats);
+  }, []);
+
+  async function handleSubmit() {
+    if (!title.trim()) { setError("Title is required"); return; }
+    if (!description.trim()) { setError("Description is required"); return; }
+    const validBeats = sopranoBeats.filter((b) => !b.isRest && b.notes.length > 0);
+    if (validBeats.length === 0) { setError("Write at least one note for the soprano melody"); return; }
+
+    setSaving(true);
+    setError("");
+
+    const body = {
+      title: title.trim(),
+      description: description.trim(),
+      difficulty,
+      template,
+      tonicIdx,
+      scaleName,
+      tsTop,
+      tsBottom,
+      sopranoBeats,
+      sortOrder,
+    };
+
+    const url = isEdit
+      ? `${API_BASE}/api/admin/lessons/${lesson!.id}`
+      : `${API_BASE}/api/admin/lessons`;
+
+    const res = await fetch(url, {
+      method: isEdit ? "PUT" : "POST",
+      headers: { ...adminHeaders(), "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    });
+
+    setSaving(false);
+
+    if (!res.ok) {
+      const data = await res.json().catch(() => ({}));
+      setError(data.error || "Failed to save");
+      return;
+    }
+
+    onDone();
+  }
+
+  const inputStyle: React.CSSProperties = {
+    width: "100%", padding: 8, fontSize: 13,
+    border: "1px solid #ccc", borderRadius: 4, boxSizing: "border-box",
+  };
+  const labelStyle: React.CSSProperties = { fontSize: 12, fontWeight: 600, marginBottom: 4, display: "block" };
+
+  return (
+    <div style={{ padding: 20 }}>
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 20 }}>
+        <h3 style={{ margin: 0, fontSize: 16 }}>{isEdit ? "Edit Lesson" : "Create Lesson"}</h3>
+        <button onClick={onCancel} style={{ padding: "4px 10px", fontSize: 12, background: "none", border: "1px solid #ccc", borderRadius: 4, cursor: "pointer" }}>
+          Cancel
+        </button>
+      </div>
+
+      {error && <div style={{ color: "#c00", fontSize: 13, marginBottom: 12 }}>{error}</div>}
+
+      <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+        {/* Template */}
+        <div>
+          <label style={labelStyle}>Template</label>
+          <select value={template} onChange={(e) => setTemplate(e.target.value)} style={inputStyle}>
+            <option value="harmonize_melody">Harmonize a Melody</option>
+          </select>
+        </div>
+
+        {/* Title + Description */}
+        <div>
+          <label style={labelStyle}>Title</label>
+          <input value={title} onChange={(e) => setTitle(e.target.value)} style={inputStyle} placeholder="e.g. Harmonize a Melody in G Major" />
+        </div>
+        <div>
+          <label style={labelStyle}>Description</label>
+          <textarea value={description} onChange={(e) => setDescription(e.target.value)} style={{ ...inputStyle, minHeight: 60, resize: "vertical" }} placeholder="Instructions for the student..." />
+        </div>
+
+        {/* Key & Scale */}
+        <div style={{ display: "flex", gap: 12 }}>
+          <div style={{ flex: 1 }}>
+            <label style={labelStyle}>Key</label>
+            <select value={tonicIdx} onChange={(e) => setTonicIdx(Number(e.target.value))} style={inputStyle}>
+              {TONIC_LABELS.map((label, i) => (
+                <option key={i} value={i}>{label}</option>
+              ))}
+            </select>
+          </div>
+          <div style={{ flex: 1 }}>
+            <label style={labelStyle}>Scale</label>
+            <select value={scaleName} onChange={(e) => setScaleName(e.target.value)} style={inputStyle}>
+              <option value="major">Major</option>
+              <option value="minor">Minor</option>
+            </select>
+          </div>
+        </div>
+
+        {/* Time Signature */}
+        <div style={{ display: "flex", gap: 12 }}>
+          <div style={{ flex: 1 }}>
+            <label style={labelStyle}>Time Sig Top</label>
+            <input type="number" value={tsTop} onChange={(e) => setTsTop(Number(e.target.value))} style={inputStyle} min={1} max={12} />
+          </div>
+          <div style={{ flex: 1 }}>
+            <label style={labelStyle}>Time Sig Bottom</label>
+            <select value={tsBottom} onChange={(e) => setTsBottom(Number(e.target.value))} style={inputStyle}>
+              <option value={2}>2</option>
+              <option value={4}>4</option>
+              <option value={8}>8</option>
+            </select>
+          </div>
+        </div>
+
+        {/* Difficulty + Sort Order */}
+        <div style={{ display: "flex", gap: 12 }}>
+          <div style={{ flex: 1 }}>
+            <label style={labelStyle}>Difficulty</label>
+            <select value={difficulty} onChange={(e) => setDifficulty(e.target.value)} style={inputStyle}>
+              <option value="beginner">Beginner</option>
+              <option value="intermediate">Intermediate</option>
+              <option value="advanced">Advanced</option>
+            </select>
+          </div>
+          <div style={{ flex: 1 }}>
+            <label style={labelStyle}>Sort Order</label>
+            <input type="number" value={sortOrder} onChange={(e) => setSortOrder(Number(e.target.value))} style={inputStyle} min={0} />
+          </div>
+        </div>
+
+        {/* Soprano Melody Editor */}
+        <div>
+          <label style={labelStyle}>Soprano Melody</label>
+          <div style={{ fontSize: 12, color: "#888", marginBottom: 8 }}>
+            Write the soprano melody on the treble staff below. Only treble notes will be used.
+            {sopranoBeats.filter((b) => !b.isRest && b.notes.length > 0).length > 0 && (
+              <span style={{ marginLeft: 8, color: "#333", fontWeight: 600 }}>
+                {sopranoBeats.filter((b) => !b.isRest && b.notes.length > 0).length} beats
+              </span>
+            )}
+          </div>
+          <div style={{
+            border: "1px solid #ccc", borderRadius: 6, overflow: "hidden",
+            height: 700, position: "relative",
+          }}>
+            <NoteEditor
+              key={editorKey}
+              onTrebleBeatsChanged={handleTrebleBeatsChanged}
+              initialTonicIdx={tonicIdx}
+              initialScaleName={scaleName}
+              initialTsTop={tsTop}
+              initialTsBottom={tsBottom}
+              initialTrebleBeats={sopranoBeats.length > 0 ? sopranoBeats : undefined}
+            />
+          </div>
+          <div style={{ marginTop: 8 }}>
+            <button
+              onClick={() => setShowJson(!showJson)}
+              style={{ padding: "3px 8px", fontSize: 11, background: "none", border: "1px solid #ddd", borderRadius: 3, cursor: "pointer", color: "#888" }}
+            >
+              {showJson ? "Hide" : "Show"} JSON
+            </button>
+            {showJson && (
+              <pre style={{
+                marginTop: 6, padding: 10, background: "#f8f8f8", borderRadius: 4,
+                fontSize: 11, fontFamily: "monospace", maxHeight: 200, overflow: "auto",
+                border: "1px solid #eee",
+              }}>
+                {JSON.stringify(sopranoBeats, null, 2)}
+              </pre>
+            )}
+          </div>
+        </div>
+
+        {/* Submit */}
+        <div style={{ display: "flex", gap: 12, justifyContent: "flex-end", marginTop: 8 }}>
+          <button onClick={onCancel} style={{ padding: "8px 16px", fontSize: 13, background: "none", border: "1px solid #ccc", borderRadius: 4, cursor: "pointer" }}>
+            Cancel
+          </button>
+          <button
+            onClick={handleSubmit}
+            disabled={saving}
+            style={{
+              padding: "8px 16px", fontSize: 13, fontWeight: 600,
+              background: "#333", color: "#fff", border: "none", borderRadius: 4, cursor: "pointer",
+              opacity: saving ? 0.6 : 1,
+            }}
+          >
+            {saving ? "Saving..." : isEdit ? "Update Lesson" : "Create Lesson"}
+          </button>
+        </div>
+      </div>
+    </div>
   );
 }

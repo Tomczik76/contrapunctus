@@ -1,14 +1,25 @@
 import { Link } from "react-router-dom";
 import { useAuth } from "../auth";
-import { lessons } from "../data/lessons";
-import { useState } from "react";
+import { useState, useEffect } from "react";
+import { fetchLessons, type Lesson } from "../data/lessons";
 
 export function LessonList() {
   const { user, logout } = useAuth();
+  const [lessons, setLessons] = useState<Lesson[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
+
   const [darkMode] = useState(() => {
     try { return localStorage.getItem("contrapunctus_dark") === "true"; } catch { return false; }
   });
   const dk = darkMode;
+
+  useEffect(() => {
+    fetchLessons()
+      .then(setLessons)
+      .catch((e) => setError(e.message))
+      .finally(() => setLoading(false));
+  }, []);
 
   const theme = {
     bg: dk ? "#1e1e22" : "#e8e4e0",
@@ -20,7 +31,6 @@ export function LessonList() {
     textMuted: dk ? "#888" : "#888",
     footerBg: dk ? "#222228" : "#f0ede9",
     footerBorder: dk ? "#3a3a40" : "#e0dcd8",
-    accent: dk ? "#6ea4d4" : "#3a6ea5",
   };
 
   const difficultyColors: Record<string, string> = {
@@ -55,6 +65,18 @@ export function LessonList() {
         <p style={{ fontSize: 14, color: theme.textSub, margin: "0 0 32px" }}>
           Practice 4-part harmony through guided exercises.
         </p>
+
+        {loading && (
+          <div style={{ padding: 40, textAlign: "center", color: theme.textMuted, fontSize: 14 }}>
+            Loading lessons...
+          </div>
+        )}
+
+        {error && (
+          <div style={{ padding: 40, textAlign: "center", color: "#dc2626", fontSize: 14 }}>
+            {error}
+          </div>
+        )}
 
         <div style={{ display: "flex", flexDirection: "column", gap: 16, paddingBottom: 100 }}>
           {lessons.map((lesson) => (
@@ -96,6 +118,11 @@ export function LessonList() {
               <span style={{ fontSize: 18, color: theme.textMuted, flexShrink: 0 }}>&rarr;</span>
             </Link>
           ))}
+          {!loading && !error && lessons.length === 0 && (
+            <div style={{ padding: 40, textAlign: "center", color: theme.textMuted, fontSize: 14 }}>
+              No lessons available yet.
+            </div>
+          )}
         </div>
       </div>
 

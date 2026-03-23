@@ -1266,7 +1266,27 @@ function RnLegend({ dark }: { dark: boolean }) {
   );
 }
 
-export function NoteEditor({ header, lessonConfig }: { header?: React.ReactNode; lessonConfig?: LessonConfig }) {
+export interface NoteEditorProps {
+  header?: React.ReactNode;
+  lessonConfig?: LessonConfig;
+  /** Called whenever treble beats change (used by admin melody editor). */
+  onTrebleBeatsChanged?: (beats: PlacedBeat[]) => void;
+  /** If true, hide bass staff and only allow treble editing. */
+  trebleOnly?: boolean;
+  /** Override initial tonic index. */
+  initialTonicIdx?: number;
+  /** Override initial scale name. */
+  initialScaleName?: string;
+  /** Override initial time signature top. */
+  initialTsTop?: number;
+  /** Override initial time signature bottom. */
+  initialTsBottom?: number;
+  /** Pre-populate treble beats (used when editing an existing lesson). */
+  initialTrebleBeats?: PlacedBeat[];
+}
+
+export function NoteEditor({ header, lessonConfig, onTrebleBeatsChanged, trebleOnly, initialTonicIdx, initialScaleName, initialTsTop, initialTsBottom, initialTrebleBeats }: NoteEditorProps) {
+  const embedded = !!onTrebleBeatsChanged;
   const { token } = useAuth();
   // ── LocalStorage persistence ──────────────────────────────────────
   const STORAGE_KEY = "contrapunctus_state";
@@ -1286,20 +1306,20 @@ export function NoteEditor({ header, lessonConfig }: { header?: React.ReactNode;
     return null;
   }
 
-  const saved = useRef(lessonConfig ? null : loadSaved());
+  const saved = useRef(lessonConfig || onTrebleBeatsChanged ? null : loadSaved());
 
   const [selectedDuration, setSelectedDuration] = useState<Duration>("quarter");
   const [selectedAccidental, setSelectedAccidental] = useState<Accidental>("");
   const [dottedMode, setDottedMode] = useState(false);
   const [deleteMode, setDeleteMode] = useState(false);
   const [restMode, setRestMode] = useState(false);
-  const [tsTop, setTsTop] = useState(lessonConfig?.tsTop ?? saved.current?.tsTop ?? 4);
-  const [tsBottom, setTsBottom] = useState(lessonConfig?.tsBottom ?? saved.current?.tsBottom ?? 4);
+  const [tsTop, setTsTop] = useState(lessonConfig?.tsTop ?? initialTsTop ?? saved.current?.tsTop ?? 4);
+  const [tsBottom, setTsBottom] = useState(lessonConfig?.tsBottom ?? initialTsBottom ?? saved.current?.tsBottom ?? 4);
 
   // Independent beat arrays for each staff
-  const initRests = () => fillWithRests((lessonConfig?.tsTop ?? 4) / (lessonConfig?.tsBottom ?? 4));
+  const initRests = () => fillWithRests((lessonConfig?.tsTop ?? initialTsTop ?? 4) / (lessonConfig?.tsBottom ?? initialTsBottom ?? 4));
   const [trebleBeats, setTrebleBeatsRaw] = useState<PlacedBeat[]>(
-    lessonConfig ? lessonConfig.lockedTrebleBeats : (saved.current?.trebleBeats ?? initRests)
+    lessonConfig ? lessonConfig.lockedTrebleBeats : (initialTrebleBeats ?? saved.current?.trebleBeats ?? initRests)
   );
   const [bassBeats, setBassBeatsRaw] = useState<PlacedBeat[]>(saved.current?.bassBeats ?? initRests);
 
@@ -1360,21 +1380,21 @@ export function NoteEditor({ header, lessonConfig }: { header?: React.ReactNode;
   const [hoverDp, setHoverDp] = useState<number | null>(null);
   const [hoverStaff, setHoverStaff] = useState<"treble" | "bass" | null>(null);
   const [hoverBeatIdx, setHoverBeatIdx] = useState<number | null>(null);
-  const [tonicIdx, setTonicIdx] = useState(lessonConfig?.tonicIdx ?? saved.current?.tonicIdx ?? 0);
-  const [scaleName, setScaleName] = useState(lessonConfig?.scaleName ?? saved.current?.scaleName ?? "major");
+  const [tonicIdx, setTonicIdx] = useState(lessonConfig?.tonicIdx ?? initialTonicIdx ?? saved.current?.tonicIdx ?? 0);
+  const [scaleName, setScaleName] = useState(lessonConfig?.scaleName ?? initialScaleName ?? saved.current?.scaleName ?? "major");
   const svgRef = useRef<SVGSVGElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const topBarRef = useRef<HTMLDivElement>(null);
   const topBarSpacerRef = useRef<HTMLDivElement>(null);
   const [containerWidth, setContainerWidth] = useState(880);
 
-  // Save state to localStorage on changes (skip in lesson mode)
+  // Save state to localStorage on changes (skip in lesson mode and admin embed)
   useEffect(() => {
-    if (lessonConfig) return;
+    if (lessonConfig || onTrebleBeatsChanged) return;
     localStorage.setItem(STORAGE_KEY, JSON.stringify({
       trebleBeats, bassBeats, tsTop, tsBottom, tonicIdx, scaleName,
     }));
-  }, [trebleBeats, bassBeats, tsTop, tsBottom, tonicIdx, scaleName, lessonConfig]);
+  }, [trebleBeats, bassBeats, tsTop, tsBottom, tonicIdx, scaleName, lessonConfig, onTrebleBeatsChanged]);
 
   useEffect(() => {
     const el = containerRef.current;
@@ -1780,6 +1800,13 @@ export function NoteEditor({ header, lessonConfig }: { header?: React.ReactNode;
       lessonConfig.onBeatsChanged(trebleBeats, bassBeats);
     }
   }, [trebleBeats, bassBeats, lessonConfig]);
+
+  // Expose treble beats to external consumer (admin melody editor)
+  useEffect(() => {
+    if (onTrebleBeatsChanged) {
+      onTrebleBeatsChanged(trebleBeats);
+    }
+  }, [trebleBeats, onTrebleBeatsChanged]);
 
   const [errorPanelOpen, setErrorPanelOpen] = useState(false);
   const [highlightedBeat, setHighlightedBeat] = useState<number | null>(null);
@@ -2945,18 +2972,18 @@ export function NoteEditor({ header, lessonConfig }: { header?: React.ReactNode;
       `}</style>
       {/* Fixed top bar */}
       <div ref={topBarRef} className="cp-toolbar" style={{
-        position: "fixed",
+        position: embedded ? "sticky" : "fixed",
         top: 0,
-        left: 0,
-        right: 0,
+        left: embedded ? undefined : 0,
+        right: embedded ? undefined : 0,
         zIndex: 100,
         background: theme.toolbarBg,
         borderBottom: `1px solid ${theme.toolbarBorder}`,
         padding: "0 16px",
         color: theme.text,
       }}>
-        {/* Title bar */}
-        <div style={{
+        {/* Title bar — hidden in embedded mode */}
+        {!embedded && <div style={{
           display: "flex",
           alignItems: "center",
           justifyContent: "center",
@@ -2971,7 +2998,7 @@ export function NoteEditor({ header, lessonConfig }: { header?: React.ReactNode;
           }}>
             Contrapunctus
           </span>
-        </div>
+        </div>}
         {/* Collapsed: single compact row */}
         {!toolbarExpanded && (
         <div style={{
@@ -3626,8 +3653,8 @@ export function NoteEditor({ header, lessonConfig }: { header?: React.ReactNode;
 
       </div>{/* end fixed top bar */}
 
-      {/* Spacer for fixed top bar */}
-      <div ref={topBarSpacerRef} />
+      {/* Spacer for fixed top bar (not needed in embedded/sticky mode) */}
+      {!embedded && <div ref={topBarSpacerRef} />}
 
       {/* Main content: score + optional error panel */}
       <div style={{

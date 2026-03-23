@@ -1,18 +1,37 @@
 import { useParams, Link, Navigate } from "react-router-dom";
-import { useState, useCallback } from "react";
+import { useState, useCallback, useEffect } from "react";
 import { useAuth } from "../auth";
 import { NoteEditor, type LessonConfig, type LessonErrorItem, type PlacedBeat } from "./Staff";
-import { lessons } from "../data/lessons";
+import { fetchLesson, type Lesson } from "../data/lessons";
 
-/** Normalize an RN string for comparison: trim, collapse spaces, lowercase for case-insensitive match on quality. */
+/** Normalize an RN string for comparison: trim, collapse spaces, convert Unicode super/subscript digits to ASCII. */
 function normalizeRn(rn: string): string {
-  return rn.trim().replace(/\s+/g, "");
+  return rn
+    .trim()
+    .replace(/\s+/g, "")
+    // Unicode superscript digits → ASCII
+    .replace(/⁰/g, "0").replace(/¹/g, "1").replace(/²/g, "2").replace(/³/g, "3")
+    .replace(/⁴/g, "4").replace(/⁵/g, "5").replace(/⁶/g, "6").replace(/⁷/g, "7")
+    .replace(/⁸/g, "8").replace(/⁹/g, "9")
+    // Unicode subscript digits → ASCII
+    .replace(/₀/g, "0").replace(/₁/g, "1").replace(/₂/g, "2").replace(/₃/g, "3")
+    .replace(/₄/g, "4").replace(/₅/g, "5").replace(/₆/g, "6").replace(/₇/g, "7")
+    .replace(/₈/g, "8").replace(/₉/g, "9");
 }
 
 export function LessonPage() {
   const { id } = useParams<{ id: string }>();
   const { user, logout } = useAuth();
-  const lesson = lessons.find((l) => l.id === id);
+  const [lesson, setLesson] = useState<Lesson | null>(null);
+  const [loadingLesson, setLoadingLesson] = useState(true);
+
+  useEffect(() => {
+    if (!id) return;
+    fetchLesson(id)
+      .then(setLesson)
+      .catch(() => setLesson(null))
+      .finally(() => setLoadingLesson(false));
+  }, [id]);
 
   const [partWritingErrors, setPartWritingErrors] = useState<LessonErrorItem[]>([]);
   const [computedRomans, setComputedRomans] = useState<string[][]>([]);
@@ -63,6 +82,7 @@ export function LessonPage() {
     setBassBeats(bass);
   }, []);
 
+  if (loadingLesson) return <div style={{ minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center", color: "#888", fontSize: 14 }}>Loading lesson...</div>;
   if (!lesson) return <Navigate to="/lessons" replace />;
 
   const lessonConfig: LessonConfig = {

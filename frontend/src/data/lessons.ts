@@ -1,10 +1,12 @@
-import type { PlacedBeat, Accidental } from "../components/Staff";
+import type { PlacedBeat } from "../components/Staff";
+import { API_BASE } from "../auth";
 
 export interface Lesson {
   id: string;
   title: string;
   description: string;
   difficulty: "beginner" | "intermediate" | "advanced";
+  template: string;
   /** Index into TONIC_OPTIONS (0 = C). */
   tonicIdx: number;
   scaleName: string;
@@ -12,44 +14,18 @@ export interface Lesson {
   tsBottom: number;
   /** Pre-filled soprano melody on the treble staff. */
   sopranoBeats: PlacedBeat[];
+  sortOrder: number;
 }
 
-/** Helper to make a soprano note at a diatonic position. */
-function sn(dp: number, duration: PlacedBeat["duration"], acc: Accidental = ""): PlacedBeat {
-  return { notes: [{ dp, staff: "treble" as const, accidental: acc }], duration };
+export async function fetchLessons(): Promise<Lesson[]> {
+  const res = await fetch(`${API_BASE}/api/lessons`);
+  if (!res.ok) throw new Error("Failed to fetch lessons");
+  return res.json();
 }
 
-/**
- * Lesson 1: Simple chorale harmonization in C major (2 measures, 4/4).
- *
- * Soprano melody:
- *   M1: C5 - D5 - E5 - D5
- *   M2: E5 - D5 - B4 - C5   (B4 resolves up to C5 ✓)
- *
- * Diatonic positions: B4=34, C5=35, D5=36, E5=37
- */
-export const lessons: Lesson[] = [
-  {
-    id: "harmonize-1",
-    title: "Harmonize a Melody",
-    description:
-      "Add alto, tenor, and bass voices to complete this 4-part chorale in C major. Avoid part-writing errors and label each chord with roman numerals.",
-    difficulty: "beginner",
-    tonicIdx: 0, // C
-    scaleName: "major",
-    tsTop: 4,
-    tsBottom: 4,
-    sopranoBeats: [
-      // Measure 1
-      sn(35, "quarter"), // C5
-      sn(36, "quarter"), // D5
-      sn(37, "quarter"), // E5
-      sn(36, "quarter"), // D5
-      // Measure 2
-      sn(37, "quarter"), // E5
-      sn(36, "quarter"), // D5
-      sn(34, "quarter"), // B4  → resolves up to C5
-      sn(35, "quarter"), // C5
-    ],
-  },
-];
+export async function fetchLesson(id: string): Promise<Lesson | null> {
+  const res = await fetch(`${API_BASE}/api/lessons/${id}`);
+  if (res.status === 404) return null;
+  if (!res.ok) throw new Error("Failed to fetch lesson");
+  return res.json();
+}
