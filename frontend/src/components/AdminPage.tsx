@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from "react";
 import { API_BASE, getAdminToken, setAdminToken, clearAdminToken, adminHeaders } from "../auth";
-import { NoteEditor, type PlacedBeat } from "./Staff";
+import { NoteEditor, type PlacedBeat } from "./staff";
 
 interface User {
   id: string;

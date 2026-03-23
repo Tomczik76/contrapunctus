@@ -1,4 +1,4 @@
-import type { PlacedBeat } from "../components/Staff";
+import type { PlacedBeat } from "../components/staff";
 import { API_BASE } from "../auth";
 
 export interface Lesson {

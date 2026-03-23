@@ -1,7 +1,7 @@
 import { useParams, Link, Navigate } from "react-router-dom";
 import { useState, useCallback, useEffect } from "react";
 import { useAuth } from "../auth";
-import { NoteEditor, type LessonConfig, type LessonErrorItem, type PlacedBeat } from "./Staff";
+import { NoteEditor, type LessonConfig, type LessonErrorItem, type PlacedBeat } from "./staff";
 import { fetchLesson, type Lesson } from "../data/lessons";
 
 /** Normalize an RN string for comparison: trim, collapse spaces, convert Unicode super/subscript digits to ASCII. */

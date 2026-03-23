@@ -1,6 +1,6 @@
 import { createRoot } from "react-dom/client";
 import { BrowserRouter, Routes, Route, Navigate, Link } from "react-router-dom";
-import { NoteEditor } from "./components/Staff";
+import { NoteEditor } from "./components/staff";
 import { AuthProvider, useAuth } from "./auth";
 import { SignupPage, LoginPage } from "./components/AuthPages";
 import { LandingPage } from "./components/LandingPage";
