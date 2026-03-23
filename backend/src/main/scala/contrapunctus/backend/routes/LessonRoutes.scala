@@ -47,13 +47,15 @@ object LessonRoutes:
               tsTop        <- c.get[Int]("tsTop")
               tsBottom     <- c.get[Int]("tsBottom")
               sopranoBeats <- c.get[Json]("sopranoBeats")
+              bassBeats    <- Right(c.get[Json]("bassBeats").toOption)
+              figuredBass  <- Right(c.get[Json]("figuredBass").toOption)
               sortOrder    <- c.get[Int]("sortOrder")
-            yield (title, description, difficulty, template, tonicIdx, scaleName, tsTop, tsBottom, sopranoBeats, sortOrder)
+            yield (title, description, difficulty, template, tonicIdx, scaleName, tsTop, tsBottom, sopranoBeats, bassBeats, figuredBass, sortOrder)
 
             result match
               case Left(err) => BadRequest(Json.obj("error" -> Json.fromString(err.getMessage)))
-              case Right((title, description, difficulty, template, tonicIdx, scaleName, tsTop, tsBottom, sopranoBeats, sortOrder)) =>
-                lessonService.create(title, description, difficulty, template, tonicIdx, scaleName, tsTop, tsBottom, sopranoBeats, sortOrder)
+              case Right((title, description, difficulty, template, tonicIdx, scaleName, tsTop, tsBottom, sopranoBeats, bassBeats, figuredBass, sortOrder)) =>
+                lessonService.create(title, description, difficulty, template, tonicIdx, scaleName, tsTop, tsBottom, sopranoBeats, bassBeats, figuredBass, sortOrder)
                   .flatMap(lesson => Created(lesson.asJson))
           }
         }
@@ -75,13 +77,15 @@ object LessonRoutes:
                   tsTop        <- c.get[Int]("tsTop")
                   tsBottom     <- c.get[Int]("tsBottom")
                   sopranoBeats <- c.get[Json]("sopranoBeats")
+                  bassBeats    <- Right(c.get[Json]("bassBeats").toOption)
+                  figuredBass  <- Right(c.get[Json]("figuredBass").toOption)
                   sortOrder    <- c.get[Int]("sortOrder")
-                yield (title, description, difficulty, template, tonicIdx, scaleName, tsTop, tsBottom, sopranoBeats, sortOrder)
+                yield (title, description, difficulty, template, tonicIdx, scaleName, tsTop, tsBottom, sopranoBeats, bassBeats, figuredBass, sortOrder)
 
                 result match
                   case Left(err) => BadRequest(Json.obj("error" -> Json.fromString(err.getMessage)))
-                  case Right((title, description, difficulty, template, tonicIdx, scaleName, tsTop, tsBottom, sopranoBeats, sortOrder)) =>
-                    lessonService.update(uuid, title, description, difficulty, template, tonicIdx, scaleName, tsTop, tsBottom, sopranoBeats, sortOrder)
+                  case Right((title, description, difficulty, template, tonicIdx, scaleName, tsTop, tsBottom, sopranoBeats, bassBeats, figuredBass, sortOrder)) =>
+                    lessonService.update(uuid, title, description, difficulty, template, tonicIdx, scaleName, tsTop, tsBottom, sopranoBeats, bassBeats, figuredBass, sortOrder)
                       .flatMap(lesson => Ok(lesson.asJson))
               }
           }

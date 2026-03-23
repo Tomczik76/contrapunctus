@@ -17,6 +17,8 @@ case class Lesson(
   tsTop: Int,
   tsBottom: Int,
   sopranoBeats: Json,
+  bassBeats: Option[Json],
+  figuredBass: Option[Json],
   sortOrder: Int,
   createdAt: OffsetDateTime
 )

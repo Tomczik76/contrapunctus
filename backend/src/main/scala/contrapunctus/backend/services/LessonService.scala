@@ -13,10 +13,10 @@ trait LessonService:
   def get(id: UUID): IO[Option[Lesson]]
   def create(title: String, description: String, difficulty: String, template: String,
              tonicIdx: Int, scaleName: String, tsTop: Int, tsBottom: Int,
-             sopranoBeats: Json, sortOrder: Int): IO[Lesson]
+             sopranoBeats: Json, bassBeats: Option[Json], figuredBass: Option[Json], sortOrder: Int): IO[Lesson]
   def update(id: UUID, title: String, description: String, difficulty: String, template: String,
              tonicIdx: Int, scaleName: String, tsTop: Int, tsBottom: Int,
-             sopranoBeats: Json, sortOrder: Int): IO[Lesson]
+             sopranoBeats: Json, bassBeats: Option[Json], figuredBass: Option[Json], sortOrder: Int): IO[Lesson]
   def delete(id: UUID): IO[Unit]
 
 object LessonService:
@@ -30,13 +30,13 @@ object LessonService:
 
       def create(title: String, description: String, difficulty: String, template: String,
                  tonicIdx: Int, scaleName: String, tsTop: Int, tsBottom: Int,
-                 sopranoBeats: Json, sortOrder: Int): IO[Lesson] =
-        pool.use(_.unique(Lessons.insert)((title, description, difficulty, template, tonicIdx, scaleName, tsTop, tsBottom, sopranoBeats, sortOrder)))
+                 sopranoBeats: Json, bassBeats: Option[Json], figuredBass: Option[Json], sortOrder: Int): IO[Lesson] =
+        pool.use(_.unique(Lessons.insert)((title, description, difficulty, template, tonicIdx, scaleName, tsTop, tsBottom, sopranoBeats, bassBeats, figuredBass, sortOrder)))
 
       def update(id: UUID, title: String, description: String, difficulty: String, template: String,
                  tonicIdx: Int, scaleName: String, tsTop: Int, tsBottom: Int,
-                 sopranoBeats: Json, sortOrder: Int): IO[Lesson] =
-        pool.use(_.unique(Lessons.update)((title, description, difficulty, template, tonicIdx, scaleName, tsTop, tsBottom, sopranoBeats, sortOrder, id)))
+                 sopranoBeats: Json, bassBeats: Option[Json], figuredBass: Option[Json], sortOrder: Int): IO[Lesson] =
+        pool.use(_.unique(Lessons.update)((title, description, difficulty, template, tonicIdx, scaleName, tsTop, tsBottom, sopranoBeats, bassBeats, figuredBass, sortOrder, id)))
 
       def delete(id: UUID): IO[Unit] =
         pool.use(_.execute(Lessons.delete)(id)).void

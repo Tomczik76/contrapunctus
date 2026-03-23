@@ -12,8 +12,12 @@ export interface Lesson {
   scaleName: string;
   tsTop: number;
   tsBottom: number;
-  /** Pre-filled soprano melody on the treble staff. */
+  /** Pre-filled soprano melody on the treble staff (harmonize_melody template). */
   sopranoBeats: PlacedBeat[];
+  /** Pre-filled bass line (figured_bass template). */
+  bassBeats?: PlacedBeat[];
+  /** Figured bass figures per beat index, e.g. ["6"], ["6","4"], ["7"] (figured_bass template). */
+  figuredBass?: string[][];
   sortOrder: number;
 }
 

@@ -87,6 +87,8 @@ export function LessonPage() {
 
   const lessonConfig: LessonConfig = {
     lockedTrebleBeats: lesson.sopranoBeats,
+    lockedBassBeats: lesson.bassBeats,
+    figuredBass: lesson.figuredBass,
     tonicIdx: lesson.tonicIdx,
     scaleName: lesson.scaleName,
     tsTop: lesson.tsTop,
@@ -95,32 +97,48 @@ export function LessonPage() {
     onRomansComputed,
     onStudentRomansChanged,
     onBeatsChanged,
+    checked,
   };
 
-  // Check completeness: every soprano beat needs notes in both treble and bass
-  const incompleteBeatCount = lesson.sopranoBeats.length;
+  // Check completeness
+  const isFiguredBass = lesson.template === "figured_bass";
+  // For figured bass, only check beats where the locked bass has actual notes
+  const lockedBeats = isFiguredBass ? (lesson.bassBeats ?? []) : lesson.sopranoBeats;
+  const checkIndices: number[] = [];
+  for (let i = 0; i < lockedBeats.length; i++) {
+    const b = lockedBeats[i];
+    if (!b.isRest && b.notes.length > 0) checkIndices.push(i);
+  }
+
   const missingVoices: string[] = [];
   if (checked) {
-    for (let i = 0; i < incompleteBeatCount; i++) {
+    for (const i of checkIndices) {
       const tb = trebleBeats[i];
       const bb = bassBeats[i];
-      // Treble should have at least 2 notes (soprano + alto)
       const trebleNotes = tb && !tb.isRest ? tb.notes.length : 0;
       const bassNotes = bb && !bb.isRest ? bb.notes.length : 0;
-      if (trebleNotes < 2) {
-        missingVoices.push(`Beat ${(i % (lesson.tsTop)) + 1}, m. ${Math.floor(i / lesson.tsTop) + 1}: missing alto`);
-      }
-      if (bassNotes < 2) {
-        missingVoices.push(`Beat ${(i % (lesson.tsTop)) + 1}, m. ${Math.floor(i / lesson.tsTop) + 1}: missing tenor or bass`);
-      } else if (bassNotes < 1) {
-        missingVoices.push(`Beat ${(i % (lesson.tsTop)) + 1}, m. ${Math.floor(i / lesson.tsTop) + 1}: missing bass voices`);
+      const beatLabel = `Beat ${(i % lesson.tsTop) + 1}, m. ${Math.floor(i / lesson.tsTop) + 1}`;
+      if (isFiguredBass) {
+        if (trebleNotes < 2) {
+          missingVoices.push(`${beatLabel}: missing soprano or alto`);
+        }
+        if (bassNotes < 2) {
+          missingVoices.push(`${beatLabel}: missing tenor`);
+        }
+      } else {
+        if (trebleNotes < 2) {
+          missingVoices.push(`${beatLabel}: missing alto`);
+        }
+        if (bassNotes < 2) {
+          missingVoices.push(`${beatLabel}: missing tenor or bass`);
+        }
       }
     }
     // Check RN entries
-    for (let i = 0; i < incompleteBeatCount; i++) {
+    for (const i of checkIndices) {
       const val = (studentRomans[i] ?? "").trim();
       if (!val) {
-        missingVoices.push(`Beat ${(i % (lesson.tsTop)) + 1}, m. ${Math.floor(i / lesson.tsTop) + 1}: missing roman numeral`);
+        missingVoices.push(`Beat ${(i % lesson.tsTop) + 1}, m. ${Math.floor(i / lesson.tsTop) + 1}: missing roman numeral`);
       }
     }
   }
@@ -159,134 +177,30 @@ export function LessonPage() {
         key={key}
         lessonConfig={lessonConfig}
         header={
-          <div style={{
-            display: "grid",
-            gridTemplateColumns: "1fr auto 1fr",
-            alignItems: "center",
-          }}>
-            <div style={{ display: "flex", alignItems: "center" }}>
-              <Link to="/lessons" style={{
-                fontSize: 13, color: theme.textMuted, textDecoration: "none",
-                display: "inline-flex", alignItems: "center", gap: 4,
+          <>
+            {/* Error summary panel — shown when checked and there are issues */}
+            {checked && !passed && (
+              <div style={{
+                padding: "10px 16px",
+                borderBottom: `1px solid ${theme.cardBorder}`,
+                maxHeight: 180,
+                overflowY: "auto",
+                fontSize: 13,
               }}>
-                <span style={{ fontSize: 16 }}>&larr;</span> Lessons
-              </Link>
-            </div>
-            <span style={{ fontSize: 14, fontWeight: 600, color: "inherit", textAlign: "center", whiteSpace: "nowrap" }}>
-              {lesson.title}
-            </span>
-            <div style={{ display: "flex", alignItems: "center", gap: 12, justifyContent: "flex-end" }}>
-              {!checked ? (
-                <button
-                  onClick={() => setChecked(true)}
-                  style={{
-                    padding: "6px 16px", fontSize: 13, fontWeight: 600, fontFamily: btnFont,
-                    background: dk ? "#e0ddd8" : "#1a1a1a",
-                    color: dk ? "#1a1a1e" : "#fff",
-                    border: "none", borderRadius: 6, cursor: "pointer",
-                  }}
-                >
-                  Check
-                </button>
-              ) : (
-                <>
-                  <span style={{
-                    fontSize: 13, fontWeight: 600,
-                    color: passed ? theme.successText : theme.errorText,
-                  }}>
-                    {passed ? "All correct!" : `${totalErrors} issue${totalErrors !== 1 ? "s" : ""}`}
-                  </span>
-                  <button
-                    onClick={() => setChecked(false)}
-                    style={{
-                      padding: "6px 16px", fontSize: 13, fontWeight: 600, fontFamily: btnFont,
-                      background: "none", color: "inherit",
-                      border: `1px solid ${theme.cardBorder}`, borderRadius: 6, cursor: "pointer",
-                    }}
-                  >
-                    Keep Editing
-                  </button>
-                  <button
-                    onClick={() => { setChecked(false); setKey((k) => k + 1); }}
-                    style={{
-                      padding: "6px 16px", fontSize: 13, fontWeight: 600, fontFamily: btnFont,
-                      background: dk ? "#e0ddd8" : "#1a1a1a",
-                      color: dk ? "#1a1a1e" : "#fff",
-                      border: "none", borderRadius: 6, cursor: "pointer",
-                    }}
-                  >
-                    Try Again
-                  </button>
-                </>
-              )}
-              <span style={{ fontSize: 13, opacity: 0.6 }}>{user?.displayName}</span>
-              <button
-                onClick={logout}
-                style={{
-                  padding: 0, fontSize: 12, background: "none", border: "none",
-                  opacity: 0.6, color: "inherit", cursor: "pointer", fontFamily: btnFont,
-                  textDecoration: "underline", textUnderlineOffset: 2,
-                }}
-                onMouseEnter={e => (e.currentTarget.style.opacity = "0.85")}
-                onMouseLeave={e => (e.currentTarget.style.opacity = "0.6")}
-              >
-                Sign out
-              </button>
-            </div>
-          </div>
-        }
-      />
-
-      {/* Results overlay */}
-      {checked && (
-        <div style={{
-          position: "fixed",
-          top: 0, left: 0, right: 0, bottom: 0,
-          background: "rgba(0,0,0,0.4)",
-          display: "flex", alignItems: "center", justifyContent: "center",
-          zIndex: 1000,
-        }}
-          onClick={() => setChecked(false)}
-        >
-          <div
-            style={{
-              background: theme.cardBg,
-              borderRadius: 12, padding: "32px",
-              maxWidth: 520, width: "90%", maxHeight: "80vh", overflowY: "auto",
-              color: theme.text,
-              border: `2px solid ${passed ? theme.successBorder : theme.errorBorder}`,
-            }}
-            onClick={(e) => e.stopPropagation()}
-          >
-            {passed ? (
-              <>
-                <h2 style={{ fontSize: 20, fontWeight: 700, marginBottom: 8, color: theme.successText }}>
-                  All correct!
-                </h2>
-                <p style={{ fontSize: 14, color: theme.textSub, marginBottom: 24, lineHeight: 1.5 }}>
-                  Your harmonization and roman numeral analysis are both correct. Well done!
-                </p>
-              </>
-            ) : (
-              <>
-                <h2 style={{ fontSize: 20, fontWeight: 700, marginBottom: 16, color: theme.errorText }}>
-                  {totalErrors} issue{totalErrors !== 1 ? "s" : ""} found
-                </h2>
-
-                {/* Missing voices / RN entries */}
+                {/* Incomplete */}
                 {missingVoices.length > 0 && (
-                  <div style={{ marginBottom: 20 }}>
-                    <h3 style={{ fontSize: 14, fontWeight: 700, marginBottom: 8, color: theme.textMuted }}>
+                  <div style={{ marginBottom: rnErrors.length > 0 || partWritingErrors.length > 0 ? 10 : 0 }}>
+                    <span style={{ fontWeight: 700, fontSize: 12, color: theme.textMuted }}>
                       Incomplete ({missingVoices.length})
-                    </h3>
-                    <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                    </span>
+                    <div style={{ display: "flex", flexWrap: "wrap", gap: 4, marginTop: 4 }}>
                       {missingVoices.map((msg, i) => (
-                        <div key={i} style={{
-                          fontSize: 13, padding: "8px 12px", borderRadius: 6,
+                        <span key={i} style={{
+                          padding: "3px 8px", borderRadius: 4, fontSize: 12,
                           background: dk ? "rgba(160,160,160,0.12)" : "rgba(0,0,0,0.04)",
                         }}>
                           {msg}
-                        </div>
+                        </span>
                       ))}
                     </div>
                   </div>
@@ -294,22 +208,18 @@ export function LessonPage() {
 
                 {/* RN errors */}
                 {rnErrors.length > 0 && (
-                  <div style={{ marginBottom: 20 }}>
-                    <h3 style={{ fontSize: 14, fontWeight: 700, marginBottom: 8, color: theme.warnText }}>
+                  <div style={{ marginBottom: partWritingErrors.length > 0 ? 10 : 0 }}>
+                    <span style={{ fontWeight: 700, fontSize: 12, color: theme.warnText }}>
                       Roman Numeral Analysis ({rnErrors.length})
-                    </h3>
-                    <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                    </span>
+                    <div style={{ display: "flex", flexWrap: "wrap", gap: 4, marginTop: 4 }}>
                       {rnErrors.map((r, i) => (
-                        <div key={i} style={{
-                          fontSize: 13, padding: "8px 12px", borderRadius: 6,
+                        <span key={i} style={{
+                          padding: "3px 8px", borderRadius: 4, fontSize: 12,
                           background: theme.warnBg,
-                          display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8,
                         }}>
-                          <span>
-                            Beat {r.beat + 1}: you wrote <strong style={{ fontFamily: "serif", fontStyle: "italic" }}>{r.student}</strong>,
-                            expected <strong style={{ fontFamily: "serif", fontStyle: "italic" }}>{r.expected}</strong>
-                          </span>
-                        </div>
+                          Beat {r.beat + 1}: <em>{r.student}</em> &rarr; <em>{r.expected}</em>
+                        </span>
                       ))}
                     </div>
                   </div>
@@ -317,66 +227,124 @@ export function LessonPage() {
 
                 {/* Part-writing errors */}
                 {partWritingErrors.length > 0 && (
-                  <div style={{ marginBottom: 20 }}>
-                    <h3 style={{ fontSize: 14, fontWeight: 700, marginBottom: 8, color: theme.errorText }}>
-                      Part-Writing Errors ({partWritingErrors.length})
-                    </h3>
-                    <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                  <div>
+                    <span style={{ fontWeight: 700, fontSize: 12, color: theme.errorText }}>
+                      Part-Writing ({partWritingErrors.length})
+                    </span>
+                    <div style={{ display: "flex", flexWrap: "wrap", gap: 4, marginTop: 4 }}>
                       {partWritingErrors.map((err, i) => (
-                        <div key={i} style={{
-                          fontSize: 13, padding: "8px 12px", borderRadius: 6,
+                        <span key={i} style={{
+                          padding: "3px 8px", borderRadius: 4, fontSize: 12,
                           background: theme.errorBg,
-                          display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8,
                         }}>
-                          <span style={{ fontWeight: 600 }}>{err.fullName}</span>
-                          <span style={{ color: theme.textMuted, fontSize: 12, whiteSpace: "nowrap" }}>{err.location}</span>
-                        </div>
+                          <strong>{err.fullName}</strong>
+                          <span style={{ color: theme.textMuted, marginLeft: 6, fontSize: 11 }}>{err.location}</span>
+                        </span>
                       ))}
                     </div>
                   </div>
                 )}
-              </>
+              </div>
             )}
 
-            <div style={{ display: "flex", gap: 12, justifyContent: "flex-end" }}>
-              {!passed && (
-                <button
-                  onClick={() => setChecked(false)}
-                  style={{
-                    padding: "8px 20px", fontSize: 13, fontWeight: 600, fontFamily: btnFont,
-                    background: "none", color: "inherit",
-                    border: `1px solid ${theme.cardBorder}`, borderRadius: 6, cursor: "pointer",
-                  }}
-                >
-                  Keep Editing
-                </button>
-              )}
-              <button
-                onClick={() => { setChecked(false); setKey((k) => k + 1); }}
-                style={{
-                  padding: "8px 20px", fontSize: 13, fontWeight: 600, fontFamily: btnFont,
-                  background: dk ? "#e0ddd8" : "#1a1a1a",
-                  color: dk ? "#1a1a1e" : "#fff",
-                  border: "none", borderRadius: 6, cursor: "pointer",
-                }}
-              >
-                {passed ? "Try Again" : "Reset & Try Again"}
-              </button>
-              {passed && (
+            {/* Success banner */}
+            {checked && passed && (
+              <div style={{
+                padding: "10px 16px",
+                borderBottom: `1px solid ${theme.successBorder}`,
+                background: theme.successBg,
+                textAlign: "center",
+                fontSize: 14, fontWeight: 600, color: theme.successText,
+              }}>
+                All correct! Your harmonization and roman numeral analysis are both correct.
+              </div>
+            )}
+
+            {/* Bottom bar */}
+            <div style={{
+              display: "grid",
+              gridTemplateColumns: "1fr auto 1fr",
+              alignItems: "center",
+              padding: "12px 0",
+            }}>
+              <div style={{ display: "flex", alignItems: "center" }}>
                 <Link to="/lessons" style={{
-                  padding: "8px 20px", fontSize: 13, fontWeight: 600, fontFamily: btnFont,
-                  background: "none", color: "inherit",
-                  border: `1px solid ${theme.cardBorder}`,
-                  borderRadius: 6, textDecoration: "none",
-                  display: "inline-flex", alignItems: "center",
+                  fontSize: 13, color: theme.textMuted, textDecoration: "none",
+                  display: "inline-flex", alignItems: "center", gap: 4,
                 }}>
-                  Back to Lessons
+                  <span style={{ fontSize: 16 }}>&larr;</span> Lessons
                 </Link>
-              )}
+              </div>
+              <span style={{ fontSize: 14, fontWeight: 600, color: "inherit", textAlign: "center", whiteSpace: "nowrap" }}>
+                {lesson.title}
+              </span>
+              <div style={{ display: "flex", alignItems: "center", gap: 12, justifyContent: "flex-end" }}>
+                {!checked ? (
+                  <button
+                    onClick={() => setChecked(true)}
+                    style={{
+                      padding: "6px 16px", fontSize: 13, fontWeight: 600, fontFamily: btnFont,
+                      background: dk ? "#e0ddd8" : "#1a1a1a",
+                      color: dk ? "#1a1a1e" : "#fff",
+                      border: "none", borderRadius: 6, cursor: "pointer",
+                    }}
+                  >
+                    Check
+                  </button>
+                ) : (
+                  <>
+                    <button
+                      onClick={() => setChecked(false)}
+                      style={{
+                        padding: "6px 16px", fontSize: 13, fontWeight: 600, fontFamily: btnFont,
+                        background: "none", color: "inherit",
+                        border: `1px solid ${theme.cardBorder}`, borderRadius: 6, cursor: "pointer",
+                      }}
+                    >
+                      Keep Editing
+                    </button>
+                    <button
+                      onClick={() => { setChecked(false); setKey((k) => k + 1); }}
+                      style={{
+                        padding: "6px 16px", fontSize: 13, fontWeight: 600, fontFamily: btnFont,
+                        background: dk ? "#e0ddd8" : "#1a1a1a",
+                        color: dk ? "#1a1a1e" : "#fff",
+                        border: "none", borderRadius: 6, cursor: "pointer",
+                      }}
+                    >
+                      Try Again
+                    </button>
+                    {passed && (
+                      <Link to="/lessons" style={{
+                        padding: "6px 16px", fontSize: 13, fontWeight: 600, fontFamily: btnFont,
+                        background: "none", color: "inherit",
+                        border: `1px solid ${theme.cardBorder}`,
+                        borderRadius: 6, textDecoration: "none",
+                        display: "inline-flex", alignItems: "center",
+                      }}>
+                        Next
+                      </Link>
+                    )}
+                  </>
+                )}
+                <span style={{ fontSize: 13, opacity: 0.6 }}>{user?.displayName}</span>
+                <button
+                  onClick={logout}
+                  style={{
+                    padding: 0, fontSize: 12, background: "none", border: "none",
+                    opacity: 0.6, color: "inherit", cursor: "pointer", fontFamily: btnFont,
+                    textDecoration: "underline", textUnderlineOffset: 2,
+                  }}
+                  onMouseEnter={e => (e.currentTarget.style.opacity = "0.85")}
+                  onMouseLeave={e => (e.currentTarget.style.opacity = "0.6")}
+                >
+                  Sign out
+                </button>
+              </div>
             </div>
-          </div>
-        </div>
-      )}
+          </>
+        }
+      />
     </div>
   );
 }

@@ -35,6 +35,8 @@ interface AdminLesson {
   tsTop: number;
   tsBottom: number;
   sopranoBeats: unknown;
+  bassBeats: unknown;
+  figuredBass: unknown;
   sortOrder: number;
   createdAt: string;
 }
@@ -452,28 +454,45 @@ function LessonForm({
   const [sopranoBeats, setSopranoBeats] = useState<PlacedBeat[]>(
     lesson ? (lesson.sopranoBeats as PlacedBeat[]) : []
   );
+  const [bassBeats, setBassBeats] = useState<PlacedBeat[]>(
+    lesson?.bassBeats ? (lesson.bassBeats as PlacedBeat[]) : []
+  );
+  const [figuredBass, setFiguredBass] = useState<string[][]>(
+    lesson?.figuredBass ? (lesson.figuredBass as string[][]) : []
+  );
   const [sortOrder, setSortOrder] = useState(lesson?.sortOrder ?? 0);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
   const [showJson, setShowJson] = useState(false);
   const [editorKey, setEditorKey] = useState(0);
+  const [bassEditorKey, setBassEditorKey] = useState(100);
+
+  const isFiguredBass = template === "figured_bass";
 
   const handleTrebleBeatsChanged = useCallback((beats: PlacedBeat[]) => {
-    // Only keep non-rest beats with actual notes as the soprano melody
-    const soprano = beats.filter((b) => !b.isRest && b.notes.length > 0);
     setSopranoBeats(beats);
+  }, []);
+
+  const handleBassBeatsChanged = useCallback((beats: PlacedBeat[]) => {
+    setBassBeats(beats);
   }, []);
 
   async function handleSubmit() {
     if (!title.trim()) { setError("Title is required"); return; }
     if (!description.trim()) { setError("Description is required"); return; }
-    const validBeats = sopranoBeats.filter((b) => !b.isRest && b.notes.length > 0);
-    if (validBeats.length === 0) { setError("Write at least one note for the soprano melody"); return; }
+
+    if (isFiguredBass) {
+      const validBass = bassBeats.filter((b) => !b.isRest && b.notes.length > 0);
+      if (validBass.length === 0) { setError("Write at least one note for the bass line"); return; }
+    } else {
+      const validBeats = sopranoBeats.filter((b) => !b.isRest && b.notes.length > 0);
+      if (validBeats.length === 0) { setError("Write at least one note for the soprano melody"); return; }
+    }
 
     setSaving(true);
     setError("");
 
-    const body = {
+    const body: Record<string, unknown> = {
       title: title.trim(),
       description: description.trim(),
       difficulty,
@@ -482,9 +501,14 @@ function LessonForm({
       scaleName,
       tsTop,
       tsBottom,
-      sopranoBeats,
+      sopranoBeats: isFiguredBass ? [] : sopranoBeats,
       sortOrder,
     };
+
+    if (isFiguredBass) {
+      body.bassBeats = bassBeats;
+      body.figuredBass = figuredBass;
+    }
 
     const url = isEdit
       ? `${API_BASE}/api/admin/lessons/${lesson!.id}`
@@ -530,6 +554,7 @@ function LessonForm({
           <label style={labelStyle}>Template</label>
           <select value={template} onChange={(e) => setTemplate(e.target.value)} style={inputStyle}>
             <option value="harmonize_melody">Harmonize a Melody</option>
+            <option value="figured_bass">Figured Bass</option>
           </select>
         </div>
 
@@ -594,49 +619,98 @@ function LessonForm({
           </div>
         </div>
 
-        {/* Soprano Melody Editor */}
-        <div>
-          <label style={labelStyle}>Soprano Melody</label>
-          <div style={{ fontSize: 12, color: "#888", marginBottom: 8 }}>
-            Write the soprano melody on the treble staff below. Only treble notes will be used.
-            {sopranoBeats.filter((b) => !b.isRest && b.notes.length > 0).length > 0 && (
-              <span style={{ marginLeft: 8, color: "#333", fontWeight: 600 }}>
-                {sopranoBeats.filter((b) => !b.isRest && b.notes.length > 0).length} beats
-              </span>
-            )}
+        {/* Soprano Melody Editor (harmonize_melody) */}
+        {!isFiguredBass && (
+          <div>
+            <label style={labelStyle}>Soprano Melody</label>
+            <div style={{ fontSize: 12, color: "#888", marginBottom: 8 }}>
+              Write the soprano melody on the treble staff below. Only treble notes will be used.
+              {sopranoBeats.filter((b) => !b.isRest && b.notes.length > 0).length > 0 && (
+                <span style={{ marginLeft: 8, color: "#333", fontWeight: 600 }}>
+                  {sopranoBeats.filter((b) => !b.isRest && b.notes.length > 0).length} beats
+                </span>
+              )}
+            </div>
+            <div style={{
+              border: "1px solid #ccc", borderRadius: 6, overflow: "hidden",
+              height: 700, position: "relative",
+            }}>
+              <NoteEditor
+                key={editorKey}
+                onTrebleBeatsChanged={handleTrebleBeatsChanged}
+                initialTonicIdx={tonicIdx}
+                initialScaleName={scaleName}
+                initialTsTop={tsTop}
+                initialTsBottom={tsBottom}
+                initialTrebleBeats={sopranoBeats.length > 0 ? sopranoBeats : undefined}
+              />
+            </div>
+            <div style={{ marginTop: 8 }}>
+              <button
+                onClick={() => setShowJson(!showJson)}
+                style={{ padding: "3px 8px", fontSize: 11, background: "none", border: "1px solid #ddd", borderRadius: 3, cursor: "pointer", color: "#888" }}
+              >
+                {showJson ? "Hide" : "Show"} JSON
+              </button>
+              {showJson && (
+                <pre style={{
+                  marginTop: 6, padding: 10, background: "#f8f8f8", borderRadius: 4,
+                  fontSize: 11, fontFamily: "monospace", maxHeight: 200, overflow: "auto",
+                  border: "1px solid #eee",
+                }}>
+                  {JSON.stringify(sopranoBeats, null, 2)}
+                </pre>
+              )}
+            </div>
           </div>
-          <div style={{
-            border: "1px solid #ccc", borderRadius: 6, overflow: "hidden",
-            height: 700, position: "relative",
-          }}>
-            <NoteEditor
-              key={editorKey}
-              onTrebleBeatsChanged={handleTrebleBeatsChanged}
-              initialTonicIdx={tonicIdx}
-              initialScaleName={scaleName}
-              initialTsTop={tsTop}
-              initialTsBottom={tsBottom}
-              initialTrebleBeats={sopranoBeats.length > 0 ? sopranoBeats : undefined}
-            />
+        )}
+
+        {/* Bass Line + Figured Bass (figured_bass template) */}
+        {isFiguredBass && (
+          <div>
+            <label style={labelStyle}>Bass Line</label>
+            <div style={{ fontSize: 12, color: "#888", marginBottom: 8, lineHeight: 1.6 }}>
+              Write the bass line on the bass staff below. An input box appears under each note for figured bass numbers.
+              Enter numbers separated by commas (e.g. <strong>6,4</strong> for <sup>6</sup><sub>4</sub>).
+              Leave empty for root position.
+              Students will see the bass line and figures, and must identify the roman numerals.
+            </div>
+            <div style={{
+              border: "1px solid #ccc", borderRadius: 6, overflow: "hidden",
+              height: 700, position: "relative",
+            }}>
+              <NoteEditor
+                key={bassEditorKey}
+                onBassBeatsChanged={handleBassBeatsChanged}
+                figuredBassValues={figuredBass}
+                onFiguredBassChanged={setFiguredBass}
+                initialTonicIdx={tonicIdx}
+                initialScaleName={scaleName}
+                initialTsTop={tsTop}
+                initialTsBottom={tsBottom}
+                initialBassBeats={bassBeats.length > 0 ? bassBeats : undefined}
+              />
+            </div>
+
+            <div style={{ marginTop: 8 }}>
+              <button
+                onClick={() => setShowJson(!showJson)}
+                style={{ padding: "3px 8px", fontSize: 11, background: "none", border: "1px solid #ddd", borderRadius: 3, cursor: "pointer", color: "#888" }}
+              >
+                {showJson ? "Hide" : "Show"} JSON
+              </button>
+              {showJson && (
+                <pre style={{
+                  marginTop: 6, padding: 10, background: "#f8f8f8", borderRadius: 4,
+                  fontSize: 11, fontFamily: "monospace", maxHeight: 200, overflow: "auto",
+                  border: "1px solid #eee",
+                }}>
+                  {JSON.stringify({ bassBeats, figuredBass }, null, 2)}
+                </pre>
+              )}
+            </div>
           </div>
-          <div style={{ marginTop: 8 }}>
-            <button
-              onClick={() => setShowJson(!showJson)}
-              style={{ padding: "3px 8px", fontSize: 11, background: "none", border: "1px solid #ddd", borderRadius: 3, cursor: "pointer", color: "#888" }}
-            >
-              {showJson ? "Hide" : "Show"} JSON
-            </button>
-            {showJson && (
-              <pre style={{
-                marginTop: 6, padding: 10, background: "#f8f8f8", borderRadius: 4,
-                fontSize: 11, fontFamily: "monospace", maxHeight: 200, overflow: "auto",
-                border: "1px solid #eee",
-              }}>
-                {JSON.stringify(sopranoBeats, null, 2)}
-              </pre>
-            )}
-          </div>
-        </div>
+        )}
 
         {/* Submit */}
         <div style={{ display: "flex", gap: 12, justifyContent: "flex-end", marginTop: 8 }}>
@@ -659,3 +733,4 @@ function LessonForm({
     </div>
   );
 }
+

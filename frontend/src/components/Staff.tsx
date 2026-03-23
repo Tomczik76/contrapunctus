@@ -1033,6 +1033,10 @@ export interface LessonErrorItem {
 export interface LessonConfig {
   /** Pre-filled soprano melody on the treble staff (locked, not editable). */
   lockedTrebleBeats: PlacedBeat[];
+  /** Pre-filled bass line (locked, not editable). Used by figured_bass template. */
+  lockedBassBeats?: PlacedBeat[];
+  /** Figured bass figures per beat index. Displayed above the RN input area. */
+  figuredBass?: string[][];
   /** Key: index into TONIC_OPTIONS. */
   tonicIdx: number;
   /** Scale name (e.g. "major", "minor"). */
@@ -1048,6 +1052,8 @@ export interface LessonConfig {
   onStudentRomansChanged?: (studentRomans: Record<number, string>) => void;
   /** Called whenever beat state changes — reports treble and bass beats. */
   onBeatsChanged?: (treble: PlacedBeat[], bass: PlacedBeat[]) => void;
+  /** When true, show computed RN labels, NCT markers, and error markers on the score. */
+  checked?: boolean;
 }
 
 /**
@@ -1133,6 +1139,63 @@ function FormattedRn({ text, dark, invalid }: { text: string; dark: boolean; inv
 }
 
 /** Roman numeral input that shows formatted figured bass when not focused. */
+/** Figured bass edit input — stores raw text while typing, validates on blur. */
+function FbEditInput({ value, onChange, dark }: { value: string[]; onChange: (figures: string[]) => void; dark: boolean }) {
+  const [raw, setRaw] = useState(value.join(","));
+  const [focused, setFocused] = useState(false);
+
+  // Sync from parent when not focused
+  useEffect(() => {
+    if (!focused) setRaw(value.join(","));
+  }, [value, focused]);
+
+  function commit(text: string) {
+    const parts = text.split(",").map(s => s.trim()).filter(Boolean);
+    const valid = parts.filter(f => {
+      const n = parseInt(f, 10);
+      return !isNaN(n) && n >= 1 && n <= 13;
+    });
+    onChange(valid);
+    setRaw(valid.join(","));
+  }
+
+  return (
+    <input
+      type="text"
+      value={raw}
+      onChange={(e) => {
+        // Allow digits and commas while typing
+        const cleaned = e.target.value.replace(/[^0-9,]/g, "");
+        setRaw(cleaned);
+      }}
+      onFocus={() => setFocused(true)}
+      onBlur={(e) => {
+        setFocused(false);
+        commit(e.target.value);
+      }}
+      onKeyDown={(e) => {
+        if (e.key === "Enter") {
+          commit(raw);
+          (e.target as HTMLInputElement).blur();
+        }
+      }}
+      onMouseDown={(e) => e.stopPropagation()}
+      onClick={(e) => e.stopPropagation()}
+      placeholder=""
+      style={{
+        width: "100%", boxSizing: "border-box",
+        padding: "2px 4px", fontSize: 11, textAlign: "center",
+        border: `1px solid ${focused ? (dark ? "#888" : "#666") : (dark ? "#555" : "#ccc")}`,
+        borderRadius: 3,
+        background: dark ? "#2a2a30" : "#fff",
+        color: dark ? "#c8b8a0" : "#8b7355",
+        fontFamily: "serif", fontStyle: "italic",
+        outline: "none",
+      }}
+    />
+  );
+}
+
 function RnInput({ value, onChange, dark }: { value: string; onChange: (v: string) => void; dark: boolean }) {
   const [focused, setFocused] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
@@ -1271,6 +1334,12 @@ export interface NoteEditorProps {
   lessonConfig?: LessonConfig;
   /** Called whenever treble beats change (used by admin melody editor). */
   onTrebleBeatsChanged?: (beats: PlacedBeat[]) => void;
+  /** Called whenever bass beats change (used by admin figured bass editor). */
+  onBassBeatsChanged?: (beats: PlacedBeat[]) => void;
+  /** Current figured bass figures per beat index (admin editor). */
+  figuredBassValues?: string[][];
+  /** Called when figured bass input changes (admin editor). */
+  onFiguredBassChanged?: (fb: string[][]) => void;
   /** If true, hide bass staff and only allow treble editing. */
   trebleOnly?: boolean;
   /** Override initial tonic index. */
@@ -1283,10 +1352,12 @@ export interface NoteEditorProps {
   initialTsBottom?: number;
   /** Pre-populate treble beats (used when editing an existing lesson). */
   initialTrebleBeats?: PlacedBeat[];
+  /** Pre-populate bass beats (used when editing an existing figured bass lesson). */
+  initialBassBeats?: PlacedBeat[];
 }
 
-export function NoteEditor({ header, lessonConfig, onTrebleBeatsChanged, trebleOnly, initialTonicIdx, initialScaleName, initialTsTop, initialTsBottom, initialTrebleBeats }: NoteEditorProps) {
-  const embedded = !!onTrebleBeatsChanged;
+export function NoteEditor({ header, lessonConfig, onTrebleBeatsChanged, onBassBeatsChanged, figuredBassValues, onFiguredBassChanged, trebleOnly, initialTonicIdx, initialScaleName, initialTsTop, initialTsBottom, initialTrebleBeats, initialBassBeats }: NoteEditorProps) {
+  const embedded = !!(onTrebleBeatsChanged || onBassBeatsChanged);
   const { token } = useAuth();
   // ── LocalStorage persistence ──────────────────────────────────────
   const STORAGE_KEY = "contrapunctus_state";
@@ -1306,7 +1377,7 @@ export function NoteEditor({ header, lessonConfig, onTrebleBeatsChanged, trebleO
     return null;
   }
 
-  const saved = useRef(lessonConfig || onTrebleBeatsChanged ? null : loadSaved());
+  const saved = useRef(lessonConfig || onTrebleBeatsChanged || onBassBeatsChanged ? null : loadSaved());
 
   const [selectedDuration, setSelectedDuration] = useState<Duration>("quarter");
   const [selectedAccidental, setSelectedAccidental] = useState<Accidental>("");
@@ -1318,10 +1389,18 @@ export function NoteEditor({ header, lessonConfig, onTrebleBeatsChanged, trebleO
 
   // Independent beat arrays for each staff
   const initRests = () => fillWithRests((lessonConfig?.tsTop ?? initialTsTop ?? 4) / (lessonConfig?.tsBottom ?? initialTsBottom ?? 4));
-  const [trebleBeats, setTrebleBeatsRaw] = useState<PlacedBeat[]>(
-    lessonConfig ? lessonConfig.lockedTrebleBeats : (initialTrebleBeats ?? saved.current?.trebleBeats ?? initRests)
+  const initTreble = (): PlacedBeat[] => {
+    if (!lessonConfig) return initialTrebleBeats ?? saved.current?.trebleBeats ?? initRests();
+    // For figured bass lessons, lockedTrebleBeats is [] — init treble rests to match bass beat count
+    if (lessonConfig.lockedTrebleBeats.length === 0 && lessonConfig.lockedBassBeats && lessonConfig.lockedBassBeats.length > 0) {
+      return lessonConfig.lockedBassBeats.map(b => ({ notes: [], duration: b.duration, isRest: true }));
+    }
+    return lessonConfig.lockedTrebleBeats;
+  };
+  const [trebleBeats, setTrebleBeatsRaw] = useState<PlacedBeat[]>(initTreble);
+  const [bassBeats, setBassBeatsRaw] = useState<PlacedBeat[]>(
+    lessonConfig?.lockedBassBeats ?? initialBassBeats ?? saved.current?.bassBeats ?? initRests()
   );
-  const [bassBeats, setBassBeatsRaw] = useState<PlacedBeat[]>(saved.current?.bassBeats ?? initRests);
 
   // Undo/redo history: snapshots of [trebleBeats, bassBeats]
   type Snapshot = [PlacedBeat[], PlacedBeat[]];
@@ -1390,7 +1469,7 @@ export function NoteEditor({ header, lessonConfig, onTrebleBeatsChanged, trebleO
 
   // Save state to localStorage on changes (skip in lesson mode and admin embed)
   useEffect(() => {
-    if (lessonConfig || onTrebleBeatsChanged) return;
+    if (lessonConfig || onTrebleBeatsChanged || onBassBeatsChanged) return;
     localStorage.setItem(STORAGE_KEY, JSON.stringify({
       trebleBeats, bassBeats, tsTop, tsBottom, tonicIdx, scaleName,
     }));
@@ -1558,8 +1637,14 @@ export function NoteEditor({ header, lessonConfig, onTrebleBeatsChanged, trebleO
 
   const { systems, barlines: barlineData, systemCount } = systemLayout;
   const staffW = systemLayout.staffW;
-  const [showErrors, setShowErrors] = useState(false);
-  const RN_SPACE = showErrors ? 48 : 32;
+  const [showErrorsRaw, setShowErrors] = useState(false);
+  const showErrors = lessonConfig?.checked || showErrorsRaw;
+  const maxFBFigures = lessonConfig?.figuredBass
+    ? Math.max(0, ...lessonConfig.figuredBass.map(f => f?.length ?? 0))
+    : 0;
+  const FB_EXTRA = maxFBFigures > 1 ? maxFBFigures * 12 + 4 : maxFBFigures === 1 ? 20 : 0;
+  const FB_EDIT_EXTRA = onFiguredBassChanged ? 32 : 0;
+  const RN_SPACE = (showErrors ? 48 : 32) + FB_EXTRA + FB_EDIT_EXTRA;
   const systemTotalHeight = staffHeight + RN_SPACE + SYSTEM_GAP_V;
   const svgHeight = systemCount * systemTotalHeight - SYSTEM_GAP_V;
 
@@ -1808,12 +1893,20 @@ export function NoteEditor({ header, lessonConfig, onTrebleBeatsChanged, trebleO
     }
   }, [trebleBeats, onTrebleBeatsChanged]);
 
+  // Expose bass beats to external consumer (admin figured bass editor)
+  useEffect(() => {
+    if (onBassBeatsChanged) {
+      onBassBeatsChanged(bassBeats);
+    }
+  }, [bassBeats, onBassBeatsChanged]);
+
   const [errorPanelOpen, setErrorPanelOpen] = useState(false);
   const [highlightedBeat, setHighlightedBeat] = useState<number | null>(null);
 
   const [rnSelections, setRnSelections] = useState<Record<number, number>>({});
   const [openRnDropdown, setOpenRnDropdown] = useState<number | null>(null);
-  const [showNct, setShowNct] = useState(false);
+  const [showNctRaw, setShowNct] = useState(false);
+  const showNct = lessonConfig?.checked || showNctRaw;
   const [labelMode, setLabelMode] = useState<"roman" | "chord">("roman");
   const [bugReportOpen, setBugReportOpen] = useState(false);
   const [bugReportDesc, setBugReportDesc] = useState("");
@@ -2281,10 +2374,17 @@ export function NoteEditor({ header, lessonConfig, onTrebleBeatsChanged, trebleO
   /** In lesson mode, check if a note at the given staff/beat/dp is locked (part of the given soprano). */
   const isLockedNote = useCallback((staff: "treble" | "bass", beatIdx: number, dp: number): boolean => {
     if (!lessonConfig) return false;
-    if (staff !== "treble") return false;
-    const locked = lessonConfig.lockedTrebleBeats[beatIdx];
-    if (!locked) return false;
-    return locked.notes.some((n) => n.dp === dp);
+    if (staff === "treble") {
+      const locked = lessonConfig.lockedTrebleBeats[beatIdx];
+      if (!locked) return false;
+      return locked.notes.some((n) => n.dp === dp);
+    }
+    if (staff === "bass" && lessonConfig.lockedBassBeats) {
+      const locked = lessonConfig.lockedBassBeats[beatIdx];
+      if (!locked) return false;
+      return locked.notes.some((n) => n.dp === dp);
+    }
+    return false;
   }, [lessonConfig]);
 
   const handleMouseDown = useCallback((e: React.MouseEvent<SVGSVGElement>) => {
@@ -3880,8 +3980,8 @@ export function NoteEditor({ header, lessonConfig, onTrebleBeatsChanged, trebleO
                 });
               })()}
 
-              {/* Roman numerals + chord errors */}
-              {!lessonConfig && allTimePoints.map((t, i) => {
+              {/* Roman numerals + chord errors (shown in normal mode and lesson checked mode) */}
+              {(!lessonConfig || lessonConfig.checked) && allTimePoints.map((t, i) => {
                 const rns = activeLabels[i];
                 const hasRn = hasRN && rns && rns.length > 0;
                 const beatChordErrs = timeToChordErrors.get(t);
@@ -3933,12 +4033,66 @@ export function NoteEditor({ header, lessonConfig, onTrebleBeatsChanged, trebleO
                 );
               })}
 
-              {/* Lesson mode: student RN input fields */}
-              {lessonConfig && allTimePoints.map((t, i) => {
+              {/* Figured bass labels (displayed above RN input area) */}
+              {lessonConfig?.figuredBass && !lessonConfig.checked && allTimePoints.map((t, i) => {
+                const figures = lessonConfig.figuredBass![i];
+                if (!figures || figures.length === 0) return null;
                 const pos = timeToPos.get(t);
                 if (!pos || pos.systemIdx !== sysIdx) return null;
                 const rx = pos.x;
-                const rnY = staffHeight + 4;
+                const fbY = staffHeight + 2;
+                return (
+                  <g key={`fb-${i}`}>
+                    {figures.length === 1 ? (
+                      <text x={rx} y={fbY + 14} fontSize={14}
+                        fontFamily="serif" fontStyle="italic" textAnchor="middle"
+                        fill={dk ? "#c8b8a0" : "#8b7355"}>
+                        {figures[0]}
+                      </text>
+                    ) : (
+                      figures.map((f, fi) => (
+                        <text key={fi} x={rx} y={fbY + 10 + fi * 12} fontSize={12}
+                          fontFamily="serif" fontStyle="italic" textAnchor="middle"
+                          fill={dk ? "#c8b8a0" : "#8b7355"}>
+                          {f}
+                        </text>
+                      ))
+                    )}
+                  </g>
+                );
+              })}
+
+              {/* Admin figured bass editing: input fields below each bass note */}
+              {onFiguredBassChanged && figuredBassValues && bassTimes.map((t, i) => {
+                const beat = bassBeats[i];
+                if (!beat || beat.isRest || beat.notes.length === 0) return null;
+                const pos = bassBeatPositions[i];
+                if (!pos || pos.sys !== sysIdx) return null;
+                const inputW = 48;
+                const inputH = 24;
+                const fbY = staffHeight + 4;
+                return (
+                  <foreignObject key={`fb-edit-${i}`} x={pos.x - inputW / 2} y={fbY} width={inputW} height={inputH}>
+                    <FbEditInput
+                      value={figuredBassValues[i] ?? []}
+                      onChange={(figures) => {
+                        const next = [...figuredBassValues];
+                        while (next.length <= i) next.push([]);
+                        next[i] = figures;
+                        onFiguredBassChanged(next);
+                      }}
+                      dark={dk}
+                    />
+                  </foreignObject>
+                );
+              })}
+
+              {/* Lesson mode: student RN input fields (hidden when checked — computed labels shown instead) */}
+              {lessonConfig && !lessonConfig.checked && allTimePoints.map((t, i) => {
+                const pos = timeToPos.get(t);
+                if (!pos || pos.systemIdx !== sysIdx) return null;
+                const rx = pos.x;
+                const rnY = staffHeight + 4 + FB_EXTRA;
                 const inputW = 56;
                 const inputH = 30;
                 return (
@@ -3953,7 +4107,7 @@ export function NoteEditor({ header, lessonConfig, onTrebleBeatsChanged, trebleO
               })}
 
               {/* Clickable areas to set playback start position — covers RN area + gap below bass staff */}
-              {!isPlaying && !isPaused && allTimePoints.map((t, i) => {
+              {!isPlaying && !isPaused && !onFiguredBassChanged && allTimePoints.map((t, i) => {
                 const pos = timeToPos.get(t);
                 if (!pos || pos.systemIdx !== sysIdx) return null;
                 const bassBotY = dpToY(ED_BASS_LINES[0], ED_BASS_TOP, bassYOffset);
@@ -4183,8 +4337,8 @@ export function NoteEditor({ header, lessonConfig, onTrebleBeatsChanged, trebleO
         position: "fixed", bottom: 0, left: 0, right: 0, zIndex: 100,
         background: dk ? "#222228" : "#f0ede9", borderTop: `1px solid ${theme.footerBorder}`, color: theme.text,
       }}>
-        {lessonConfig && <RnLegend dark={dk} />}
-        <div style={{ padding: "16px 24px", paddingTop: lessonConfig ? 8 : 16 }}>{header}</div>
+        {lessonConfig && !lessonConfig.checked && <RnLegend dark={dk} />}
+        <div style={{ padding: lessonConfig ? "0 24px" : "16px 24px" }}>{header}</div>
       </div>}
     </div>
   );
