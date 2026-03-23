@@ -634,18 +634,18 @@ function NoteHead({ note, x, staffTopDp, staffBotDp, yOffset, durationFraction, 
 
 // ── Note Editor ─────────────────────────────────────────────────────
 
-type Duration = "whole" | "half" | "quarter" | "eighth" | "sixteenth";
+export type Duration = "whole" | "half" | "quarter" | "eighth" | "sixteenth";
 
 /** A beat contains one or more notes (a chord) with a shared duration. */
-type Accidental = "" | "n" | "#" | "b";
+export type Accidental = "" | "n" | "#" | "b";
 
-interface PlacedNote {
+export interface PlacedNote {
   dp: number;
   staff: "treble" | "bass";
   accidental: Accidental;
 }
 
-interface PlacedBeat {
+export interface PlacedBeat {
   notes: PlacedNote[];
   duration: Duration;
   dotted?: boolean;
@@ -1021,7 +1021,252 @@ function NoteIcon({ duration, size }: { duration: Duration; size: number }) {
   );
 }
 
-export function NoteEditor({ header }: { header?: React.ReactNode }) {
+export interface LessonErrorItem {
+  beat: number;
+  measure: number;
+  beatInMeasure: number;
+  label: string;
+  fullName: string;
+  location: string;
+}
+
+export interface LessonConfig {
+  /** Pre-filled soprano melody on the treble staff (locked, not editable). */
+  lockedTrebleBeats: PlacedBeat[];
+  /** Key: index into TONIC_OPTIONS. */
+  tonicIdx: number;
+  /** Scale name (e.g. "major", "minor"). */
+  scaleName: string;
+  /** Time signature. */
+  tsTop: number;
+  tsBottom: number;
+  /** Called whenever error summary recomputes. */
+  onErrorsComputed?: (errors: LessonErrorItem[]) => void;
+  /** Called whenever computed roman numerals change. */
+  onRomansComputed?: (romans: string[][]) => void;
+  /** Called whenever student RN entries change. */
+  onStudentRomansChanged?: (studentRomans: Record<number, string>) => void;
+  /** Called whenever beat state changes — reports treble and bass beats. */
+  onBeatsChanged?: (treble: PlacedBeat[], bass: PlacedBeat[]) => void;
+}
+
+/**
+ * Parse a roman numeral string into its base label and figured bass figures.
+ * E.g. "V65" → { base: "V", figures: ["6","5"] }
+ *      "viio7" → { base: "vii°", figures: ["7"] }
+ *      "I64" → { base: "I", figures: ["6","4"] }
+ *      "IV" → { base: "IV", figures: [] }
+ */
+function parseRomanNumeral(raw: string): { base: string; figures: string[] } {
+  const s = raw.trim();
+  if (!s) return { base: "", figures: [] };
+
+  // Match the roman numeral part (possibly lowercase), optional quality markers (o, °, +, ø)
+  const rnMatch = s.match(/^([iIvV]+)(o|°|\+|ø)?/);
+  if (!rnMatch) return { base: s, figures: [] };
+
+  let base = rnMatch[1];
+  const quality = rnMatch[2] || "";
+  if (quality === "o") base += "°";
+  else if (quality) base += quality;
+
+  const rest = s.slice(rnMatch[0].length);
+
+  // The rest should be digits representing figured bass: "7", "6", "64", "65", "43", "42"
+  if (!rest || !/^\d+$/.test(rest)) {
+    // If rest has non-digit content, just append it
+    return { base: base + rest, figures: [] };
+  }
+
+  // Split digits into figure pairs based on common figured bass patterns
+  const figures: string[] = [];
+  if (rest.length === 1) {
+    figures.push(rest); // "7" or "6"
+  } else if (rest.length === 2) {
+    figures.push(rest[0], rest[1]); // "64" → ["6","4"], "65" → ["6","5"]
+  } else if (rest.length === 3) {
+    figures.push(rest[0], rest[1], rest[2]); // "642" → ["6","4","2"]
+  } else {
+    figures.push(rest);
+  }
+
+  return { base, figures };
+}
+
+/** Check if a roman numeral string is a valid RN label. */
+function isValidRomanNumeral(raw: string): boolean {
+  const s = raw.trim();
+  if (!s) return true; // empty is not invalid, just incomplete
+  // Match: optional accidental (b, #, N), roman numeral, optional quality, optional figures
+  return /^([b#]?)(N6|Ger6|Fr6|It6|[iIvV]+)(o|°|\+|ø)?(7|6|64|65|43|42)?$/.test(s);
+}
+
+/** Render formatted figured bass as React elements. */
+function FormattedRn({ text, dark, invalid }: { text: string; dark: boolean; invalid?: boolean }) {
+  const { base, figures } = parseRomanNumeral(text);
+  if (!base && figures.length === 0) return null;
+
+  const color = invalid ? "#dc2626" : (dark ? "#e0ddd8" : "#1a1a1a");
+
+  if (figures.length === 0) {
+    return (
+      <span style={{ fontFamily: "serif", fontStyle: "italic", fontSize: 13, color }}>
+        {base}
+      </span>
+    );
+  }
+
+  return (
+    <span style={{ display: "inline-flex", alignItems: "center", color }}>
+      <span style={{ fontFamily: "serif", fontStyle: "italic", fontSize: 13 }}>
+        {base}
+      </span>
+      <span style={{
+        display: "inline-flex", flexDirection: "column", alignItems: "center",
+        fontFamily: "serif", fontStyle: "italic", fontSize: 9, lineHeight: 1.1,
+        marginLeft: 1, position: "relative", top: figures.length > 1 ? -1 : -2,
+      }}>
+        {figures.map((f, i) => <span key={i}>{f}</span>)}
+      </span>
+    </span>
+  );
+}
+
+/** Roman numeral input that shows formatted figured bass when not focused. */
+function RnInput({ value, onChange, dark }: { value: string; onChange: (v: string) => void; dark: boolean }) {
+  const [focused, setFocused] = useState(false);
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  const hasValue = value.trim().length > 0;
+  const invalid = hasValue && !isValidRomanNumeral(value);
+  const borderColor = focused
+    ? (dark ? "#888" : "#666")
+    : invalid
+      ? "#dc2626"
+      : (dark ? "#555" : "#ccc");
+
+  const containerStyle: React.CSSProperties = {
+    width: "100%",
+    height: "100%",
+    boxSizing: "border-box",
+    border: `1px solid ${borderColor}`,
+    borderRadius: 3,
+    background: dark ? "#2a2a30" : "#fff",
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
+    cursor: "text",
+    position: "relative",
+  };
+
+  if (focused) {
+    return (
+      <div style={containerStyle}>
+        <input
+          ref={inputRef}
+          type="text"
+          value={value}
+          onChange={(e) => onChange(e.target.value)}
+          onBlur={() => setFocused(false)}
+          autoFocus
+          style={{
+            width: "100%",
+            height: "100%",
+            boxSizing: "border-box",
+            border: "none",
+            background: "transparent",
+            color: invalid ? "#dc2626" : (dark ? "#e0ddd8" : "#1a1a1a"),
+            fontSize: 13,
+            fontFamily: "serif",
+            fontStyle: "italic",
+            textAlign: "center",
+            padding: "0 2px",
+            outline: "none",
+          }}
+        />
+      </div>
+    );
+  }
+
+  return (
+    <div style={containerStyle} onClick={() => setFocused(true)}>
+      {hasValue ? (
+        <FormattedRn text={value} dark={dark} invalid={invalid} />
+      ) : (
+        <span style={{
+          fontFamily: "serif", fontStyle: "italic", fontSize: 13,
+          color: dark ? "#666" : "#aaa",
+        }}>
+          ?
+        </span>
+      )}
+    </div>
+  );
+}
+
+/** Collapsible legend for roman numeral entry. */
+function RnLegend({ dark }: { dark: boolean }) {
+  const [open, setOpen] = useState(false);
+  const bg = dark ? "#2a2a30" : "#f8f7f5";
+  const border = dark ? "#3a3a40" : "#e0dcd8";
+  const text = dark ? "#e0ddd8" : "#1a1a1a";
+  const muted = dark ? "#999" : "#666";
+
+  const examples: [string, string][] = [
+    ["I", "Root position"],
+    ["I6", "1st inversion"],
+    ["I64", "2nd inversion"],
+    ["V7", "7th chord"],
+    ["V65", "7th, 1st inv."],
+    ["V43", "7th, 2nd inv."],
+    ["V42", "7th, 3rd inv."],
+    ["viio", "Diminished"],
+    ["ii", "Minor (lowercase)"],
+  ];
+
+  return (
+    <div style={{ padding: "0 16px 8px" }}>
+      <button
+        onClick={() => setOpen(!open)}
+        style={{
+          background: "none", border: "none", cursor: "pointer",
+          fontSize: 12, color: muted, padding: 0,
+          fontFamily: "-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif",
+          display: "inline-flex", alignItems: "center", gap: 4,
+        }}
+      >
+        <span style={{ fontSize: 10, transform: open ? "rotate(90deg)" : "none", display: "inline-block", transition: "transform 0.15s" }}>&#9654;</span>
+        Roman numeral guide
+      </button>
+      {open && (
+        <div style={{
+          marginTop: 6, padding: "10px 14px", background: bg,
+          border: `1px solid ${border}`, borderRadius: 6, color: text,
+          display: "flex", flexWrap: "wrap", gap: "4px 16px", fontSize: 12,
+        }}>
+          {examples.map(([input, label]) => (
+            <div key={input} style={{ display: "flex", alignItems: "center", gap: 6, minWidth: 130 }}>
+              <span style={{
+                fontFamily: "serif", fontStyle: "italic", fontWeight: 600,
+                fontSize: 13, minWidth: 32,
+              }}>
+                <FormattedRn text={input} dark={dark} />
+              </span>
+              <span style={{ color: muted, fontSize: 11 }}>
+                {input} &mdash; {label}
+              </span>
+            </div>
+          ))}
+          <div style={{ width: "100%", fontSize: 11, color: muted, marginTop: 4 }}>
+            Use lowercase for minor (ii, iii, vi). Add &ldquo;o&rdquo; for diminished (viio). Add &ldquo;+&rdquo; for augmented.
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+export function NoteEditor({ header, lessonConfig }: { header?: React.ReactNode; lessonConfig?: LessonConfig }) {
   const { token } = useAuth();
   // ── LocalStorage persistence ──────────────────────────────────────
   const STORAGE_KEY = "contrapunctus_state";
@@ -1041,19 +1286,21 @@ export function NoteEditor({ header }: { header?: React.ReactNode }) {
     return null;
   }
 
-  const saved = useRef(loadSaved());
+  const saved = useRef(lessonConfig ? null : loadSaved());
 
   const [selectedDuration, setSelectedDuration] = useState<Duration>("quarter");
   const [selectedAccidental, setSelectedAccidental] = useState<Accidental>("");
   const [dottedMode, setDottedMode] = useState(false);
   const [deleteMode, setDeleteMode] = useState(false);
   const [restMode, setRestMode] = useState(false);
-  const [tsTop, setTsTop] = useState(saved.current?.tsTop ?? 4);
-  const [tsBottom, setTsBottom] = useState(saved.current?.tsBottom ?? 4);
+  const [tsTop, setTsTop] = useState(lessonConfig?.tsTop ?? saved.current?.tsTop ?? 4);
+  const [tsBottom, setTsBottom] = useState(lessonConfig?.tsBottom ?? saved.current?.tsBottom ?? 4);
 
   // Independent beat arrays for each staff
-  const initRests = () => fillWithRests(4 / 4);
-  const [trebleBeats, setTrebleBeatsRaw] = useState<PlacedBeat[]>(saved.current?.trebleBeats ?? initRests);
+  const initRests = () => fillWithRests((lessonConfig?.tsTop ?? 4) / (lessonConfig?.tsBottom ?? 4));
+  const [trebleBeats, setTrebleBeatsRaw] = useState<PlacedBeat[]>(
+    lessonConfig ? lessonConfig.lockedTrebleBeats : (saved.current?.trebleBeats ?? initRests)
+  );
   const [bassBeats, setBassBeatsRaw] = useState<PlacedBeat[]>(saved.current?.bassBeats ?? initRests);
 
   // Undo/redo history: snapshots of [trebleBeats, bassBeats]
@@ -1113,20 +1360,21 @@ export function NoteEditor({ header }: { header?: React.ReactNode }) {
   const [hoverDp, setHoverDp] = useState<number | null>(null);
   const [hoverStaff, setHoverStaff] = useState<"treble" | "bass" | null>(null);
   const [hoverBeatIdx, setHoverBeatIdx] = useState<number | null>(null);
-  const [tonicIdx, setTonicIdx] = useState(saved.current?.tonicIdx ?? 0);
-  const [scaleName, setScaleName] = useState(saved.current?.scaleName ?? "major");
+  const [tonicIdx, setTonicIdx] = useState(lessonConfig?.tonicIdx ?? saved.current?.tonicIdx ?? 0);
+  const [scaleName, setScaleName] = useState(lessonConfig?.scaleName ?? saved.current?.scaleName ?? "major");
   const svgRef = useRef<SVGSVGElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const topBarRef = useRef<HTMLDivElement>(null);
   const topBarSpacerRef = useRef<HTMLDivElement>(null);
   const [containerWidth, setContainerWidth] = useState(880);
 
-  // Save state to localStorage on changes
+  // Save state to localStorage on changes (skip in lesson mode)
   useEffect(() => {
+    if (lessonConfig) return;
     localStorage.setItem(STORAGE_KEY, JSON.stringify({
       trebleBeats, bassBeats, tsTop, tsBottom, tonicIdx, scaleName,
     }));
-  }, [trebleBeats, bassBeats, tsTop, tsBottom, tonicIdx, scaleName]);
+  }, [trebleBeats, bassBeats, tsTop, tsBottom, tonicIdx, scaleName, lessonConfig]);
 
   useEffect(() => {
     const el = containerRef.current;
@@ -1503,6 +1751,35 @@ export function NoteEditor({ header }: { header?: React.ReactNode }) {
     });
     return items;
   }, [allTimePoints, noteErrorMaps, chordErrors, romanNumerals, tsTop, tsBottom]);
+
+  // Expose error summary to lesson wrapper
+  useEffect(() => {
+    if (lessonConfig?.onErrorsComputed) {
+      lessonConfig.onErrorsComputed(errorSummary);
+    }
+  }, [errorSummary, lessonConfig]);
+
+  // Expose computed roman numerals to lesson wrapper
+  useEffect(() => {
+    if (lessonConfig?.onRomansComputed) {
+      lessonConfig.onRomansComputed(romanNumerals);
+    }
+  }, [romanNumerals, lessonConfig]);
+
+  // Student RN entries (lesson mode only)
+  const [studentRomans, setStudentRomans] = useState<Record<number, string>>({});
+  useEffect(() => {
+    if (lessonConfig?.onStudentRomansChanged) {
+      lessonConfig.onStudentRomansChanged(studentRomans);
+    }
+  }, [studentRomans, lessonConfig]);
+
+  // Expose beat state to lesson wrapper
+  useEffect(() => {
+    if (lessonConfig?.onBeatsChanged) {
+      lessonConfig.onBeatsChanged(trebleBeats, bassBeats);
+    }
+  }, [trebleBeats, bassBeats, lessonConfig]);
 
   const [errorPanelOpen, setErrorPanelOpen] = useState(false);
   const [highlightedBeat, setHighlightedBeat] = useState<number | null>(null);
@@ -1974,6 +2251,15 @@ export function NoteEditor({ header }: { header?: React.ReactNode }) {
     }
   }, [yToDpAndStaff, trebleBeatPositions, bassBeatPositions, svgHeight, staffW, systemTotalHeight, systemCount]);
 
+  /** In lesson mode, check if a note at the given staff/beat/dp is locked (part of the given soprano). */
+  const isLockedNote = useCallback((staff: "treble" | "bass", beatIdx: number, dp: number): boolean => {
+    if (!lessonConfig) return false;
+    if (staff !== "treble") return false;
+    const locked = lessonConfig.lockedTrebleBeats[beatIdx];
+    if (!locked) return false;
+    return locked.notes.some((n) => n.dp === dp);
+  }, [lessonConfig]);
+
   const handleMouseDown = useCallback((e: React.MouseEvent<SVGSVGElement>) => {
     if (hoverDp === null || hoverBeatIdx === null || hoverStaff === null) return;
     if (deleteMode) return;
@@ -1982,6 +2268,8 @@ export function NoteEditor({ header }: { header?: React.ReactNode }) {
       const beat = beats[hoverBeatIdx];
       const existing = beat.notes.find((n) => n.dp === hoverDp);
       if (existing) {
+        // Don't allow dragging locked lesson notes
+        if (isLockedNote(hoverStaff, hoverBeatIdx, hoverDp)) return;
         e.preventDefault();
         dragRef.current = {
           staff: hoverStaff,
@@ -1994,7 +2282,7 @@ export function NoteEditor({ header }: { header?: React.ReactNode }) {
         return;
       }
     }
-  }, [hoverDp, hoverStaff, hoverBeatIdx, trebleBeats, bassBeats, deleteMode]);
+  }, [hoverDp, hoverStaff, hoverBeatIdx, trebleBeats, bassBeats, deleteMode, isLockedNote]);
 
   const handleMouseUp = useCallback(() => {
     const drag = dragRef.current;
@@ -2030,6 +2318,8 @@ export function NoteEditor({ header }: { header?: React.ReactNode }) {
     const beats = getStaffBeats(hoverStaff);
 
     if (restMode) {
+      // In lesson mode, don't allow resting over locked treble beats
+      if (lessonConfig && hoverStaff === "treble") return;
       setter((prev) => {
         if (hoverBeatIdx >= prev.length) return prev;
         const beat = prev[hoverBeatIdx];
@@ -2042,6 +2332,8 @@ export function NoteEditor({ header }: { header?: React.ReactNode }) {
     }
 
     if (deleteMode) {
+      // Don't delete locked notes
+      if (isLockedNote(hoverStaff, hoverBeatIdx, hoverDp)) return;
       setter((prev) => {
         if (hoverBeatIdx >= prev.length) return prev;
         const beat = prev[hoverBeatIdx];
@@ -2053,6 +2345,8 @@ export function NoteEditor({ header }: { header?: React.ReactNode }) {
         if (!beat.notes.some(posMatch)) return prev;
         const newNotes = beat.notes.filter((n) => !posMatch(n));
         if (newNotes.length === 0) {
+          // In lesson mode, don't allow deleting all notes from a locked beat
+          if (lessonConfig && hoverStaff === "treble") return prev;
           const updated = [...prev];
           updated[hoverBeatIdx] = { notes: [], duration: beat.duration, isRest: true };
           return updated;
@@ -2115,6 +2409,8 @@ export function NoteEditor({ header }: { header?: React.ReactNode }) {
             ...working.slice(restStart + restsToRemove),
           ];
         }
+        // In lesson mode on treble, don't allow duration changes
+        if (lessonConfig && hoverStaff === "treble" && beat.duration !== selectedDuration) return prev;
         // Different duration selected → replace beat with new note at selected duration
         if (beat.duration !== selectedDuration) {
           // Treat like clicking on the rest space: remove this beat and consecutive rests after it,
@@ -2148,6 +2444,8 @@ export function NoteEditor({ header }: { header?: React.ReactNode }) {
         // Same duration — toggle/add notes within the beat
         const existing = beat.notes.find(posMatch);
         if (existing) {
+          // Don't allow toggling off or changing locked soprano notes
+          if (isLockedNote(hoverStaff, hoverBeatIdx, hoverDp)) return prev;
           if (existing.accidental === selectedAccidental) {
             // Toggle off this note
             const newNotes = beat.notes.filter((n) => !posMatch(n));
@@ -2173,7 +2471,7 @@ export function NoteEditor({ header }: { header?: React.ReactNode }) {
       // Past the end — start a new measure
       return [...working, { notes: [hoverNote], duration: selectedDuration, dotted: dottedMode || undefined }];
     });
-  }, [hoverDp, hoverStaff, hoverBeatIdx, selectedDuration, selectedAccidental, dottedMode, deleteMode, restMode, tsTop, tsBottom, trebleBeats, bassBeats, paddedTrebleBeats, paddedBassBeats]);
+  }, [hoverDp, hoverStaff, hoverBeatIdx, selectedDuration, selectedAccidental, dottedMode, deleteMode, restMode, tsTop, tsBottom, trebleBeats, bassBeats, paddedTrebleBeats, paddedBassBeats, isLockedNote, lessonConfig]);
 
   const handleUndo = useCallback(() => {
     const { past, future } = historyRef.current;
@@ -2657,6 +2955,23 @@ export function NoteEditor({ header }: { header?: React.ReactNode }) {
         padding: "0 16px",
         color: theme.text,
       }}>
+        {/* Title bar */}
+        <div style={{
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          padding: "6px 0 4px",
+          borderBottom: `1px solid ${dk ? "#3a3a40" : "#e0dcd8"}`,
+        }}>
+          <span style={{
+            fontSize: 16,
+            fontWeight: 700,
+            letterSpacing: -0.5,
+            color: theme.text,
+          }}>
+            Contrapunctus
+          </span>
+        </div>
         {/* Collapsed: single compact row */}
         {!toolbarExpanded && (
         <div style={{
@@ -2813,11 +3128,11 @@ export function NoteEditor({ header }: { header?: React.ReactNode }) {
             </button>
             <button onClick={handleUndo} style={textBtnStyle(false)} title="Undo (Ctrl+Z)">Undo</button>
             <button onClick={handleRedo} style={textBtnStyle(false)} title="Redo (Ctrl+Shift+Z)">Redo</button>
-            <button onClick={handleClear} style={textBtnStyle(false)} title="Clear all">Clear</button>
+            {!lessonConfig && <button onClick={handleClear} style={textBtnStyle(false)} title="Clear all">Clear</button>}
           </div>
 
-          {/* Analysis toggles */}
-          <div style={groupStyle}>
+          {/* Analysis toggles — hidden in lesson mode */}
+          {!lessonConfig && (<div style={groupStyle}>
             <span style={groupLabel}>Analysis</span>
             <button
               onClick={() => setLabelMode((m) => m === "roman" ? "chord" : "roman")}
@@ -2871,7 +3186,7 @@ export function NoteEditor({ header }: { header?: React.ReactNode }) {
             >
               Legend
             </button>
-          </div>
+          </div>)}
 
           {/* Meta actions */}
           <div style={groupStyle}>
@@ -2973,13 +3288,13 @@ export function NoteEditor({ header }: { header?: React.ReactNode }) {
           {/* Time signature */}
           <div style={groupStyle}>
             <span style={groupLabel}>Time</span>
-            <select value={tsTop} onChange={(e) => setTsTop(Number(e.target.value))} style={selectStyle}>
+            <select value={tsTop} onChange={(e) => setTsTop(Number(e.target.value))} style={selectStyle} disabled={!!lessonConfig}>
               {[2, 3, 4, 5, 6, 7, 8, 9, 12].map((n) => (
                 <option key={n} value={n}>{n}</option>
               ))}
             </select>
             <span style={{ color: "#999", fontSize: 13 }}>/</span>
-            <select value={tsBottom} onChange={(e) => setTsBottom(Number(e.target.value))} style={selectStyle}>
+            <select value={tsBottom} onChange={(e) => setTsBottom(Number(e.target.value))} style={selectStyle} disabled={!!lessonConfig}>
               {[2, 4, 8, 16].map((n) => (
                 <option key={n} value={n}>{n}</option>
               ))}
@@ -2996,7 +3311,7 @@ export function NoteEditor({ header }: { header?: React.ReactNode }) {
               setTrebleBeatsRaw((tb) => rewriteBeatsForKeySig(tb, oldKS, newKS));
               setBassBeatsRaw((bb) => rewriteBeatsForKeySig(bb, oldKS, newKS));
               setTonicIdx(newIdx);
-            }} style={selectStyle}>
+            }} style={selectStyle} disabled={!!lessonConfig}>
               {TONIC_OPTIONS.map((t, i) => (
                 <option key={t.label} value={i}>{t.label}</option>
               ))}
@@ -3008,7 +3323,7 @@ export function NoteEditor({ header }: { header?: React.ReactNode }) {
               setTrebleBeatsRaw((tb) => rewriteBeatsForKeySig(tb, oldKS, newKS));
               setBassBeatsRaw((bb) => rewriteBeatsForKeySig(bb, oldKS, newKS));
               setScaleName(newScale);
-            }} style={selectStyle}>
+            }} style={selectStyle} disabled={!!lessonConfig}>
               {SCALE_OPTIONS.map((s) => (
                 <option key={s.value} value={s.value}>{s.label}</option>
               ))}
@@ -3539,7 +3854,7 @@ export function NoteEditor({ header }: { header?: React.ReactNode }) {
               })()}
 
               {/* Roman numerals + chord errors */}
-              {allTimePoints.map((t, i) => {
+              {!lessonConfig && allTimePoints.map((t, i) => {
                 const rns = activeLabels[i];
                 const hasRn = hasRN && rns && rns.length > 0;
                 const beatChordErrs = timeToChordErrors.get(t);
@@ -3588,6 +3903,25 @@ export function NoteEditor({ header }: { header?: React.ReactNode }) {
                       );
                     })()}
                   </g>
+                );
+              })}
+
+              {/* Lesson mode: student RN input fields */}
+              {lessonConfig && allTimePoints.map((t, i) => {
+                const pos = timeToPos.get(t);
+                if (!pos || pos.systemIdx !== sysIdx) return null;
+                const rx = pos.x;
+                const rnY = staffHeight + 4;
+                const inputW = 56;
+                const inputH = 30;
+                return (
+                  <foreignObject key={`rn-input-${i}`} x={rx - inputW / 2} y={rnY} width={inputW} height={inputH}>
+                    <RnInput
+                      value={studentRomans[i] ?? ""}
+                      onChange={(v) => setStudentRomans((prev) => ({ ...prev, [i]: v }))}
+                      dark={dk}
+                    />
+                  </foreignObject>
                 );
               })}
 
@@ -3820,8 +4154,11 @@ export function NoteEditor({ header }: { header?: React.ReactNode }) {
 
       {header && <div style={{
         position: "fixed", bottom: 0, left: 0, right: 0, zIndex: 100,
-        background: dk ? "#222228" : "#f0ede9", borderTop: `1px solid ${theme.footerBorder}`, padding: "16px 24px", color: theme.text,
-      }}>{header}</div>}
+        background: dk ? "#222228" : "#f0ede9", borderTop: `1px solid ${theme.footerBorder}`, color: theme.text,
+      }}>
+        {lessonConfig && <RnLegend dark={dk} />}
+        <div style={{ padding: "16px 24px", paddingTop: lessonConfig ? 8 : 16 }}>{header}</div>
+      </div>}
     </div>
   );
 }

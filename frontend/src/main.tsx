@@ -1,10 +1,13 @@
 import { createRoot } from "react-dom/client";
-import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
+import { BrowserRouter, Routes, Route, Navigate, Link } from "react-router-dom";
 import { NoteEditor } from "./components/Staff";
 import { AuthProvider, useAuth } from "./auth";
 import { SignupPage, LoginPage } from "./components/AuthPages";
 import { LandingPage } from "./components/LandingPage";
 import { AdminPage } from "./components/AdminPage";
+import { Dashboard } from "./components/Dashboard";
+import { LessonList } from "./components/LessonList";
+import { LessonPage } from "./components/LessonPage";
 
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
   const { user, loading } = useAuth();
@@ -31,16 +34,12 @@ function EditorPage() {
             alignItems: "center",
             justifyContent: "space-between",
           }}>
-            <h1 style={{
-              fontSize: 22,
-              fontWeight: 700,
-              letterSpacing: -0.5,
-              color: "inherit",
-              margin: 0,
-              whiteSpace: "nowrap",
+            <Link to="/" style={{
+              fontSize: 13, color: "#888", textDecoration: "none",
+              display: "inline-flex", alignItems: "center", gap: 4,
             }}>
-              Contrapunctus
-            </h1>
+              <span style={{ fontSize: 16 }}>&larr;</span> Home
+            </Link>
             <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
               <span style={{ fontSize: 13, opacity: 0.6 }}>{user?.displayName}</span>
               <button
@@ -81,7 +80,22 @@ function App() {
           <Route path="/admin" element={<AdminPage />} />
           <Route path="/" element={
             <ProtectedRoute>
+              <Dashboard />
+            </ProtectedRoute>
+          } />
+          <Route path="/editor" element={
+            <ProtectedRoute>
               <EditorPage />
+            </ProtectedRoute>
+          } />
+          <Route path="/lessons" element={
+            <ProtectedRoute>
+              <LessonList />
+            </ProtectedRoute>
+          } />
+          <Route path="/lessons/:id" element={
+            <ProtectedRoute>
+              <LessonPage />
             </ProtectedRoute>
           } />
         </Routes>
