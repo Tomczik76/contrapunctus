@@ -22,7 +22,7 @@ const LEFT_MARGIN = CLEF_WIDTH + TS_WIDTH + 10;
 /** Right margin after last note. */
 const RIGHT_MARGIN = 20;
 /** Gap between treble and bass staves in a grand staff. */
-const STAFF_GAP = 90;
+const STAFF_GAP = 120;
 /** Staff line thickness. */
 const LINE_W = 1;
 /** Ledger line half-width. */
@@ -1102,6 +1102,14 @@ export function NoteEditor({ header }: { header?: React.ReactNode }) {
     return staff === "treble" ? paddedTrebleBeats : paddedBassBeats;
   }
 
+  const [zoom, setZoom] = useState(() => {
+    try { const z = localStorage.getItem("contrapunctus_zoom"); return z ? Number(z) : 1; } catch { return 1; }
+  });
+  const [toolbarExpanded, setToolbarExpanded] = useState(true);
+  const [darkMode, setDarkMode] = useState(() => {
+    try { return localStorage.getItem("contrapunctus_dark") === "true"; } catch { return false; }
+  });
+
   const [hoverDp, setHoverDp] = useState<number | null>(null);
   const [hoverStaff, setHoverStaff] = useState<"treble" | "bass" | null>(null);
   const [hoverBeatIdx, setHoverBeatIdx] = useState<number | null>(null);
@@ -1189,6 +1197,28 @@ export function NoteEditor({ header }: { header?: React.ReactNode }) {
     bassTimes.forEach((t) => set.add(t));
     return [...set].sort((a, b) => a - b);
   }, [trebleTimes, bassTimes]);
+
+  // Compute natural (single-line) content width — independent of container
+  const contentWidth = useMemo(() => {
+    const measureCap = timeKey(tsTop / tsBottom);
+    const measures: { startIdx: number; endIdx: number }[] = [];
+    let mStart = 0;
+    for (let i = 1; i <= allTimePoints.length; i++) {
+      if (i === allTimePoints.length ||
+          Math.floor(allTimePoints[i] / measureCap + 1e-9) >
+          Math.floor(allTimePoints[i - 1] / measureCap + 1e-9)) {
+        measures.push({ startIdx: mStart, endIdx: i });
+        mStart = i;
+      }
+    }
+    let naturalX = edLeft + ED_NOTE_SPACING / 2;
+    for (let m = 0; m < measures.length; m++) {
+      if (m > 0) naturalX += ED_BARLINE_GAP;
+      const mLen = measures[m].endIdx - measures[m].startIdx;
+      naturalX += mLen * ED_NOTE_SPACING;
+    }
+    return naturalX + RIGHT_MARGIN;
+  }, [allTimePoints, edLeft, tsTop, tsBottom]);
 
   // System layout: break music into rows that fit the container width
   const systemLayout = useMemo(() => {
@@ -1419,6 +1449,63 @@ export function NoteEditor({ header }: { header?: React.ReactNode }) {
     });
     return m;
   }, [allTimePoints, chordErrors]);
+
+  // Tooltip lookup maps for abbreviations
+  const errorTooltips: Record<string, string> = {
+    "\u22255": "Parallel Fifths", "\u22258": "Parallel Octaves",
+    "\u2225 5": "Parallel Fifths", "\u2225 8": "Parallel Octaves",
+    "\u21925": "Direct Fifths", "\u21928": "Direct Octaves",
+    "\u2192 5": "Direct Fifths", "\u2192 8": "Direct Octaves",
+    "VX": "Voice Crossing", "Sp": "Spacing Error",
+    "2LT": "Doubled Leading Tone", "LT\u2191": "Unresolved Leading Tone",
+    "7\u2193": "Unresolved Chordal 7th", "2R": "Root Not Doubled",
+    "2\u00D75": "Fifth Not Doubled",
+  };
+  const nctTooltips: Record<string, string> = {
+    "PT": "Passing Tone", "NT": "Neighbor Tone", "APP": "Appoggiatura",
+    "ET": "Escape Tone", "CT": "Changing Tone", "SUS": "Suspension",
+    "RET": "Retardation", "ANT": "Anticipation", "PED": "Pedal Tone",
+  };
+  function nctTooltip(label: string): string {
+    const base = label.split(" ")[0];
+    return nctTooltips[base] || label;
+  }
+
+  // Compute error summary list for the error panel
+  const errorSummary = useMemo(() => {
+    const items: { beat: number; measure: number; beatInMeasure: number; label: string; fullName: string; location: string }[] = [];
+    const measureCap = timeKey(tsTop / tsBottom);
+    allTimePoints.forEach((t, i) => {
+      const measure = Math.floor(t / measureCap + 1e-9) + 1;
+      const beatInMeasure = Math.round((t % measureCap) / (1 / tsBottom) + 1e-9) + 1;
+      const rn = romanNumerals[i]?.[0] || "";
+      const location = rn ? `Beat ${beatInMeasure}, m. ${measure} (${rn})` : `Beat ${beatInMeasure}, m. ${measure}`;
+      // Note-level errors
+      const noteErrs = noteErrorMaps[i];
+      if (noteErrs) {
+        const seen = new Set<string>();
+        for (const errs of Object.values(noteErrs)) {
+          for (const e of errs) {
+            if (!seen.has(e)) {
+              seen.add(e);
+              items.push({ beat: i, measure, beatInMeasure, label: e, fullName: errorTooltips[e] || e, location });
+            }
+          }
+        }
+      }
+      // Chord-level errors
+      const ce = chordErrors[i];
+      if (ce) {
+        for (const e of ce) {
+          items.push({ beat: i, measure, beatInMeasure, label: e, fullName: errorTooltips[e] || e, location });
+        }
+      }
+    });
+    return items;
+  }, [allTimePoints, noteErrorMaps, chordErrors, romanNumerals, tsTop, tsBottom]);
+
+  const [errorPanelOpen, setErrorPanelOpen] = useState(false);
+  const [highlightedBeat, setHighlightedBeat] = useState<number | null>(null);
 
   const [rnSelections, setRnSelections] = useState<Record<number, number>>({});
   const [openRnDropdown, setOpenRnDropdown] = useState<number | null>(null);
@@ -1958,7 +2045,11 @@ export function NoteEditor({ header }: { header?: React.ReactNode }) {
       setter((prev) => {
         if (hoverBeatIdx >= prev.length) return prev;
         const beat = prev[hoverBeatIdx];
-        if (beat.isRest) return prev;
+        if (beat.isRest) {
+          // Remove the rest beat entirely
+          const updated = prev.filter((_, i) => i !== hoverBeatIdx);
+          return updated.length > 0 ? updated : fillWithRests(tsTop / tsBottom);
+        }
         if (!beat.notes.some(posMatch)) return prev;
         const newNotes = beat.notes.filter((n) => !posMatch(n));
         if (newNotes.length === 0) {
@@ -2123,6 +2214,35 @@ export function NoteEditor({ header }: { header?: React.ReactNode }) {
     setBassBeatsRaw(fillWithRests(tsTop / tsBottom));
   }, [tsTop, tsBottom, pushUndo]);
 
+  // Keyboard shortcuts
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      // Don't intercept when typing in inputs
+      const tag = (e.target as HTMLElement)?.tagName;
+      if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT") return;
+
+      const key = e.key.toLowerCase();
+      const ctrl = e.ctrlKey || e.metaKey;
+
+      if (ctrl && key === "z" && e.shiftKey) { e.preventDefault(); handleRedo(); return; }
+      if (ctrl && key === "z") { e.preventDefault(); handleUndo(); return; }
+
+      // Duration shortcuts: 1–5
+      if (!ctrl && key === "1") { setSelectedDuration("whole"); return; }
+      if (!ctrl && key === "2") { setSelectedDuration("half"); return; }
+      if (!ctrl && key === "3") { setSelectedDuration("quarter"); return; }
+      if (!ctrl && key === "4") { setSelectedDuration("eighth"); return; }
+      if (!ctrl && key === "5") { setSelectedDuration("sixteenth"); return; }
+
+      if (key === "r") { setRestMode((r) => !r); setDeleteMode(false); return; }
+      if (key === "d" || key === "delete" || key === "backspace") { setDeleteMode((d) => !d); setRestMode(false); return; }
+      if (key === ".") { setDottedMode((d) => !d); return; }
+      if (key === " ") { e.preventDefault(); isPlaying ? handlePause() : handlePlay(); return; }
+    };
+    window.addEventListener("keydown", handler);
+    return () => window.removeEventListener("keydown", handler);
+  }, [handleUndo, handleRedo, handlePlay, handlePause, isPlaying]);
+
   /** Render a rest glyph on a single staff given its line Y positions. */
   function renderRestOnStaff(dur: Duration, x: number, lineYs: number[], opacity = 1) {
     const line3Y = lineYs[2]; // middle line
@@ -2257,19 +2377,41 @@ export function NoteEditor({ header }: { header?: React.ReactNode }) {
         const midi = dpToMidi(n.dp, eff);
         const nctLabel = nctMap?.[midi];
         const noteErrs = noteErrorMap?.[midi];
-        const hasError = showErrors && noteErrs && noteErrs.length > 0;
+        const hasError = noteErrs && noteErrs.length > 0;
+        const errText = hasError ? noteErrs!.join(", ") : "";
+        const errTip = hasError ? noteErrs!.map(e => errorTooltips[e] || e).join(", ") : "";
         elements.push(
           <g key={`t-${i}`}>
             {renderNotehead(n.dp, dur, x, ED_TREBLE_TOP, ED_TREBLE_LINES[0], trebleYOffset, n.accidental, opacity)}
-            {hasError && (
-              <>
-                <circle cx={x} cy={y} r={headW / 2 + 3} fill="none" stroke="#e74c3c" strokeWidth={1.5} opacity={0.8} />
-                <text x={x + headW / 2 + 3} y={y - 6} fontSize={8} fill="#e74c3c" fontFamily="sans-serif" fontWeight="bold">{noteErrs!.join(", ")}</text>
-              </>
-            )}
-            {showNct && nctLabel && (
-              <text x={x + headW / 2 + 3} y={y + 3} fontSize={9} fill="#c0392b" fontFamily="sans-serif" fontWeight="bold">{nctLabel}</text>
-            )}
+            {hasError && (() => {
+              const badgeH = 14;
+              const padX = 4;
+              const tw = errText.length * 5.8 + padX * 2 + 2;
+              const labelX = x + headW / 2 + 4;
+              const labelY = y - 12;
+              return (
+                <g className="cp-fade" style={{ opacity: showErrors ? 1 : 0, pointerEvents: showErrors ? "auto" : "none" }}>
+                  <title>{errTip}</title>
+                  <circle cx={x} cy={y} r={headW / 2 + 3} fill="none" stroke={theme.errStroke} strokeWidth={1.5} opacity={0.85} />
+                  <rect x={labelX - padX} y={labelY - badgeH + 3} width={tw} height={badgeH} rx={3} fill={theme.errBadgeBg} />
+                  <text x={labelX} y={labelY} fontSize={10} fill={theme.errText} fontFamily="sans-serif" fontWeight="700">{errText}</text>
+                </g>
+              );
+            })()}
+            {nctLabel && (() => {
+              const badgeH = 14;
+              const padX = 4;
+              const tw = nctLabel.length * 6 + padX * 2 + 2;
+              const labelX = x + headW / 2 + 4;
+              const labelY = y + 14;
+              return (
+                <g className="cp-fade" style={{ opacity: showNct ? 1 : 0, pointerEvents: showNct ? "auto" : "none" }}>
+                  <title>{nctTooltip(nctLabel)}</title>
+                  <rect x={labelX - padX} y={labelY - badgeH + 3} width={tw} height={badgeH} rx={3} fill={theme.nctBadgeBg} />
+                  <text x={labelX} y={labelY} fontSize={10} fill={theme.nctText} fontFamily="sans-serif" fontWeight="700">{nctLabel}</text>
+                </g>
+              );
+            })()}
           </g>
         );
       });
@@ -2303,19 +2445,41 @@ export function NoteEditor({ header }: { header?: React.ReactNode }) {
         const midi = dpToMidi(n.dp, eff);
         const nctLabel = nctMap?.[midi];
         const noteErrs = noteErrorMap?.[midi];
-        const hasError = showErrors && noteErrs && noteErrs.length > 0;
+        const hasError = noteErrs && noteErrs.length > 0;
+        const errText = hasError ? noteErrs!.join(", ") : "";
+        const errTip = hasError ? noteErrs!.map(e => errorTooltips[e] || e).join(", ") : "";
         elements.push(
           <g key={`b-${i}`}>
             {renderNotehead(n.dp, dur, x, ED_BASS_TOP, ED_BASS_LINES[0], bassYOffset, n.accidental, opacity)}
-            {hasError && (
-              <>
-                <circle cx={x} cy={y} r={headW / 2 + 3} fill="none" stroke="#e74c3c" strokeWidth={1.5} opacity={0.8} />
-                <text x={x + headW / 2 + 3} y={y - 6} fontSize={8} fill="#e74c3c" fontFamily="sans-serif" fontWeight="bold">{noteErrs!.join(", ")}</text>
-              </>
-            )}
-            {showNct && nctLabel && (
-              <text x={x + headW / 2 + 3} y={y + 3} fontSize={9} fill="#c0392b" fontFamily="sans-serif" fontWeight="bold">{nctLabel}</text>
-            )}
+            {hasError && (() => {
+              const badgeH = 14;
+              const padX = 4;
+              const tw = errText.length * 5.8 + padX * 2 + 2;
+              const labelX = x + headW / 2 + 4;
+              const labelY = y - 12;
+              return (
+                <g className="cp-fade" style={{ opacity: showErrors ? 1 : 0, pointerEvents: showErrors ? "auto" : "none" }}>
+                  <title>{errTip}</title>
+                  <circle cx={x} cy={y} r={headW / 2 + 3} fill="none" stroke={theme.errStroke} strokeWidth={1.5} opacity={0.85} />
+                  <rect x={labelX - padX} y={labelY - badgeH + 3} width={tw} height={badgeH} rx={3} fill={theme.errBadgeBg} />
+                  <text x={labelX} y={labelY} fontSize={10} fill={theme.errText} fontFamily="sans-serif" fontWeight="700">{errText}</text>
+                </g>
+              );
+            })()}
+            {nctLabel && (() => {
+              const badgeH = 14;
+              const padX = 4;
+              const tw = nctLabel.length * 6 + padX * 2 + 2;
+              const labelX = x + headW / 2 + 4;
+              const labelY = y + 14;
+              return (
+                <g className="cp-fade" style={{ opacity: showNct ? 1 : 0, pointerEvents: showNct ? "auto" : "none" }}>
+                  <title>{nctTooltip(nctLabel)}</title>
+                  <rect x={labelX - padX} y={labelY - badgeH + 3} width={tw} height={badgeH} rx={3} fill={theme.nctBadgeBg} />
+                  <text x={labelX} y={labelY} fontSize={10} fill={theme.nctText} fontFamily="sans-serif" fontWeight="700">{nctLabel}</text>
+                </g>
+              );
+            })()}
           </g>
         );
       });
@@ -2357,7 +2521,30 @@ export function NoteEditor({ header }: { header?: React.ReactNode }) {
     return <g>{elements}</g>;
   }
 
+  const dk = darkMode;
+  const theme = {
+    toolbarBg: dk ? "#26262b" : "#f5f3f0",
+    toolbarBorder: dk ? "#3a3a40" : "#e0dcd8",
+    groupBg: dk ? "#32323a" : "#eceae6",
+    pageBg: dk ? "#2a2a30" : "#faf8f4",
+    pageManuscript: dk ? "#2e2e34" : "#ede8e0",
+    pageBorder: dk ? "#3a3a40" : "#d8d4ce",
+    footerBg: dk ? "#26262b" : "#f5f3f0",
+    footerBorder: dk ? "#3a3a40" : "#e0dcd8",
+    text: dk ? "#e0ddd8" : "#2c2c2c",
+    textMuted: dk ? "#999" : "#5a5a5a",
+    selectBg: dk ? "#32323a" : "#faf9f7",
+    selectBorder: dk ? "#555" : "#d0ccc8",
+    row2Border: dk ? "#3a3a40" : "#e8e5e1",
+    errText: dk ? "#fca5a5" : "#fff",
+    errBadgeBg: dk ? "rgba(220,38,38,0.85)" : "rgba(185,28,28,0.82)",
+    errStroke: dk ? "#fb7185" : "#e74c3c",
+    nctText: dk ? "#86efac" : "#fff",
+    nctBadgeBg: dk ? "rgba(22,163,74,0.82)" : "rgba(21,128,61,0.82)",
+  };
+
   const durations: Duration[] = ["whole", "half", "quarter", "eighth", "sixteenth"];
+  const durationShortcuts: Record<Duration, string> = { whole: "1", half: "2", quarter: "3", eighth: "4", sixteenth: "5" };
 
   const btnBase: React.CSSProperties = {
     width: 34, height: 34,
@@ -2367,10 +2554,10 @@ export function NoteEditor({ header }: { header?: React.ReactNode }) {
     alignItems: "center",
     justifyContent: "center",
     padding: 0,
-    border: "1px solid #d0ccc8",
-    background: "#faf9f7",
-    color: "#4a4a4a",
-    transition: "all 0.1s ease",
+    border: "1px solid transparent",
+    background: "transparent",
+    color: theme.textMuted,
+    transition: "all 0.15s ease",
   };
   const btnOn = (on: boolean): React.CSSProperties => ({
     ...btnBase,
@@ -2378,260 +2565,490 @@ export function NoteEditor({ header }: { header?: React.ReactNode }) {
       border: "1px solid #8b7e6e",
       background: "#e8e4df",
       color: "#2c2c2c",
-      boxShadow: "inset 0 1px 3px rgba(0,0,0,0.1)",
+      boxShadow: "inset 0 1px 3px rgba(0,0,0,0.12)",
     } : {}),
   });
 
   const selectStyle: React.CSSProperties = {
-    fontFamily: "inherit",
+    fontFamily: "-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif",
     fontSize: 13,
     padding: "4px 8px",
     borderRadius: 5,
-    border: "1px solid #d0ccc8",
-    background: "#faf9f7",
-    color: "#2c2c2c",
+    border: `1px solid ${theme.selectBorder}`,
+    background: theme.selectBg,
+    color: theme.text,
     cursor: "pointer",
   };
 
   const textBtnStyle = (active: boolean, danger = false): React.CSSProperties => ({
     ...btnBase,
     width: "auto",
-    padding: "0 12px",
+    padding: "0 10px",
     fontSize: 12,
-    fontFamily: "inherit",
+    fontFamily: "-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif",
     fontWeight: 500,
     letterSpacing: 0.3,
     ...(danger && active ? {
-      border: "1px solid #d44",
-      background: "#fef0f0",
-      color: "#c33",
+      border: "1px solid #c33",
+      background: "#c33",
+      color: "#fff",
     } : active ? {
-      border: "1px solid #8b7e6e",
-      background: "#e8e4df",
-      color: "#2c2c2c",
-      boxShadow: "inset 0 1px 3px rgba(0,0,0,0.1)",
+      border: "1px solid #5a5347",
+      background: "#5a5347",
+      color: "#fff",
+      boxShadow: "inset 0 1px 3px rgba(0,0,0,0.2)",
     } : {}),
   });
+  const textBtnClass = (active: boolean, danger = false): string =>
+    active ? (danger ? "cp-active-danger" : "cp-active") : "";
 
-  const sep = <div style={{ width: 1, height: 24, background: "#ddd", margin: "0 4px" }} />;
+  /** Pill-shaped group with subtle background. */
+  const groupStyle: React.CSSProperties = {
+    display: "flex",
+    alignItems: "center",
+    gap: 3,
+    background: theme.groupBg,
+    borderRadius: 8,
+    padding: "3px 4px",
+  };
+
+  /** Muted label preceding a group. */
+  const groupLabel: React.CSSProperties = {
+    fontSize: 9,
+    fontWeight: 500,
+    color: "#a09a94",
+    textTransform: "uppercase",
+    letterSpacing: 1,
+    padding: "0 5px 0 2px",
+    whiteSpace: "nowrap",
+    fontFamily: "-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif",
+  };
+
+  // Dark mode: apply to body
+  useEffect(() => {
+    if (darkMode) {
+      document.body.style.background = "#1a1a1e";
+      document.body.style.color = "#e0ddd8";
+    } else {
+      document.body.style.background = "#e8e4e0";
+      document.body.style.color = "#2c2c2c";
+    }
+  }, [darkMode]);
 
   return (
     <div>
+      {/* Toolbar hover styles */}
+      <style>{`
+        .cp-toolbar button:hover:not([disabled]):not(.cp-active):not(.cp-active-danger) { opacity: 0.8; }
+        .cp-toolbar button.cp-active:hover:not([disabled]) { background: #6e685c !important; color: #fff !important; }
+        .cp-toolbar button.cp-active-danger:hover:not([disabled]) { background: #d94444 !important; color: #fff !important; }
+        .cp-toolbar button:active:not([disabled]) { transform: scale(0.96); }
+        .cp-fade { transition: opacity 0.25s ease; }
+      `}</style>
       {/* Fixed top bar */}
-      <div ref={topBarRef} style={{
+      <div ref={topBarRef} className="cp-toolbar" style={{
         position: "fixed",
         top: 0,
         left: 0,
         right: 0,
         zIndex: 100,
-        background: "#f5f3f0",
-        borderBottom: "1px solid #e0dcd8",
+        background: theme.toolbarBg,
+        borderBottom: `1px solid ${theme.toolbarBorder}`,
         padding: "0 16px",
+        color: theme.text,
       }}>
-        {header && <div style={{ padding: "8px 0" }}>{header}</div>}
-        {/* Toolbar */}
+        {/* Collapsed: single compact row */}
+        {!toolbarExpanded && (
         <div style={{
           display: "flex",
-          gap: 5,
+          alignItems: "center",
+          padding: "6px 0",
+          gap: 8,
+        }}>
+          {/* Note values — compact */}
+          <div style={groupStyle}>
+            {durations.map((key) => (
+              <button key={key} onClick={() => setSelectedDuration(key)}
+                style={btnOn(selectedDuration === key)} title={`${key} (${durationShortcuts[key]})`}>
+                <NoteIcon duration={key} size={24} />
+              </button>
+            ))}
+            <button onClick={() => setDottedMode((d) => !d)}
+              style={{ ...btnOn(dottedMode), fontSize: 20, fontWeight: 700 }}
+              title="Dotted note (.)">
+              .
+            </button>
+          </div>
+
+          {/* Accidentals */}
+          <div style={groupStyle}>
+            {([["n", "\u266E"], ["#", "\u266F"], ["b", "\u266D"]] as [Accidental, string][]).map(([acc, sym]) => (
+              <button key={acc} onClick={() => setSelectedAccidental((prev) => prev === acc ? "" : acc)}
+                style={{ ...btnOn(selectedAccidental === acc), fontSize: 18 }}
+                title={acc === "#" ? "Sharp" : acc === "b" ? "Flat" : "Natural"}>
+                {sym}
+              </button>
+            ))}
+          </div>
+
+          {/* Minimal edit */}
+          <div style={groupStyle}>
+            <button
+              onClick={() => { setRestMode((r) => !r); setDeleteMode(false); }}
+              style={textBtnStyle(restMode)}
+              className={textBtnClass(restMode)}
+              title="Rest mode (R)"
+            >
+              Rest
+            </button>
+            <button
+              onClick={() => { setDeleteMode((d) => !d); setRestMode(false); }}
+              style={textBtnStyle(deleteMode, true)}
+              className={textBtnClass(deleteMode, true)}
+              title="Delete mode (D)"
+            >
+              Del
+            </button>
+          </div>
+
+          {/* Playback */}
+          <div style={groupStyle}>
+            <button
+              onClick={isPlaying ? handlePause : handlePlay}
+              style={textBtnStyle(isPlaying)}
+              className={textBtnClass(isPlaying)}
+              title={isPlaying ? "Pause (Space)" : isPaused ? "Resume (Space)" : "Play (Space)"}
+            >
+              {isPlaying ? "\u23F8" : "\u25B6"}
+            </button>
+            <button
+              onClick={handleStop}
+              style={{ ...textBtnStyle(false), opacity: (!isPlaying && !isPaused) ? 0.4 : 1 }}
+              title="Stop"
+              disabled={!isPlaying && !isPaused}
+            >
+              {"\u23F9"}
+            </button>
+          </div>
+
+          {/* Note indicator + expand toggle — pushed right */}
+          <div style={{ marginLeft: "auto", display: "flex", alignItems: "center", gap: 8 }}>
+            <span style={{ color: theme.textMuted, fontSize: 18, fontFamily: "serif", minWidth: 40, textAlign: "right" }}>
+              {hoverDp !== null ? (() => {
+                const letterIdx = ((hoverDp % 7) + 7) % 7;
+                const octave = Math.floor(hoverDp / 7);
+                const acc = accidentalSymbol(effectiveAccidental(selectedAccidental, hoverDp, keySig));
+                return `${LETTERS[letterIdx]}${acc}${octave}`;
+              })() : "\u00A0"}
+            </span>
+            <button
+              onClick={() => setToolbarExpanded(true)}
+              style={{ ...btnBase, width: 28, height: 28, color: "#888" }}
+              title="Expand toolbar"
+            >
+              <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M3 5.5 L7 9.5 L11 5.5" />
+              </svg>
+            </button>
+          </div>
+        </div>
+        )}
+
+        {/* Expanded: full two-row toolbar */}
+        {toolbarExpanded && (<>
+        {/* Row 1: Note entry */}
+        <div style={{
+          display: "flex",
           alignItems: "center",
           flexWrap: "wrap",
-          padding: "8px 0",
+          padding: "6px 0",
+          gap: 8,
         }}>
-        {durations.map((key) => (
-          <button key={key} onClick={() => setSelectedDuration(key)}
-            style={btnOn(selectedDuration === key)} title={key}>
-            <NoteIcon duration={key} size={24} />
-          </button>
-        ))}
-        <button onClick={() => setDottedMode((d) => !d)}
-          style={{ ...btnOn(dottedMode), fontSize: 20, fontWeight: 700 }}
-          title="Dotted note">
-          .
-        </button>
-        {sep}
-        {([["n", "\u266E"], ["#", "\u266F"], ["b", "\u266D"]] as [Accidental, string][]).map(([acc, sym]) => (
-          <button key={acc} onClick={() => setSelectedAccidental((prev) => prev === acc ? "" : acc)}
-            style={{ ...btnOn(selectedAccidental === acc), fontSize: 18 }}
-            title={acc === "#" ? "Sharp" : acc === "b" ? "Flat" : "Natural"}>
-            {sym}
-          </button>
-        ))}
-        {sep}
-        <button
-          onClick={() => { setRestMode((r) => !r); setDeleteMode(false); }}
-          style={textBtnStyle(restMode)}
-          title="Rest mode — click a note/chord to replace it with a rest"
-        >
-          Rest
-        </button>
-        <button
-          onClick={() => { setDeleteMode((d) => !d); setRestMode(false); }}
-          style={textBtnStyle(deleteMode, true)}
-          title="Toggle delete mode — click notes to remove them"
-        >
-          Delete
-        </button>
-        {sep}
-        <button onClick={handleUndo} style={textBtnStyle(false)} title="Undo (Ctrl+Z)">Undo</button>
-        <button onClick={handleRedo} style={textBtnStyle(false)} title="Redo (Ctrl+Shift+Z)">Redo</button>
-        <button onClick={handleClear} style={textBtnStyle(false)} title="Clear all">Clear</button>
-        {sep}
-        <button
-          onClick={() => setLabelMode((m) => m === "roman" ? "chord" : "roman")}
-          style={textBtnStyle(labelMode === "chord")}
-          title="Toggle between roman numerals and chord names"
-        >
-          {labelMode === "chord" ? "Chords" : "RN"}
-        </button>
-        <button
-          onClick={() => setShowNct((v) => !v)}
-          style={textBtnStyle(showNct)}
-          title="Show non-chord tone labels"
-        >
-          NCT
-        </button>
-        <button
-          onClick={() => setShowErrors((v) => !v)}
-          style={textBtnStyle(showErrors)}
-          title="Show part-writing errors"
-        >
-          Errors
-        </button>
-        <button
-          onClick={() => setLegendOpen(true)}
-          style={textBtnStyle(false)}
-          title="Show legend for abbreviations"
-        >
-          Legend
-        </button>
-        {sep}
-        <button
-          onClick={() => { setBugReportOpen(true); setBugReportStatus("idle"); }}
-          style={textBtnStyle(false)}
-          title="Report a bug"
-        >
-          Report Bug
-        </button>
-        {sep}
-        <button
-          onClick={() => { setFeatureRequestOpen(true); setFeatureRequestStatus("idle"); }}
-          style={textBtnStyle(false)}
-          title="Request a feature"
-        >
-          Feature Request
-        </button>
-        {sep}
-        <button
-          onClick={() => { setRoadmapOpen(true); fetchRoadmapVotes(); }}
-          style={textBtnStyle(false)}
-          title="View roadmap"
-        >
-          Roadmap
-        </button>
-        {sep}
-        {/* Playback controls */}
-        <div style={{ display: "flex", alignItems: "center", gap: 5 }}>
-        <button
-          onClick={isPlaying ? handlePause : handlePlay}
-          style={textBtnStyle(isPlaying)}
-          title={isPlaying ? "Pause" : isPaused ? "Resume" : "Play"}
-        >
-          {isPlaying ? "\u23F8" : "\u25B6"}
-        </button>
-        <button
-          onClick={handleStop}
-          style={textBtnStyle(false)}
-          title="Stop"
-          disabled={!isPlaying && !isPaused}
-        >
-          {"\u23F9"}
-        </button>
-        <label style={{ display: "flex", alignItems: "center", gap: 4, fontSize: 14, color: "#5a5a5a" }}>
-          <span style={{ fontSize: 15 }}>{"\u2669"}</span>
-          <span>=</span>
-          <input
-            type="number"
-            min={40}
-            max={240}
-            value={tempo}
-            onChange={(e) => setTempo(Math.max(40, Math.min(240, Number(e.target.value))))}
-            style={{
-              width: 58,
-              fontSize: 14,
-              fontFamily: "inherit",
-              border: "1px solid #d0ccc8",
-              borderRadius: 4,
-              padding: "5px 8px",
-              textAlign: "center",
-              background: "#faf9f7",
-            }}
-          />
-        </label>
-        <select
-          value={instrument}
-          onChange={(e) => setInstrument(e.target.value as InstrumentName)}
-          style={selectStyle}
-          title="Instrument"
-        >
-          {INSTRUMENTS.map((inst) => (
-            <option key={inst.value} value={inst.value}>{inst.label}</option>
-          ))}
-        </select>
+          {/* Note values */}
+          <div style={groupStyle}>
+            <span style={groupLabel}>Note</span>
+            {durations.map((key) => (
+              <button key={key} onClick={() => setSelectedDuration(key)}
+                style={btnOn(selectedDuration === key)} title={`${key} (${durationShortcuts[key]})`}>
+                <NoteIcon duration={key} size={24} />
+              </button>
+            ))}
+            <button onClick={() => setDottedMode((d) => !d)}
+              style={{ ...btnOn(dottedMode), fontSize: 20, fontWeight: 700 }}
+              title="Dotted note (.)">
+              .
+            </button>
+          </div>
+
+          {/* Accidentals */}
+          <div style={groupStyle}>
+            <span style={groupLabel}>Acc</span>
+            {([["n", "\u266E"], ["#", "\u266F"], ["b", "\u266D"]] as [Accidental, string][]).map(([acc, sym]) => (
+              <button key={acc} onClick={() => setSelectedAccidental((prev) => prev === acc ? "" : acc)}
+                style={{ ...btnOn(selectedAccidental === acc), fontSize: 18 }}
+                title={acc === "#" ? "Sharp" : acc === "b" ? "Flat" : "Natural"}>
+                {sym}
+              </button>
+            ))}
+          </div>
+
+          {/* Edit actions */}
+          <div style={groupStyle}>
+            <span style={groupLabel}>Edit</span>
+            <button
+              onClick={() => { setRestMode((r) => !r); setDeleteMode(false); }}
+              style={textBtnStyle(restMode)}
+              className={textBtnClass(restMode)}
+              title="Rest mode — click a note/chord to replace it with a rest (R)"
+            >
+              Rest
+            </button>
+            <button
+              onClick={() => { setDeleteMode((d) => !d); setRestMode(false); }}
+              style={textBtnStyle(deleteMode, true)}
+              className={textBtnClass(deleteMode, true)}
+              title="Toggle delete mode — click notes to remove them (D)"
+            >
+              Delete
+            </button>
+            <button onClick={handleUndo} style={textBtnStyle(false)} title="Undo (Ctrl+Z)">Undo</button>
+            <button onClick={handleRedo} style={textBtnStyle(false)} title="Redo (Ctrl+Shift+Z)">Redo</button>
+            <button onClick={handleClear} style={textBtnStyle(false)} title="Clear all">Clear</button>
+          </div>
+
+          {/* Analysis toggles */}
+          <div style={groupStyle}>
+            <span style={groupLabel}>Analysis</span>
+            <button
+              onClick={() => setLabelMode((m) => m === "roman" ? "chord" : "roman")}
+              style={textBtnStyle(labelMode === "chord")}
+              className={textBtnClass(labelMode === "chord")}
+              title="Toggle between roman numerals and chord names"
+            >
+              {labelMode === "chord" ? "Chords" : "RN"}
+            </button>
+            <button
+              onClick={() => setShowNct((v) => !v)}
+              style={textBtnStyle(showNct)}
+              className={textBtnClass(showNct)}
+              title="Show non-chord tone labels"
+            >
+              NCT
+            </button>
+            <button
+              onClick={() => setShowErrors((v) => { if (!v) setErrorPanelOpen(true); return !v; })}
+              style={textBtnStyle(showErrors)}
+              className={textBtnClass(showErrors)}
+              title="Show part-writing errors"
+            >
+              Errors
+            </button>
+            {showErrors && (() => {
+              const count = errorSummary.length;
+              const hasIssues = count > 0;
+              const issueColor = hasIssues
+                ? (dk ? "#fbbf24" : "#d97706")
+                : (dk ? "#4ade80" : "#16a34a");
+              return hasIssues ? (
+                <button
+                  onClick={() => { setErrorPanelOpen((v) => !v); setHighlightedBeat(null); }}
+                  style={{ ...textBtnStyle(errorPanelOpen), color: errorPanelOpen ? "#fff" : issueColor, fontSize: 11 }}
+                  className={textBtnClass(errorPanelOpen)}
+                  title="Toggle error summary panel"
+                >
+                  {count} issue{count !== 1 ? "s" : ""}
+                </button>
+              ) : (
+                <span style={{ fontSize: 11, fontWeight: 600, color: issueColor, padding: "0 6px", fontFamily: "-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif" }}>
+                  No issues
+                </span>
+              );
+            })()}
+            <button
+              onClick={() => setLegendOpen(true)}
+              style={textBtnStyle(false)}
+              title="Show legend for abbreviations"
+            >
+              Legend
+            </button>
+          </div>
+
+          {/* Meta actions */}
+          <div style={groupStyle}>
+            <button
+              onClick={() => { setBugReportOpen(true); setBugReportStatus("idle"); }}
+              style={textBtnStyle(false)}
+              title="Report a bug"
+            >
+              Bug
+            </button>
+            <button
+              onClick={() => { setFeatureRequestOpen(true); setFeatureRequestStatus("idle"); }}
+              style={textBtnStyle(false)}
+              title="Request a feature"
+            >
+              Request
+            </button>
+            <button
+              onClick={() => { setRoadmapOpen(true); fetchRoadmapVotes(); }}
+              style={textBtnStyle(false)}
+              title="View roadmap"
+            >
+              Roadmap
+            </button>
+          </div>
+
+          {/* Note indicator — pushed right */}
+          <span style={{ marginLeft: "auto", color: theme.textMuted, fontSize: 18, fontFamily: "serif", minWidth: 40, textAlign: "right" }}>
+            {hoverDp !== null ? (() => {
+              const letterIdx = ((hoverDp % 7) + 7) % 7;
+              const octave = Math.floor(hoverDp / 7);
+              const acc = accidentalSymbol(effectiveAccidental(selectedAccidental, hoverDp, keySig));
+              return `${LETTERS[letterIdx]}${acc}${octave}`;
+            })() : "\u00A0"}
+          </span>
         </div>
-        {sep}
-        <div style={{ display: "flex", alignItems: "center", gap: 5 }}>
-        <label style={{ display: "flex", alignItems: "center", gap: 4, fontSize: 12, color: "#5a5a5a" }}>
-          <span>Time</span>
-          <select value={tsTop} onChange={(e) => setTsTop(Number(e.target.value))} style={selectStyle}>
-            {[2, 3, 4, 5, 6, 7, 8, 9, 12].map((n) => (
-              <option key={n} value={n}>{n}</option>
-            ))}
-          </select>
-          <span>/</span>
-          <select value={tsBottom} onChange={(e) => setTsBottom(Number(e.target.value))} style={selectStyle}>
-            {[2, 4, 8, 16].map((n) => (
-              <option key={n} value={n}>{n}</option>
-            ))}
-          </select>
-        </label>
-        {sep}
-        <label style={{ display: "flex", alignItems: "center", gap: 4, fontSize: 12, color: "#5a5a5a" }}>
-          <span>Key</span>
-          <select value={tonicIdx} onChange={(e) => {
-            const newIdx = Number(e.target.value);
-            const oldKS = keySig;
-            const newKS = getKeySig(newIdx, scaleName);
-            setTrebleBeatsRaw((tb) => rewriteBeatsForKeySig(tb, oldKS, newKS));
-            setBassBeatsRaw((bb) => rewriteBeatsForKeySig(bb, oldKS, newKS));
-            setTonicIdx(newIdx);
-          }} style={selectStyle}>
-            {TONIC_OPTIONS.map((t, i) => (
-              <option key={t.label} value={i}>{t.label}</option>
-            ))}
-          </select>
-          <select value={scaleName} onChange={(e) => {
-            const newScale = e.target.value;
-            const oldKS = keySig;
-            const newKS = getKeySig(tonicIdx, newScale);
-            setTrebleBeatsRaw((tb) => rewriteBeatsForKeySig(tb, oldKS, newKS));
-            setBassBeatsRaw((bb) => rewriteBeatsForKeySig(bb, oldKS, newKS));
-            setScaleName(newScale);
-          }} style={selectStyle}>
-            {SCALE_OPTIONS.map((s) => (
-              <option key={s.value} value={s.value}>{s.label}</option>
-            ))}
-          </select>
-        </label>
+
+        {/* Row 2: Playback & settings */}
+        <div style={{
+          display: "flex",
+          alignItems: "center",
+          flexWrap: "wrap",
+          padding: "4px 0 6px",
+          gap: 8,
+          borderTop: `1px solid ${theme.row2Border}`,
+        }}>
+          {/* Playback */}
+          <div style={groupStyle}>
+            <span style={groupLabel}>Play</span>
+            <button
+              onClick={isPlaying ? handlePause : handlePlay}
+              style={textBtnStyle(isPlaying)}
+              className={textBtnClass(isPlaying)}
+              title={isPlaying ? "Pause (Space)" : isPaused ? "Resume (Space)" : "Play (Space)"}
+            >
+              {isPlaying ? "\u23F8" : "\u25B6"}
+            </button>
+            <button
+              onClick={handleStop}
+              style={{ ...textBtnStyle(false), opacity: (!isPlaying && !isPaused) ? 0.4 : 1 }}
+              title="Stop"
+              disabled={!isPlaying && !isPaused}
+            >
+              {"\u23F9"}
+            </button>
+            <label style={{ display: "flex", alignItems: "center", gap: 3, fontSize: 13, color: "#5a5a5a" }}>
+              <span style={{ fontSize: 14 }}>{"\u2669"}</span>
+              <span>=</span>
+              <input
+                type="number"
+                min={40}
+                max={240}
+                value={tempo}
+                onChange={(e) => setTempo(Math.max(40, Math.min(240, Number(e.target.value))))}
+                style={{
+                  width: 52,
+                  fontSize: 13,
+                  fontFamily: "inherit",
+                  border: "1px solid #d0ccc8",
+                  borderRadius: 4,
+                  padding: "4px 6px",
+                  textAlign: "center",
+                  background: "#faf9f7",
+                }}
+              />
+            </label>
+            <select
+              value={instrument}
+              onChange={(e) => setInstrument(e.target.value as InstrumentName)}
+              style={selectStyle}
+              title="Instrument"
+            >
+              {INSTRUMENTS.map((inst) => (
+                <option key={inst.value} value={inst.value}>{inst.label}</option>
+              ))}
+            </select>
+          </div>
+
+          {/* Time signature */}
+          <div style={groupStyle}>
+            <span style={groupLabel}>Time</span>
+            <select value={tsTop} onChange={(e) => setTsTop(Number(e.target.value))} style={selectStyle}>
+              {[2, 3, 4, 5, 6, 7, 8, 9, 12].map((n) => (
+                <option key={n} value={n}>{n}</option>
+              ))}
+            </select>
+            <span style={{ color: "#999", fontSize: 13 }}>/</span>
+            <select value={tsBottom} onChange={(e) => setTsBottom(Number(e.target.value))} style={selectStyle}>
+              {[2, 4, 8, 16].map((n) => (
+                <option key={n} value={n}>{n}</option>
+              ))}
+            </select>
+          </div>
+
+          {/* Key */}
+          <div style={groupStyle}>
+            <span style={groupLabel}>Key</span>
+            <select value={tonicIdx} onChange={(e) => {
+              const newIdx = Number(e.target.value);
+              const oldKS = keySig;
+              const newKS = getKeySig(newIdx, scaleName);
+              setTrebleBeatsRaw((tb) => rewriteBeatsForKeySig(tb, oldKS, newKS));
+              setBassBeatsRaw((bb) => rewriteBeatsForKeySig(bb, oldKS, newKS));
+              setTonicIdx(newIdx);
+            }} style={selectStyle}>
+              {TONIC_OPTIONS.map((t, i) => (
+                <option key={t.label} value={i}>{t.label}</option>
+              ))}
+            </select>
+            <select value={scaleName} onChange={(e) => {
+              const newScale = e.target.value;
+              const oldKS = keySig;
+              const newKS = getKeySig(tonicIdx, newScale);
+              setTrebleBeatsRaw((tb) => rewriteBeatsForKeySig(tb, oldKS, newKS));
+              setBassBeatsRaw((bb) => rewriteBeatsForKeySig(bb, oldKS, newKS));
+              setScaleName(newScale);
+            }} style={selectStyle}>
+              {SCALE_OPTIONS.map((s) => (
+                <option key={s.value} value={s.value}>{s.label}</option>
+              ))}
+            </select>
+          </div>
+
+          {/* Zoom */}
+          <div style={groupStyle}>
+            <span style={groupLabel}>Zoom</span>
+            <button onClick={() => { const z = Math.max(0.5, +(zoom - 0.1).toFixed(1)); setZoom(z); localStorage.setItem("contrapunctus_zoom", String(z)); }}
+              style={{ ...btnBase, width: 28, height: 28 }} title="Zoom out">−</button>
+            <span style={{ fontSize: 12, color: theme.textMuted, minWidth: 32, textAlign: "center" }}>{Math.round(zoom * 100)}%</span>
+            <button onClick={() => { const z = Math.min(2, +(zoom + 0.1).toFixed(1)); setZoom(z); localStorage.setItem("contrapunctus_zoom", String(z)); }}
+              style={{ ...btnBase, width: 28, height: 28 }} title="Zoom in">+</button>
+          </div>
+
+          {/* Dark mode */}
+          <div style={groupStyle}>
+            <button
+              onClick={() => { const v = !darkMode; setDarkMode(v); localStorage.setItem("contrapunctus_dark", String(v)); }}
+              style={{ ...btnBase, width: 28, height: 28 }}
+              className={textBtnClass(darkMode)}
+              title={darkMode ? "Switch to light mode" : "Switch to dark mode"}
+            >
+              {darkMode ? "☀" : "☾"}
+            </button>
+          </div>
+
+          {/* Collapse toggle — pushed right */}
+          <button
+            onClick={() => setToolbarExpanded(false)}
+            style={{ ...btnBase, width: 28, height: 28, color: "#888", marginLeft: "auto" }}
+            title="Collapse toolbar"
+          >
+            <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M3 9.5 L7 5.5 L11 9.5" />
+            </svg>
+          </button>
         </div>
-        <span style={{ color: "#999", fontSize: 12, marginLeft: "auto" }}>
-          {hoverDp !== null ? (() => {
-            const letterIdx = ((hoverDp % 7) + 7) % 7;
-            const octave = Math.floor(hoverDp / 7);
-            const acc = accidentalSymbol(effectiveAccidental(selectedAccidental, hoverDp, keySig));
-            return `${LETTERS[letterIdx]}${acc}${octave}`;
-          })() : "\u00A0"}
-        </span>
-      </div>
+        </>)}
 
       {/* Bug report modal */}
       {bugReportOpen && (
@@ -2826,7 +3243,7 @@ export function NoteEditor({ header }: { header?: React.ReactNode }) {
           justifyContent: "center", zIndex: 1000,
         }} onClick={() => setLegendOpen(false)}>
           <div style={{
-            background: "#fff", borderRadius: 8, padding: 28, width: 520,
+            background: "#fff", borderRadius: 8, padding: 28, width: 800,
             maxWidth: "90vw", maxHeight: "80vh", overflow: "auto",
             boxShadow: "0 4px 20px rgba(0,0,0,0.15)",
           }} onClick={(e) => e.stopPropagation()}>
@@ -2897,15 +3314,37 @@ export function NoteEditor({ header }: { header?: React.ReactNode }) {
       {/* Spacer for fixed top bar */}
       <div ref={topBarSpacerRef} />
 
+      {/* Main content: score + optional error panel */}
+      <div style={{
+        display: "flex",
+        justifyContent: "center",
+        gap: 16,
+        padding: "24px 16px",
+        alignItems: "flex-start",
+      }}>
+
       {/* Page card */}
       <div style={{
         maxWidth: 960,
         width: "100%",
-        margin: "24px auto",
+        minWidth: 960,
+        flex: showErrors && errorPanelOpen ? "1 1 0" : undefined,
         padding: "36px 40px 48px",
-        background: "#fff",
         borderRadius: 8,
-        boxShadow: "0 1px 3px rgba(0,0,0,0.12), 0 4px 12px rgba(0,0,0,0.08)",
+        boxShadow: dk ? "0 1px 3px rgba(0,0,0,0.3), 0 4px 12px rgba(0,0,0,0.2)" : "0 1px 3px rgba(0,0,0,0.12), 0 4px 12px rgba(0,0,0,0.08)",
+        zoom: zoom !== 1 ? zoom : undefined,
+        transition: "max-width 0.3s ease, background 0.3s ease",
+        color: theme.text,
+        background: `
+          repeating-linear-gradient(
+            0deg,
+            transparent,
+            transparent ${SPACE * 2 - 1}px,
+            ${dk ? "rgba(255,255,255,0.03)" : "rgba(180, 160, 130, 0.18)"} ${SPACE * 2 - 1}px,
+            ${dk ? "rgba(255,255,255,0.03)" : "rgba(180, 160, 130, 0.18)"} ${SPACE * 2}px
+          ),
+          ${theme.pageBg}
+        `,
       }}>
 
       {/* Interactive grand staff */}
@@ -2939,6 +3378,24 @@ export function NoteEditor({ header }: { header?: React.ReactNode }) {
               })}
 
               {/* Playback highlight — blue column on the currently playing beat */}
+              {/* Error hover highlight */}
+              {highlightedBeat !== null && (() => {
+                const t = allTimePoints[highlightedBeat];
+                const pos = timeToPos.get(t);
+                if (!pos || pos.systemIdx !== sysIdx) return null;
+                const trebleTopY = dpToY(ED_TREBLE_LINES[4], ED_TREBLE_TOP, trebleYOffset);
+                const bassBotY = dpToY(ED_BASS_LINES[0], ED_BASS_TOP, bassYOffset);
+                const hw = ED_NOTE_SPACING / 2;
+                return (
+                  <rect
+                    x={pos.x - hw} y={trebleTopY - 4}
+                    width={ED_NOTE_SPACING} height={bassBotY - trebleTopY + 8}
+                    fill="#ef4444" opacity={0.15} rx={3}
+                    style={{ pointerEvents: "none" }}
+                  />
+                );
+              })()}
+
               {playbackTimeIdx !== null && (() => {
                 const t = allTimePoints[playbackTimeIdx];
                 const pos = timeToPos.get(t);
@@ -2962,9 +3419,8 @@ export function NoteEditor({ header }: { header?: React.ReactNode }) {
                 if (t === undefined) return null;
                 const pos = timeToPos.get(t);
                 if (!pos || pos.systemIdx !== sysIdx) return null;
-                const bassBotY = dpToY(ED_BASS_LINES[0], ED_BASS_TOP, bassYOffset);
                 const mx = pos.x;
-                const my = bassBotY + 8;
+                const my = staffHeight - 4;
                 return (
                   <polygon
                     points={`${mx},${my} ${mx - 5},${my + 8} ${mx + 5},${my + 8}`}
@@ -3086,7 +3542,7 @@ export function NoteEditor({ header }: { header?: React.ReactNode }) {
               {allTimePoints.map((t, i) => {
                 const rns = activeLabels[i];
                 const hasRn = hasRN && rns && rns.length > 0;
-                const beatChordErrs = showErrors ? timeToChordErrors.get(t) : undefined;
+                const beatChordErrs = timeToChordErrors.get(t);
                 const hasChordErr = beatChordErrs && beatChordErrs.length > 0;
                 if (!hasRn && !hasChordErr) return null;
                 const pos = timeToPos.get(t);
@@ -3113,12 +3569,24 @@ export function NoteEditor({ header }: { header?: React.ReactNode }) {
                         {label}
                       </text>
                     )}
-                    {hasChordErr && (
-                      <text x={rx} y={rnY + (hasRn ? 36 : 20)} fontSize={9}
-                        textAnchor="middle" fill="#e74c3c" fontFamily="sans-serif" fontWeight="bold">
-                        {beatChordErrs!.join(", ")}
-                      </text>
-                    )}
+                    {hasChordErr && (() => {
+                      const ceText = beatChordErrs!.join(", ");
+                      const ceTip = beatChordErrs!.map(e => errorTooltips[e] || e).join(", ");
+                      const ceY = rnY + (hasRn ? 36 : 20);
+                      const badgeH = 14;
+                      const padX = 4;
+                      const ceW = ceText.length * 5.8 + padX * 2 + 2;
+                      return (
+                        <g className="cp-fade" style={{ opacity: showErrors ? 1 : 0, pointerEvents: showErrors ? "auto" : "none" }}>
+                          <title>{ceTip}</title>
+                          <rect x={rx - ceW / 2} y={ceY - badgeH + 3} width={ceW} height={badgeH} rx={3} fill={theme.errBadgeBg} />
+                          <text x={rx} y={ceY} fontSize={10}
+                            textAnchor="middle" fill={theme.errText} fontFamily="sans-serif" fontWeight="700">
+                            {ceText}
+                          </text>
+                        </g>
+                      );
+                    })()}
                   </g>
                 );
               })}
@@ -3170,8 +3638,11 @@ export function NoteEditor({ header }: { header?: React.ReactNode }) {
                 const noteExists = existingBeat && !existingBeat.isRest && existingBeat.notes.some((n) => n.dp === hoverDp);
 
                 if (deleteMode) {
-                  if (!noteExists) return null;
-                  const y = dpToY(hoverDp, sTopDp, yOff);
+                  const isRest = existingBeat && existingBeat.isRest;
+                  if (!noteExists && !isRest) return null;
+                  const staffLines = hoverStaff === "treble" ? ED_TREBLE_LINES : ED_BASS_LINES;
+                  const midLineY = dpToY(staffLines[2], sTopDp, yOff);
+                  const y = isRest ? midLineY : dpToY(hoverDp, sTopDp, yOff);
                   return (
                     <g opacity={0.6}>
                       <line x1={hx - 8} y1={y - 8} x2={hx + 8} y2={y + 8} stroke="red" strokeWidth={2.5} />
@@ -3240,6 +3711,117 @@ export function NoteEditor({ header }: { header?: React.ReactNode }) {
       })()}
       </div>
       </div>{/* end page card */}
+
+      {/* Right-side error panel */}
+      {showErrors && errorPanelOpen && (
+        <div style={{
+          width: 300,
+          minWidth: 300,
+          maxHeight: "calc(100vh - 120px)",
+          position: "sticky",
+          top: 80,
+          overflowY: "auto",
+          borderRadius: 8,
+          background: dk ? "#2a2a30" : "#fff",
+          boxShadow: dk ? "0 1px 3px rgba(0,0,0,0.2), 0 2px 8px rgba(0,0,0,0.15)" : "0 1px 3px rgba(0,0,0,0.08), 0 2px 8px rgba(0,0,0,0.06)",
+          border: `1px solid ${dk ? "#3a3a40" : "#e8e4e0"}`,
+          color: theme.text,
+          fontFamily: "-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif",
+          zoom: zoom !== 1 ? zoom : undefined,
+        }}>
+          {/* Panel header */}
+          <div style={{
+            display: "flex", justifyContent: "space-between", alignItems: "center",
+            padding: "14px 16px 12px",
+            borderBottom: `1px solid ${dk ? "#3a3a40" : "#f0ece6"}`,
+            position: "sticky", top: 0,
+            background: dk ? "#2a2a30" : "#fff",
+            borderRadius: "8px 8px 0 0",
+            zIndex: 1,
+          }}>
+            <div>
+              <h3 style={{ margin: 0, fontSize: 13, fontWeight: 700, color: theme.text }}>
+                Error Summary
+              </h3>
+              <span style={{
+                fontSize: 11, fontWeight: 600, marginTop: 2, display: "block",
+                color: errorSummary.length > 0 ? (dk ? "#fbbf24" : "#d97706") : (dk ? "#4ade80" : "#16a34a"),
+              }}>
+                {errorSummary.length > 0
+                  ? `${errorSummary.length} issue${errorSummary.length !== 1 ? "s" : ""} found`
+                  : "No issues"}
+              </span>
+            </div>
+            <button
+              onClick={() => { setErrorPanelOpen(false); setHighlightedBeat(null); }}
+              style={{
+                background: "none", border: "none", cursor: "pointer",
+                color: theme.textMuted, fontSize: 18, padding: "2px 6px", lineHeight: 1,
+              }}
+              title="Close panel"
+            >
+              ×
+            </button>
+          </div>
+
+          {/* Panel content */}
+          <div style={{ padding: "8px 0" }}>
+            {errorSummary.length === 0 ? (
+              <div style={{
+                padding: "32px 16px",
+                textAlign: "center",
+                color: dk ? "#4ade80" : "#16a34a",
+              }}>
+                <div style={{ fontSize: 28, marginBottom: 8 }}>✓</div>
+                <div style={{ fontSize: 13, fontWeight: 600 }}>No voice-leading errors detected</div>
+                <div style={{ fontSize: 11, color: theme.textMuted, marginTop: 4 }}>
+                  Your part writing looks good!
+                </div>
+              </div>
+            ) : (
+              errorSummary.map((err, i) => (
+                <div
+                  key={i}
+                  onClick={() => {
+                    setHighlightedBeat(err.beat);
+                    setPlaybackStartIdx(err.beat);
+                    containerRef.current?.scrollIntoView({ behavior: "smooth", block: "center" });
+                  }}
+                  onMouseEnter={(e) => {
+                    setHighlightedBeat(err.beat);
+                    e.currentTarget.style.background = dk ? "#35353c" : "#fef8f8";
+                  }}
+                  onMouseLeave={(e) => {
+                    setHighlightedBeat(null);
+                    e.currentTarget.style.background = "transparent";
+                  }}
+                  style={{
+                    padding: "10px 16px",
+                    cursor: "pointer",
+                    transition: "background 0.15s",
+                    borderLeft: `3px solid ${dk ? "#f87171" : "#e74c3c"}`,
+                    marginLeft: 0,
+                  }}
+                >
+                  <div style={{ fontSize: 12, color: dk ? "#ddd" : "#222", fontWeight: 600, lineHeight: 1.4, marginBottom: 2 }}>
+                    {err.fullName}
+                  </div>
+                  <div style={{ fontSize: 11, color: theme.textMuted }}>
+                    {err.location}
+                  </div>
+                </div>
+              ))
+            )}
+          </div>
+        </div>
+      )}
+
+      </div>{/* end flex container */}
+
+      {header && <div style={{
+        position: "fixed", bottom: 0, left: 0, right: 0, zIndex: 100,
+        background: dk ? "#222228" : "#f0ede9", borderTop: `1px solid ${theme.footerBorder}`, padding: "16px 24px", color: theme.text,
+      }}>{header}</div>}
     </div>
   );
 }

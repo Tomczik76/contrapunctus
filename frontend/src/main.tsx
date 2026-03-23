@@ -35,25 +35,30 @@ function EditorPage() {
               fontSize: 22,
               fontWeight: 700,
               letterSpacing: -0.5,
-              color: "#1a1a1a",
+              color: "inherit",
               margin: 0,
               whiteSpace: "nowrap",
             }}>
               Contrapunctus
             </h1>
             <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-              <span style={{ fontSize: 13, color: "#666" }}>{user?.displayName}</span>
+              <span style={{ fontSize: 13, opacity: 0.6 }}>{user?.displayName}</span>
               <button
                 onClick={logout}
                 style={{
-                  padding: "5px 10px",
+                  padding: 0,
                   fontSize: 12,
                   background: "none",
-                  border: "1px solid #ccc",
-                  borderRadius: 4,
+                  border: "none",
+                  opacity: 0.6,
+                  color: "inherit",
                   cursor: "pointer",
-                  fontFamily: "inherit",
+                  fontFamily: "-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif",
+                  textDecoration: "underline",
+                  textUnderlineOffset: 2,
                 }}
+                onMouseEnter={e => (e.currentTarget.style.opacity = "0.85")}
+                onMouseLeave={e => (e.currentTarget.style.opacity = "0.6")}
               >
                 Sign out
               </button>

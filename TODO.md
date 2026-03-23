@@ -1,8 +1,7 @@
 - Add chord dictionary and suggestions of chords
-- Add checks for part writing errors
 - Counterpoint analysis
 - New project
 - Save to Server
 - Export Midi
 - Transforms to change modes 
-- AI assistant 
+- AI asstant No

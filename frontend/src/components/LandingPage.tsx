@@ -1,4 +1,4 @@
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 
 // ── Reuse glyph rendering from Staff.tsx ────────────────────────────
@@ -137,7 +137,7 @@ const LANDING_CSS = `
 }
 .landing-card:hover {
   transform: translateY(-3px);
-  box-shadow: 0 4px 16px rgba(0,0,0,0.12), 0 8px 24px rgba(0,0,0,0.08) !important;
+  box-shadow: 0 4px 16px rgba(0,0,0,0.18), 0 8px 24px rgba(0,0,0,0.12) !important;
 }
 .landing-cta {
   transition: transform 0.1s ease;
@@ -146,34 +146,47 @@ const LANDING_CSS = `
   transform: scale(0.97);
 }
 .landing-footer-link {
-  color: #666;
+  color: inherit;
+  opacity: 0.6;
   text-decoration: none;
-  transition: color 0.15s ease;
+  transition: opacity 0.15s ease;
 }
 .landing-footer-link:hover {
-  color: #1a1a1a;
-}
-.features-grid {
-  display: grid;
-  grid-template-columns: repeat(6, 1fr);
-  gap: 28px;
+  opacity: 1;
 }
 @media (max-width: 700px) {
   .features-grid {
     grid-template-columns: 1fr !important;
   }
-  .features-grid > * {
-    grid-column: span 1 !important;
+  .personas-grid {
+    grid-template-columns: 1fr !important;
+  }
+  .roadmap-row {
+    flex-direction: column !important;
+    align-items: center !important;
+    gap: 28px !important;
+  }
+  .roadmap-line {
+    display: none !important;
   }
   .landing-nav {
     padding: 12px 16px !important;
-  }
-  .landing-nav-btns {
+    flex-wrap: wrap !important;
     gap: 8px !important;
   }
+  .landing-nav-btns {
+    gap: 6px !important;
+  }
   .landing-nav-btns a {
-    padding: 6px 12px !important;
-    font-size: 13px !important;
+    padding: 5px 10px !important;
+    font-size: 12px !important;
+  }
+  .landing-nav-btns button {
+    padding: 5px 8px !important;
+    font-size: 14px !important;
+  }
+  .landing-nav-btns button span {
+    display: none !important;
   }
   .landing-hero {
     padding: 40px 16px 24px !important;
@@ -187,7 +200,7 @@ const LANDING_CSS = `
 
 // ── Staff illustration ──────────────────────────────────────────────
 
-function StaffIllustration() {
+function StaffIllustration({ color = "#1a1a1a" }: { color?: string }) {
   const staffW = 700;
   const trebleTopDp = 38;
   const bassTopDp = 26;
@@ -198,7 +211,6 @@ function StaffIllustration() {
   const bassY = trebleY + staffHeight + staffGap;
   const botPad = 60;
   const svgH = bassY + staffHeight + botPad;
-  const color = "#1a1a1a";
 
   // I, IV, V, vi, ii, V, I in C major
   const chords: { x: number; half?: boolean; treble: number[]; bass: number[] }[] = [
@@ -316,10 +328,15 @@ function RevealSection({ children, delay = 0, style }: {
 
 // ── Data ────────────────────────────────────────────────────────────
 
+
 const features = [
   {
     title: "Real-Time Harmonic Analysis",
-    desc: "Roman numeral analysis updates instantly as you write. Triads, sevenths, extensions, secondary dominants, and more — all identified in context.",
+    desc: "Roman numerals and chord types appear instantly as you write. Triads, sevenths, extensions, secondary dominants, and more — all labeled in context.",
+  },
+  {
+    title: "Part-Writing Error Detection",
+    desc: "Catch parallel fifths, voice crossing, spacing errors, unresolved tendency tones, and other part-writing violations as you write.",
   },
   {
     title: "Non-Chord Tone Detection",
@@ -332,10 +349,6 @@ const features = [
   {
     title: "Key & Scale Awareness",
     desc: "Set your key signature and mode. Analysis adapts to major, minor, and modal contexts with correct diatonic chord labeling.",
-  },
-  {
-    title: "Part-Writing Error Detection",
-    desc: "Catch parallel fifths, voice crossing, spacing errors, unresolved tendency tones, and other part-writing violations as you write.",
   },
   {
     title: "Music Playback",
@@ -360,31 +373,62 @@ const personas = [
   },
 ];
 
-const comingSoon = [
-  "Counterpoint analysis",
-  "MIDI export",
-  "AI composition assistant",
+const roadmap = [
+  { title: "Counterpoint analysis", desc: "Species counterpoint rules and Fux-style exercises" },
+  { title: "MIDI export", desc: "Export your compositions to any DAW" },
+  { title: "AI composition assistant", desc: "Intelligent feedback as you write" },
 ];
-
-const cardStyle: React.CSSProperties = {
-  background: "#fff",
-  borderRadius: 8,
-  padding: "24px 22px",
-  boxShadow: "0 1px 3px rgba(0,0,0,0.08), 0 4px 12px rgba(0,0,0,0.05)",
-};
-
-const sectionHeadingStyle: React.CSSProperties = {
-  fontSize: 28,
-  fontWeight: 700,
-  letterSpacing: -0.5,
-  textAlign: "center" as const,
-  marginBottom: 40,
-  color: "#1a1a1a",
-};
 
 // ── Component ───────────────────────────────────────────────────────
 
 export function LandingPage() {
+  const [dk, setDk] = useState(() => {
+    try { return localStorage.getItem("contrapunctus_dark") === "true"; } catch { return false; }
+  });
+
+  // Listen for storage changes (if toggled in another tab or the editor)
+  useEffect(() => {
+    const handler = () => setDk(localStorage.getItem("contrapunctus_dark") === "true");
+    window.addEventListener("storage", handler);
+    return () => window.removeEventListener("storage", handler);
+  }, []);
+
+  useEffect(() => {
+    document.body.style.background = dk ? "#1a1a1e" : "#e8e4e0";
+    document.body.style.color = dk ? "#e0ddd8" : "#2c2c2c";
+  }, [dk]);
+
+  const t = {
+    text: dk ? "#e0ddd8" : "#1a1a1a",
+    textSub: dk ? "#aaa" : "#555",
+    textMuted: dk ? "#888" : "#888",
+    textFaint: dk ? "#666" : "#999",
+    cardBg: dk ? "#2a2a30" : "#fff",
+    cardShadow: dk ? "0 1px 3px rgba(0,0,0,0.2), 0 4px 12px rgba(0,0,0,0.15)" : "0 1px 3px rgba(0,0,0,0.08), 0 4px 12px rgba(0,0,0,0.05)",
+    btnBg: dk ? "#e0ddd8" : "#1a1a1a",
+    btnText: dk ? "#1a1a1e" : "#fff",
+    borderColor: dk ? "#3a3a40" : "#999",
+    footerBorder: dk ? "#3a3a40" : "#d5d0cb",
+    badgeBg: dk ? "#32323a" : "#f0eeeb",
+    illustrationColor: dk ? "#e0ddd8" : "#1a1a1a",
+  };
+
+  const cardStyle: React.CSSProperties = {
+    background: t.cardBg,
+    borderRadius: 8,
+    padding: "24px 22px",
+    boxShadow: t.cardShadow,
+  };
+
+  const sectionHeadingStyle: React.CSSProperties = {
+    fontSize: 28,
+    fontWeight: 700,
+    letterSpacing: -0.5,
+    textAlign: "center" as const,
+    marginBottom: 40,
+    color: t.text,
+  };
+
   return (
     <div style={{ minHeight: "100vh", display: "flex", flexDirection: "column" }}>
       <style>{LANDING_CSS}</style>
@@ -399,17 +443,40 @@ export function LandingPage() {
         width: "100%",
         margin: "0 auto",
       }}>
-        <span style={{ fontSize: 20, fontWeight: 700, letterSpacing: -0.5, color: "#1a1a1a" }}>
+        <span style={{ fontSize: 20, fontWeight: 700, letterSpacing: -0.5, color: t.text }}>
           Contrapunctus
         </span>
-        <div className="landing-nav-btns" style={{ display: "flex", gap: 12 }}>
+        <div className="landing-nav-btns" style={{ display: "flex", gap: 12, alignItems: "center" }}>
+          {/* Nav links container — add future items (Docs, Pricing, Blog) here */}
+          <div style={{ display: "flex", gap: 16, alignItems: "center", marginRight: 4 }}>
+            <button
+              onClick={() => { const v = !dk; setDk(v); localStorage.setItem("contrapunctus_dark", String(v)); }}
+            style={{
+              background: dk ? "#3a3a40" : "#f0eeeb",
+              border: `1px solid ${t.borderColor}`,
+              borderRadius: 6,
+              cursor: "pointer",
+              fontSize: 16,
+              padding: "6px 12px",
+              color: t.text,
+              transition: "all 0.15s ease",
+              display: "flex",
+              alignItems: "center",
+              gap: 6,
+              fontFamily: "-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif",
+            }}
+            title={dk ? "Switch to light mode" : "Switch to dark mode"}
+          >
+            {dk ? "☀" : "☾"} <span style={{ fontSize: 13 }}>{dk ? "Light" : "Dark"}</span>
+          </button>
+          </div>
           <Link to="/login" className="landing-cta" style={{
             padding: "8px 18px",
             fontSize: 14,
             fontFamily: "inherit",
-            color: "#1a1a1a",
+            color: t.text,
             textDecoration: "none",
-            border: "1px solid #999",
+            border: `1px solid ${t.borderColor}`,
             borderRadius: 4,
           }}>
             Sign In
@@ -418,8 +485,8 @@ export function LandingPage() {
             padding: "8px 18px",
             fontSize: 14,
             fontFamily: "inherit",
-            color: "#fff",
-            background: "#1a1a1a",
+            color: t.btnText,
+            background: t.btnBg,
             textDecoration: "none",
             borderRadius: 4,
           }}>
@@ -444,14 +511,14 @@ export function LandingPage() {
           fontWeight: 700,
           letterSpacing: -1,
           lineHeight: 1.15,
-          color: "#1a1a1a",
+          color: t.text,
           marginBottom: 12,
         }}>
           Compose with clarity.
         </h1>
         <p style={{
           fontSize: 15,
-          color: "#888",
+          color: t.textMuted,
           marginBottom: 20,
           letterSpacing: 0.3,
         }}>
@@ -460,13 +527,12 @@ export function LandingPage() {
         <p style={{
           fontSize: "clamp(16px, 3vw, 19px)",
           lineHeight: 1.65,
-          color: "#555",
+          color: t.textSub,
           maxWidth: 560,
           marginBottom: 32,
         }}>
-          Contrapunctus is a music theory workbench that analyzes harmony in real time.
-          Write notes on a staff, and see roman numerals, chord extensions,
-          non-chord tones, and part-writing errors appear as you compose.
+          Write directly on a grand staff and hear your work played back instantly.
+          Harmony labels, chord analysis, and part-writing feedback appear as you go.
         </p>
         <div className="landing-hero-btns" style={{ display: "flex", gap: 14, flexWrap: "wrap", justifyContent: "center" }}>
           <Link to="/signup" className="landing-cta" style={{
@@ -474,8 +540,8 @@ export function LandingPage() {
             fontSize: 16,
             fontWeight: 700,
             fontFamily: "inherit",
-            color: "#fff",
-            background: "#1a1a1a",
+            color: t.btnText,
+            background: t.btnBg,
             textDecoration: "none",
             borderRadius: 6,
           }}>
@@ -486,10 +552,10 @@ export function LandingPage() {
             fontSize: 16,
             fontWeight: 700,
             fontFamily: "inherit",
-            color: "#1a1a1a",
+            color: t.text,
             background: "none",
             textDecoration: "none",
-            border: "1px solid #999",
+            border: `1px solid ${t.borderColor}`,
             borderRadius: 6,
           }}>
             Sign In
@@ -497,7 +563,7 @@ export function LandingPage() {
         </div>
         <p style={{
           fontSize: 13,
-          color: "#999",
+          color: t.textFaint,
           marginTop: 14,
         }}>
           Free for beta users. No credit card required.
@@ -506,7 +572,7 @@ export function LandingPage() {
 
       {/* Staff illustration with chord animation */}
       <div style={{ padding: "0 24px 48px", overflow: "hidden" }}>
-        <StaffIllustration />
+        <StaffIllustration color={t.illustrationColor} />
       </div>
 
       {/* Features */}
@@ -521,14 +587,16 @@ export function LandingPage() {
             Built for music theory
           </h2>
         </RevealSection>
-        <div className="features-grid">
+        <div className="features-grid" style={{
+          display: "grid",
+          gridTemplateColumns: "repeat(3, 1fr)",
+          gap: 28,
+        }}>
           {features.map((f, i) => (
-            <RevealSection key={f.title} delay={i * 120} style={{
-              gridColumn: "span 2",
-            }}>
-              <div className="landing-card" style={cardStyle}>
-                <h3 style={{ fontSize: 16, fontWeight: 700, marginBottom: 8, color: "#1a1a1a" }}>{f.title}</h3>
-                <p style={{ fontSize: 14, lineHeight: 1.6, color: "#555", margin: 0 }}>{f.desc}</p>
+            <RevealSection key={f.title} delay={i * 120}>
+              <div className="landing-card" style={{ ...cardStyle, height: "100%" }}>
+                <h3 style={{ fontSize: 16, fontWeight: 700, marginBottom: 8, color: t.text }}>{f.title}</h3>
+                <p style={{ fontSize: 14, lineHeight: 1.6, color: t.textSub, margin: 0 }}>{f.desc}</p>
               </div>
             </RevealSection>
           ))}
@@ -552,8 +620,8 @@ export function LandingPage() {
               fontSize: 12,
               fontWeight: 600,
               letterSpacing: 0.5,
-              color: "#888",
-              background: "#f0eeeb",
+              color: t.textMuted,
+              background: t.badgeBg,
               padding: "4px 12px",
               borderRadius: 12,
               textTransform: "uppercase",
@@ -565,13 +633,13 @@ export function LandingPage() {
 
         <RevealSection delay={100}>
           <div className="landing-card" style={cardStyle}>
-            <p style={{ fontSize: 15, lineHeight: 1.7, color: "#555", margin: "0 0 14px" }}>
+            <p style={{ fontSize: 15, lineHeight: 1.7, color: t.textSub, margin: "0 0 14px" }}>
               Structured, pedagogical exercises that teach harmony and part writing from the ground up.
               Instead of auto-detecting chords for you, lesson mode asks <em>you</em> to do the analysis —
               identify chord qualities, label roman numerals, spot voice-leading errors, and harmonize
               melodies and bass lines without breaking the rules.
             </p>
-            <ul style={{ margin: 0, paddingLeft: 20, fontSize: 14, lineHeight: 1.8, color: "#555" }}>
+            <ul style={{ margin: 0, paddingLeft: 20, fontSize: 14, lineHeight: 1.8, color: t.textSub }}>
               <li>Analyze a given chorale and enter the correct roman numerals yourself</li>
               <li>Find parallel fifths, crossed voices, and other part-writing mistakes in a score</li>
               <li>Harmonize a soprano melody or figured bass line with proper voice leading</li>
@@ -593,18 +661,18 @@ export function LandingPage() {
             Who it's for
           </h2>
         </RevealSection>
-        <div style={{
+        <div className="personas-grid" style={{
           display: "grid",
-          gridTemplateColumns: "repeat(auto-fit, minmax(240px, 1fr))",
+          gridTemplateColumns: "repeat(3, 1fr)",
           gap: 28,
         }}>
           {personas.map((p, i) => (
             <RevealSection key={p.title} delay={i * 120}>
-              <div className="landing-card" style={cardStyle}>
-                <h3 style={{ fontSize: 16, fontWeight: 700, marginBottom: 8, color: "#1a1a1a" }}>{p.title}</h3>
-                <p style={{ fontSize: 14, lineHeight: 1.6, color: "#555", margin: 0 }}>{p.desc}</p>
+              <div className="landing-card" style={{ ...cardStyle, height: "100%" }}>
+                <h3 style={{ fontSize: 16, fontWeight: 700, marginBottom: 8, color: t.text }}>{p.title}</h3>
+                <p style={{ fontSize: 14, lineHeight: 1.6, color: t.textSub, margin: 0 }}>{p.desc}</p>
                 {p.qualifier && (
-                  <p style={{ fontSize: 12, color: "#999", marginTop: 8, marginBottom: 0, fontStyle: "italic" }}>
+                  <p style={{ fontSize: 12, color: t.textFaint, marginTop: 8, marginBottom: 0, fontStyle: "italic" }}>
                     {p.qualifier}
                   </p>
                 )}
@@ -614,7 +682,7 @@ export function LandingPage() {
         </div>
       </section>
 
-      {/* Coming soon */}
+      {/* Roadmap */}
       <section style={{
         padding: "0 24px 80px",
         maxWidth: 960,
@@ -622,29 +690,65 @@ export function LandingPage() {
         width: "100%",
       }}>
         <RevealSection>
-          <h2 style={{ ...sectionHeadingStyle, marginBottom: 28 }}>
-            Also coming soon
+          <h2 style={{ ...sectionHeadingStyle, marginBottom: 36 }}>
+            What's next
           </h2>
         </RevealSection>
 
         <RevealSection delay={100}>
-          <div style={{
+          <div className="roadmap-row" style={{
             display: "flex",
-            flexWrap: "wrap",
+            alignItems: "flex-start",
             justifyContent: "center",
-            gap: "12px 32px",
+            gap: 0,
+            position: "relative",
           }}>
-            {comingSoon.map((item, i) => (
-              <span key={item} style={{
-                fontSize: 15,
-                color: "#666",
+            {roadmap.map((item, i) => (
+              <div key={item.title} style={{
+                flex: "1 1 0",
                 display: "flex",
+                flexDirection: "column",
                 alignItems: "center",
-                gap: 8,
+                textAlign: "center",
+                position: "relative",
+                padding: "0 16px",
+                maxWidth: 260,
               }}>
-                {i > 0 && <span style={{ color: "#ccc", fontSize: 18, lineHeight: 1, userSelect: "none" }} aria-hidden>·</span>}
-                {item}
-              </span>
+                {/* Connector line */}
+                {i < roadmap.length - 1 && (
+                  <div className="roadmap-line" style={{
+                    position: "absolute",
+                    top: 9,
+                    left: "calc(50% + 12px)",
+                    right: "calc(-50% + 12px)",
+                    height: 2,
+                    background: dk ? "#3a3a40" : "#d5d0cb",
+                  }} />
+                )}
+                {/* Dot */}
+                <div style={{
+                  width: 20,
+                  height: 20,
+                  borderRadius: "50%",
+                  border: `2px solid ${dk ? "#888" : "#999"}`,
+                  background: dk ? "#2a2a30" : "#fff",
+                  position: "relative",
+                  zIndex: 1,
+                  flexShrink: 0,
+                }} />
+                <h3 style={{
+                  fontSize: 14,
+                  fontWeight: 700,
+                  color: t.text,
+                  margin: "12px 0 4px",
+                }}>{item.title}</h3>
+                <p style={{
+                  fontSize: 13,
+                  lineHeight: 1.5,
+                  color: t.textSub,
+                  margin: 0,
+                }}>{item.desc}</p>
+              </div>
             ))}
           </div>
         </RevealSection>
@@ -652,7 +756,7 @@ export function LandingPage() {
 
       {/* Footer */}
       <footer style={{
-        borderTop: "1px solid #d5d0cb",
+        borderTop: `1px solid ${t.footerBorder}`,
         padding: "32px 24px",
         marginTop: "auto",
       }}>
@@ -666,19 +770,35 @@ export function LandingPage() {
           gap: "24px 48px",
         }}>
           <div>
-            <span style={{ fontSize: 16, fontWeight: 700, color: "#1a1a1a", display: "block", marginBottom: 4 }}>
+            <span style={{ fontSize: 16, fontWeight: 700, color: t.text, display: "block", marginBottom: 4 }}>
               Contrapunctus
             </span>
-            <span style={{ fontSize: 13, color: "#888", display: "block", marginBottom: 2 }}>
+            <span style={{ fontSize: 13, color: t.textMuted, display: "block" }}>
               Real-time harmonic analysis for the modern musician.
-            </span>
-            <span style={{ fontSize: 12, color: "#aaa" }}>
-              Made for musicians.
             </span>
           </div>
           <div style={{ display: "flex", gap: 24, flexWrap: "wrap" }}>
             <Link to="/login" className="landing-footer-link" style={{ fontSize: 13 }}>Sign In</Link>
             <Link to="/signup" className="landing-footer-link" style={{ fontSize: 13 }}>Get Started</Link>
+          </div>
+        </div>
+        <div style={{
+          maxWidth: 960,
+          margin: "0 auto",
+          borderTop: `1px solid ${t.footerBorder}`,
+          marginTop: 24,
+          paddingTop: 16,
+          display: "flex",
+          flexWrap: "wrap",
+          justifyContent: "space-between",
+          alignItems: "center",
+          gap: "8px 24px",
+        }}>
+          <span style={{ fontSize: 12, color: t.textFaint }}>&copy; 2026 Contrapunctus</span>
+          <div style={{ display: "flex", gap: 20, flexWrap: "wrap" }}>
+            <a href="#" className="landing-footer-link" style={{ fontSize: 12 }}>Privacy</a>
+            <a href="#" className="landing-footer-link" style={{ fontSize: 12 }}>Terms</a>
+            <a href="#" className="landing-footer-link" style={{ fontSize: 12 }}>Contact</a>
           </div>
         </div>
       </footer>
