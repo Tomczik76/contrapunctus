@@ -69,7 +69,7 @@ function TsDigit({ digit, x, y }: { digit: number; x: number; y: number }) {
 }
 
 
-export function NoteEditor({ header, lessonConfig, onTrebleBeatsChanged, onBassBeatsChanged, figuredBassValues, onFiguredBassChanged, trebleOnly, initialTonicIdx, initialScaleName, initialTsTop, initialTsBottom, initialTrebleBeats, initialBassBeats }: NoteEditorProps) {
+export function NoteEditor({ header, lessonConfig, onTrebleBeatsChanged, onBassBeatsChanged, figuredBassValues, onFiguredBassChanged, trebleOnly, initialTonicIdx, initialScaleName, initialTsTop, initialTsBottom, initialTrebleBeats, initialBassBeats, readOnly }: NoteEditorProps) {
   const embedded = !!(onTrebleBeatsChanged || onBassBeatsChanged);
   const { token } = useAuth();
   // ── LocalStorage persistence ──────────────────────────────────────
@@ -104,6 +104,8 @@ export function NoteEditor({ header, lessonConfig, onTrebleBeatsChanged, onBassB
   const initRests = () => fillWithRests((lessonConfig?.tsTop ?? initialTsTop ?? 4) / (lessonConfig?.tsBottom ?? initialTsBottom ?? 4));
   const initTreble = (): PlacedBeat[] => {
     if (!lessonConfig) return initialTrebleBeats ?? saved.current?.trebleBeats ?? initRests();
+    // Allow pre-populated beats (e.g. from a saved draft) to override defaults
+    if (initialTrebleBeats) return initialTrebleBeats;
     // For figured bass lessons, lockedTrebleBeats is [] — init treble rests to match bass beat count
     if (lessonConfig.lockedTrebleBeats.length === 0 && lessonConfig.lockedBassBeats && lessonConfig.lockedBassBeats.length > 0) {
       return lessonConfig.lockedBassBeats.map(b => ({ notes: [], duration: b.duration, isRest: true }));
@@ -112,7 +114,7 @@ export function NoteEditor({ header, lessonConfig, onTrebleBeatsChanged, onBassB
   };
   const [trebleBeats, setTrebleBeatsRaw] = useState<PlacedBeat[]>(initTreble);
   const [bassBeats, setBassBeatsRaw] = useState<PlacedBeat[]>(
-    lessonConfig?.lockedBassBeats ?? initialBassBeats ?? saved.current?.bassBeats ?? initRests()
+    initialBassBeats ?? lessonConfig?.lockedBassBeats ?? saved.current?.bassBeats ?? initRests()
   );
 
   // Undo/redo history: snapshots of [trebleBeats, bassBeats]
@@ -585,7 +587,7 @@ export function NoteEditor({ header, lessonConfig, onTrebleBeatsChanged, onBassB
   }, [romanNumerals, lessonConfig]);
 
   // Student RN entries (lesson mode only)
-  const [studentRomans, setStudentRomans] = useState<Record<number, string>>({});
+  const [studentRomans, setStudentRomans] = useState<Record<number, string>>(lessonConfig?.initialStudentRomans ?? {});
   useEffect(() => {
     if (lessonConfig?.onStudentRomansChanged) {
       lessonConfig.onStudentRomansChanged(studentRomans);
@@ -1102,6 +1104,7 @@ export function NoteEditor({ header, lessonConfig, onTrebleBeatsChanged, onBassB
   }, [lessonConfig]);
 
   const handleMouseDown = useCallback((e: React.MouseEvent<SVGSVGElement>) => {
+    if (readOnly) return;
     if (hoverDp === null || hoverBeatIdx === null || hoverStaff === null) return;
     if (deleteMode) return;
     const beats = getStaffBeats(hoverStaff);
@@ -1315,7 +1318,7 @@ export function NoteEditor({ header, lessonConfig, onTrebleBeatsChanged, onBassB
       // Past the end — start a new measure
       return [...working, { notes: [hoverNote], duration: selectedDuration, dotted: dottedMode || undefined }];
     });
-  }, [hoverDp, hoverStaff, hoverBeatIdx, selectedDuration, selectedAccidental, dottedMode, deleteMode, restMode, tsTop, tsBottom, trebleBeats, bassBeats, paddedTrebleBeats, paddedBassBeats, isLockedNote, lessonConfig]);
+  }, [hoverDp, hoverStaff, hoverBeatIdx, selectedDuration, selectedAccidental, dottedMode, deleteMode, restMode, tsTop, tsBottom, trebleBeats, bassBeats, paddedTrebleBeats, paddedBassBeats, isLockedNote, lessonConfig, readOnly]);
 
   const handleUndo = useCallback(() => {
     const { past, future } = historyRef.current;
@@ -1362,6 +1365,7 @@ export function NoteEditor({ header, lessonConfig, onTrebleBeatsChanged, onBassB
       // Don't intercept when typing in inputs
       const tag = (e.target as HTMLElement)?.tagName;
       if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT") return;
+      if (readOnly) return;
 
       const key = e.key.toLowerCase();
       const ctrl = e.ctrlKey || e.metaKey;
@@ -1817,7 +1821,7 @@ export function NoteEditor({ header, lessonConfig, onTrebleBeatsChanged, onBassB
           </span>
         </div>}
         {/* Collapsed: single compact row */}
-        {!toolbarExpanded && (
+        {!readOnly && !toolbarExpanded && (
         <div style={{
           display: "flex",
           alignItems: "center",
@@ -1914,7 +1918,7 @@ export function NoteEditor({ header, lessonConfig, onTrebleBeatsChanged, onBassB
         )}
 
         {/* Expanded: full two-row toolbar */}
-        {toolbarExpanded && (<>
+        {!readOnly && toolbarExpanded && (<>
         {/* Row 1: Note entry */}
         <div style={{
           display: "flex",
@@ -2818,6 +2822,7 @@ export function NoteEditor({ header, lessonConfig, onTrebleBeatsChanged, onBassB
                       value={studentRomans[i] ?? ""}
                       onChange={(v) => setStudentRomans((prev) => ({ ...prev, [i]: v }))}
                       dark={dk}
+                      disabled={readOnly}
                     />
                   </foreignObject>
                 );

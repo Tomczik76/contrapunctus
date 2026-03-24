@@ -5,7 +5,7 @@ import skunk.Session
 import contrapunctus.backend.db.Users
 import contrapunctus.backend.domain.User
 
-case class SignupInput(email: String, displayName: String, password: String)
+case class SignupInput(email: String, displayName: String, password: String, isEducator: Boolean)
 case class LoginInput(email: String, password: String)
 
 trait UserService:
@@ -25,7 +25,7 @@ object UserService:
         pool.use { session =>
           val hash = AuthService.hashPassword(input.password)
           session
-            .unique(Users.insert)((input.email, input.displayName, hash))
+            .unique(Users.insert)((input.email, input.displayName, hash, input.isEducator))
             .map { user =>
               val token = AuthService.createToken(user.id, jwtSecret)
               Right((user, token))

@@ -10,6 +10,7 @@ case class User(
   id: UUID,
   email: String,
   displayName: String,
+  isEducator: Boolean,
   createdAt: OffsetDateTime
 )
 

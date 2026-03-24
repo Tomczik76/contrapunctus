@@ -1,5 +1,5 @@
 import { useState, type FormEvent } from "react";
-import { Link, useNavigate } from "react-router-dom";
+import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import { useAuth } from "../auth";
 
 const inputStyle: React.CSSProperties = {
@@ -75,6 +75,9 @@ function AuthShell({ title, children }: { title: string; children: React.ReactNo
 export function SignupPage() {
   const { signup } = useAuth();
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
+  const redirect = searchParams.get("redirect");
+  const [role, setRole] = useState<"student" | "educator" | null>(redirect ? "student" : null);
   const [email, setEmail] = useState("");
   const [displayName, setDisplayName] = useState("");
   const [password, setPassword] = useState("");
@@ -101,10 +104,10 @@ export function SignupPage() {
       return;
     }
     setSubmitting(true);
-    const err = await signup(email, displayName, password);
+    const err = await signup(email, displayName, password, role === "educator");
     setSubmitting(false);
     if (err) setError(err);
-    else navigate("/");
+    else navigate(redirect || (role === "educator" ? "/educator" : "/"));
   }
 
   const reqStyle = (met: boolean): React.CSSProperties => ({
@@ -116,8 +119,119 @@ export function SignupPage() {
     transition: "color 0.15s ease",
   });
 
+  if (role === null) {
+    const cardStyle: React.CSSProperties = {
+      background: "#fff",
+      borderRadius: 12,
+      padding: "32px 28px",
+      boxShadow: "0 1px 3px rgba(0,0,0,0.08), 0 4px 12px rgba(0,0,0,0.05)",
+      border: "1px solid #e0dcd8",
+      textDecoration: "none",
+      color: "#1a1a1a",
+      display: "flex",
+      flexDirection: "column" as const,
+      gap: 8,
+      transition: "transform 0.15s ease, box-shadow 0.15s ease",
+      cursor: "pointer",
+      textAlign: "left" as const,
+    };
+
+    return (
+      <div style={{
+        minHeight: "100vh",
+        display: "flex",
+        flexDirection: "column",
+        alignItems: "center",
+        justifyContent: "center",
+        padding: "32px 16px",
+        background: "#e8e4e0",
+      }}>
+        <h1 style={{
+          fontSize: 26,
+          fontWeight: 700,
+          letterSpacing: -0.5,
+          marginBottom: 6,
+          textAlign: "center",
+          color: "#1a1a1a",
+        }}>
+          Contrapunctus
+        </h1>
+        <p style={{ fontSize: 14, color: "#888", margin: "0 0 40px", textAlign: "center" }}>
+          How will you be using Contrapunctus?
+        </p>
+        <div style={{
+          display: "grid",
+          gridTemplateColumns: "repeat(2, 1fr)",
+          gap: 24,
+          maxWidth: 700,
+          width: "100%",
+          padding: "0 24px",
+        }}>
+          <div
+            style={cardStyle}
+            onClick={() => setRole("student")}
+            onMouseEnter={(e) => { e.currentTarget.style.transform = "translateY(-2px)"; }}
+            onMouseLeave={(e) => { e.currentTarget.style.transform = ""; }}
+          >
+            <span style={{ fontSize: 28, marginBottom: 4 }}>
+              <svg width="28" height="28" viewBox="0 0 28 28" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M14 6 C14 6 10 4 4 5 V22 C10 21 14 23 14 23 C14 23 18 21 24 22 V5 C18 4 14 6 14 6 Z" />
+                <line x1="14" y1="6" x2="14" y2="23" />
+              </svg>
+            </span>
+            <span style={{ fontSize: 17, fontWeight: 700 }}>Student</span>
+            <span style={{ fontSize: 13, color: "#555", lineHeight: 1.5 }}>
+              Practice four-part harmony through guided lessons and free composition
+            </span>
+          </div>
+
+          <div
+            style={cardStyle}
+            onClick={() => setRole("educator")}
+            onMouseEnter={(e) => { e.currentTarget.style.transform = "translateY(-2px)"; }}
+            onMouseLeave={(e) => { e.currentTarget.style.transform = ""; }}
+          >
+            <span style={{ fontSize: 28, marginBottom: 4 }}>
+              <svg width="28" height="28" viewBox="0 0 28 28" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round">
+                <circle cx="14" cy="10" r="4" />
+                <path d="M7 24 C7 20 10 17 14 17 C18 17 21 20 21 24" />
+                <line x1="22" y1="8" x2="22" y2="14" />
+                <line x1="19" y1="11" x2="25" y2="11" />
+              </svg>
+            </span>
+            <span style={{ fontSize: 17, fontWeight: 700 }}>Educator</span>
+            <span style={{ fontSize: 13, color: "#555", lineHeight: 1.5 }}>
+              Create classes, author custom lessons, and track student progress
+            </span>
+          </div>
+        </div>
+        <p style={{ marginTop: 24, textAlign: "center", fontSize: 14, color: "#1a1a1a" }}>
+          Already have an account?{" "}
+          <Link to="/login" style={{ color: "#1a1a1a", fontWeight: 700 }}>Log in</Link>
+        </p>
+      </div>
+    );
+  }
+
   return (
-    <AuthShell title="Create Account">
+    <AuthShell title={role === "educator" ? "Create Educator Account" : "Create Account"}>
+      <div style={{ textAlign: "center", marginBottom: 20 }}>
+        <button
+          onClick={() => setRole(null)}
+          style={{
+            background: "none",
+            border: "none",
+            fontSize: 13,
+            color: "#888",
+            cursor: "pointer",
+            fontFamily: "inherit",
+            textDecoration: "underline",
+            textUnderlineOffset: 2,
+          }}
+        >
+          &larr; Change account type
+        </button>
+      </div>
       <form onSubmit={handleSubmit}>
         {error && <div style={errorStyle}>{error}</div>}
         <div style={{ marginBottom: 16 }}>
@@ -172,7 +286,7 @@ export function SignupPage() {
         </button>
         <p style={{ marginTop: 16, textAlign: "center", fontSize: 14 }}>
           Already have an account?{" "}
-          <Link to="/login" style={{ color: "#1a1a1a", fontWeight: 700 }}>Log in</Link>
+          <Link to={redirect ? `/login?redirect=${encodeURIComponent(redirect)}` : "/login"} style={{ color: "#1a1a1a", fontWeight: 700 }}>Log in</Link>
         </p>
       </form>
     </AuthShell>
@@ -182,6 +296,8 @@ export function SignupPage() {
 export function LoginPage() {
   const { login } = useAuth();
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
+  const redirect = searchParams.get("redirect");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
@@ -191,10 +307,10 @@ export function LoginPage() {
     e.preventDefault();
     setError(null);
     setSubmitting(true);
-    const err = await login(email, password);
+    const result = await login(email, password);
     setSubmitting(false);
-    if (err) setError(err);
-    else navigate("/");
+    if (result.error) setError(result.error);
+    else navigate(redirect || (result.user?.isEducator ? "/educator" : "/"));
   }
 
   return (
@@ -226,7 +342,7 @@ export function LoginPage() {
         </button>
         <p style={{ marginTop: 16, textAlign: "center", fontSize: 14 }}>
           Don't have an account?{" "}
-          <Link to="/signup" style={{ color: "#1a1a1a", fontWeight: 700 }}>Sign up</Link>
+          <Link to={redirect ? `/signup?redirect=${encodeURIComponent(redirect)}` : "/signup"} style={{ color: "#1a1a1a", fontWeight: 700 }}>Sign up</Link>
         </p>
       </form>
     </AuthShell>

@@ -1,5 +1,5 @@
 import { createRoot } from "react-dom/client";
-import { BrowserRouter, Routes, Route, Navigate, Link } from "react-router-dom";
+import { BrowserRouter, Routes, Route, Navigate, Link, useSearchParams } from "react-router-dom";
 import { NoteEditor } from "./components/staff";
 import { AuthProvider, useAuth } from "./auth";
 import { SignupPage, LoginPage } from "./components/AuthPages";
@@ -8,6 +8,13 @@ import { AdminPage } from "./components/AdminPage";
 import { Dashboard } from "./components/Dashboard";
 import { LessonList } from "./components/LessonList";
 import { LessonPage } from "./components/LessonPage";
+import { EducatorDashboard } from "./components/EducatorDashboard";
+import { JoinPage } from "./components/JoinPage";
+import { ClassDetailPage } from "./components/ClassDetailPage";
+import { EducatorLessonEditor } from "./components/EducatorLessonEditor";
+import { StudentClassPage } from "./components/StudentClassPage";
+import { ClassLessonPage } from "./components/ClassLessonPage";
+import { EducatorGradePage } from "./components/EducatorGradePage";
 
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
   const { user, loading } = useAuth();
@@ -18,8 +25,10 @@ function ProtectedRoute({ children }: { children: React.ReactNode }) {
 
 function PublicOnly({ children }: { children: React.ReactNode }) {
   const { user, loading } = useAuth();
+  const [searchParams] = useSearchParams();
+  const redirect = searchParams.get("redirect");
   if (loading) return null;
-  if (user) return <Navigate to="/" replace />;
+  if (user) return <Navigate to={redirect || "/"} replace />;
   return <>{children}</>;
 }
 
@@ -77,6 +86,7 @@ function App() {
           <Route path="/landing" element={<PublicOnly><LandingPage /></PublicOnly>} />
           <Route path="/signup" element={<PublicOnly><SignupPage /></PublicOnly>} />
           <Route path="/login" element={<PublicOnly><LoginPage /></PublicOnly>} />
+          <Route path="/join/:inviteCode" element={<JoinPage />} />
           <Route path="/admin" element={<AdminPage />} />
           <Route path="/" element={
             <ProtectedRoute>
@@ -96,6 +106,51 @@ function App() {
           <Route path="/lessons/:id" element={
             <ProtectedRoute>
               <LessonPage />
+            </ProtectedRoute>
+          } />
+          <Route path="/classes/:classId" element={
+            <ProtectedRoute>
+              <StudentClassPage />
+            </ProtectedRoute>
+          } />
+          <Route path="/classes/:classId/lessons/:lessonId" element={
+            <ProtectedRoute>
+              <ClassLessonPage />
+            </ProtectedRoute>
+          } />
+          <Route path="/educator" element={
+            <ProtectedRoute>
+              <EducatorDashboard section="classes" />
+            </ProtectedRoute>
+          } />
+          <Route path="/educator/classes" element={
+            <ProtectedRoute>
+              <EducatorDashboard section="classes" />
+            </ProtectedRoute>
+          } />
+          <Route path="/educator/classes/:classId" element={
+            <ProtectedRoute>
+              <ClassDetailPage />
+            </ProtectedRoute>
+          } />
+          <Route path="/educator/lessons" element={
+            <ProtectedRoute>
+              <EducatorDashboard section="lessons" />
+            </ProtectedRoute>
+          } />
+          <Route path="/educator/classes/:classId/students/:studentId/lessons/:lessonId/grade" element={
+            <ProtectedRoute>
+              <EducatorGradePage />
+            </ProtectedRoute>
+          } />
+          <Route path="/educator/lessons/new" element={
+            <ProtectedRoute>
+              <EducatorLessonEditor />
+            </ProtectedRoute>
+          } />
+          <Route path="/educator/lessons/:lessonId/edit" element={
+            <ProtectedRoute>
+              <EducatorLessonEditor />
             </ProtectedRoute>
           } />
         </Routes>

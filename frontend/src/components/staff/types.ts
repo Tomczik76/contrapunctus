@@ -51,6 +51,8 @@ export interface LessonConfig {
   onBeatsChanged?: (treble: PlacedBeat[], bass: PlacedBeat[]) => void;
   /** When true, show computed RN labels, NCT markers, and error markers on the score. */
   checked?: boolean;
+  /** Pre-populate student roman numeral entries (e.g. from a saved draft). */
+  initialStudentRomans?: Record<number, string>;
 }
 
 export interface NoteEditorProps {
@@ -78,4 +80,6 @@ export interface NoteEditorProps {
   initialTrebleBeats?: PlacedBeat[];
   /** Pre-populate bass beats (used when editing an existing figured bass lesson). */
   initialBassBeats?: PlacedBeat[];
+  /** If true, disable all editing interactions (note placement, toolbar, RN inputs). */
+  readOnly?: boolean;
 }

@@ -10,7 +10,7 @@ import org.http4s.dsl.io._
 import contrapunctus.backend.domain.User
 import contrapunctus.backend.services.{SignupInput, UserService}
 
-case class SignupRequest(email: String, displayName: String, password: String)
+case class SignupRequest(email: String, displayName: String, password: String, isEducator: Boolean)
 
 object SignupRequest:
   given Decoder[SignupRequest] = deriveDecoder
@@ -27,7 +27,7 @@ object SignupRoutes:
       case req @ POST -> Root / "signup" =>
         req.as[SignupRequest]
           .flatMap { body =>
-            val input = SignupInput(body.email, body.displayName, body.password)
+            val input = SignupInput(body.email, body.displayName, body.password, body.isEducator)
             userService.signup(input).flatMap {
               case Right((user, token)) =>
                 Created(AuthResponse(token, user).asJson)

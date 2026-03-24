@@ -359,12 +359,12 @@ const features = [
 const personas: { title: string; desc: string; qualifier?: string; link?: { text: string; to: string } }[] = [
   {
     title: "Students",
-    desc: "Practice part writing with real-time error detection. Work through guided lessons at your own pace, from basic triads to figured bass realization.",
+    desc: "Join your instructor's class with a link, work through assigned exercises at your own pace, and get instant feedback on part writing, chord analysis, and figured bass realization. Track your progress across every assignment.",
   },
   {
     title: "Educators",
-    desc: "Assign harmony exercises with built-in grading. Students get instant feedback on voice leading, chord labeling, and figured bass realization. You focus on teaching, not marking parallel fifths.",
-    link: { text: "Try the lesson library \u2192", to: "/lessons" },
+    desc: "Create classes, author custom exercises, and assign them in any order. Review student submissions, assign grades, and track completion — all from a single gradebook view.",
+    link: { text: "Sign up as an educator \u2192", to: "/signup" },
   },
   {
     title: "Composers",
@@ -376,7 +376,7 @@ const personas: { title: string; desc: string; qualifier?: string; link?: { text
 const roadmap = [
   { title: "Counterpoint analysis", desc: "Species counterpoint rules and Fux-style exercises" },
   { title: "MIDI export", desc: "Export your compositions to any DAW" },
-  { title: "AI composition assistant", desc: "Intelligent feedback as you write" },
+  { title: "Analytics dashboard", desc: "Deeper insights into student performance trends over time" },
 ];
 
 // ── Component ───────────────────────────────────────────────────────
@@ -531,8 +531,9 @@ export function LandingPage() {
           maxWidth: 560,
           marginBottom: 32,
         }}>
-          Write directly on a grand staff and hear your work played back instantly.
-          Harmony labels, chord analysis, and part-writing feedback appear as you go.
+          Students write directly on the staff and get instant feedback on harmony,
+          voice leading, and part writing. Educators create classes, assign exercises,
+          and track progress — all in one place.
         </p>
         <div className="landing-hero-btns" style={{ display: "flex", gap: 14, flexWrap: "wrap", justifyContent: "center" }}>
           <Link to="/signup" className="landing-cta" style={{
@@ -615,19 +616,6 @@ export function LandingPage() {
             <h2 style={{ ...sectionHeadingStyle, marginBottom: 12 }}>
               Interactive Lessons
             </h2>
-            <span style={{
-              display: "inline-block",
-              fontSize: 12,
-              fontWeight: 600,
-              letterSpacing: 0.5,
-              color: dk ? "#6ee7a0" : "#16a34a",
-              background: dk ? "rgba(22,163,74,0.15)" : "rgba(22,163,74,0.08)",
-              padding: "4px 12px",
-              borderRadius: 12,
-              textTransform: "uppercase",
-            }}>
-              New
-            </span>
           </div>
         </RevealSection>
 
@@ -636,7 +624,7 @@ export function LandingPage() {
             <p style={{ fontSize: 15, lineHeight: 1.7, color: t.textSub, margin: "0 0 14px" }}>
               Guided exercises that teach harmony and part writing step by step.
               Harmonize melodies, realize figured bass lines, and practice Roman numeral analysis
-              with instant feedback.
+              with instant feedback on every attempt.
             </p>
             <ul style={{ margin: 0, paddingLeft: 20, fontSize: 14, lineHeight: 1.8, color: t.textSub }}>
               <li>Analyze a given chorale and enter the correct Roman numerals</li>
@@ -656,6 +644,66 @@ export function LandingPage() {
             </div>
           </div>
         </RevealSection>
+      </section>
+
+      {/* Classroom */}
+      <section style={{
+        padding: "0 24px 72px",
+        maxWidth: 960,
+        margin: "0 auto",
+        width: "100%",
+      }}>
+        <RevealSection>
+          <div style={{ textAlign: "center", marginBottom: 40 }}>
+            <h2 style={{ ...sectionHeadingStyle, marginBottom: 12 }}>
+              Built for the Classroom
+            </h2>
+            <span style={{
+              display: "inline-block",
+              fontSize: 12,
+              fontWeight: 600,
+              letterSpacing: 0.5,
+              color: dk ? "#6ee7a0" : "#16a34a",
+              background: dk ? "rgba(22,163,74,0.15)" : "rgba(22,163,74,0.08)",
+              padding: "4px 12px",
+              borderRadius: 12,
+              textTransform: "uppercase",
+            }}>
+              New
+            </span>
+          </div>
+        </RevealSection>
+
+        <div className="features-grid" style={{
+          display: "grid",
+          gridTemplateColumns: "repeat(3, 1fr)",
+          gap: 28,
+        }}>
+          <RevealSection delay={100}>
+            <div className="landing-card" style={{ ...cardStyle, height: "100%" }}>
+              <h3 style={{ fontSize: 16, fontWeight: 700, marginBottom: 8, color: t.text }}>Create Classes</h3>
+              <p style={{ fontSize: 14, lineHeight: 1.6, color: t.textSub, margin: 0 }}>
+                Set up a class and share an invite link. Students join with one click — no codes to type, no roster to manage.
+              </p>
+            </div>
+          </RevealSection>
+          <RevealSection delay={220}>
+            <div className="landing-card" style={{ ...cardStyle, height: "100%" }}>
+              <h3 style={{ fontSize: 16, fontWeight: 700, marginBottom: 8, color: t.text }}>Author Custom Lessons</h3>
+              <p style={{ fontSize: 14, lineHeight: 1.6, color: t.textSub, margin: 0 }}>
+                Build melody harmonization, figured bass, and Roman numeral analysis exercises with the same editor your students use. Preview before assigning.
+              </p>
+            </div>
+          </RevealSection>
+          <RevealSection delay={340}>
+            <div className="landing-card" style={{ ...cardStyle, height: "100%" }}>
+              <h3 style={{ fontSize: 16, fontWeight: 700, marginBottom: 8, color: t.text }}>Track Progress</h3>
+              <p style={{ fontSize: 14, lineHeight: 1.6, color: t.textSub, margin: 0 }}>
+                See which students have submitted each assignment, review their work, and assign grades. A color-coded gradebook shows scores and averages at a glance.
+              </p>
+            </div>
+          </RevealSection>
+        </div>
       </section>
 
       {/* Who it's for */}

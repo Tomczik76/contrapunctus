@@ -10,12 +10,12 @@ import contrapunctus.backend.domain.{BugReport, FeatureRequest, User}
 object Admin:
   val allUsers: Query[skunk.Void, User] =
     sql"""
-      SELECT id, email, display_name, created_at
+      SELECT id, email, display_name, is_educator, created_at
       FROM users
       ORDER BY created_at DESC
-    """.query(uuid *: text *: text *: timestamptz)
-      .map { case (id, email, displayName, createdAt) =>
-        User(id, email, displayName, createdAt)
+    """.query(uuid *: text *: text *: bool *: timestamptz)
+      .map { case (id, email, displayName, isEducator, createdAt) =>
+        User(id, email, displayName, isEducator, createdAt)
       }
 
   val allBugReports: Query[skunk.Void, BugReport] =

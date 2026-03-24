@@ -6,22 +6,22 @@ import skunk.implicits._
 import contrapunctus.backend.domain.User
 
 object Users:
-  val insert: Query[(String, String, String), User] =
+  val insert: Query[(String, String, String, Boolean), User] =
     sql"""
-      INSERT INTO users (email, display_name, password_hash)
-      VALUES ($text, $text, $text)
-      RETURNING id, email, display_name, created_at
-    """.query(uuid *: text *: text *: timestamptz)
-      .map { case (id, email, displayName, createdAt) =>
-        User(id, email, displayName, createdAt)
+      INSERT INTO users (email, display_name, password_hash, is_educator)
+      VALUES ($text, $text, $text, $bool)
+      RETURNING id, email, display_name, is_educator, created_at
+    """.query(uuid *: text *: text *: bool *: timestamptz)
+      .map { case (id, email, displayName, isEducator, createdAt) =>
+        User(id, email, displayName, isEducator, createdAt)
       }
 
   val findByEmail: Query[String, (User, String)] =
     sql"""
-      SELECT id, email, display_name, created_at, password_hash
+      SELECT id, email, display_name, is_educator, created_at, password_hash
       FROM users
       WHERE email = $text
-    """.query(uuid *: text *: text *: timestamptz *: text)
-      .map { case (id, email, displayName, createdAt, hash) =>
-        (User(id, email, displayName, createdAt), hash)
+    """.query(uuid *: text *: text *: bool *: timestamptz *: text)
+      .map { case (id, email, displayName, isEducator, createdAt, hash) =>
+        (User(id, email, displayName, isEducator, createdAt), hash)
       }

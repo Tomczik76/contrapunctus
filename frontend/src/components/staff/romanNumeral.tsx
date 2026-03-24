@@ -140,7 +140,7 @@ export function FbEditInput({ value, onChange, dark }: { value: string[]; onChan
   );
 }
 
-export function RnInput({ value, onChange, dark }: { value: string; onChange: (v: string) => void; dark: boolean }) {
+export function RnInput({ value, onChange, dark, disabled }: { value: string; onChange: (v: string) => void; dark: boolean; disabled?: boolean }) {
   const [focused, setFocused] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
 
@@ -162,9 +162,22 @@ export function RnInput({ value, onChange, dark }: { value: string; onChange: (v
     display: "flex",
     alignItems: "center",
     justifyContent: "center",
-    cursor: "text",
+    cursor: disabled ? "default" : "text",
     position: "relative",
+    opacity: disabled ? 0.7 : 1,
   };
+
+  if (disabled) {
+    return (
+      <div style={containerStyle}>
+        {hasValue ? (
+          <FormattedRn text={value} dark={dark} invalid={invalid} />
+        ) : (
+          <span style={{ fontFamily: "serif", fontStyle: "italic", fontSize: 13, color: dark ? "#666" : "#aaa" }}>?</span>
+        )}
+      </div>
+    );
+  }
 
   if (focused) {
     return (
