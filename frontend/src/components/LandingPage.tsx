@@ -356,15 +356,15 @@ const features = [
   },
 ];
 
-const personas = [
+const personas: { title: string; desc: string; qualifier?: string; link?: { text: string; to: string } }[] = [
   {
     title: "Students",
-    desc: "Get instant feedback on harmony exercises, part writing, and counterpoint assignments.",
+    desc: "Practice part writing with real-time error detection. Work through guided lessons at your own pace, from basic triads to figured bass realization.",
   },
   {
     title: "Educators",
-    desc: "Assign theory exercises and let Contrapunctus check the rules so you can focus on teaching.",
-    qualifier: "Interactive lessons coming soon",
+    desc: "Assign harmony exercises with built-in grading. Students get instant feedback on voice leading, chord labeling, and figured bass realization. You focus on teaching, not marking parallel fifths.",
+    link: { text: "Try the lesson library \u2192", to: "/lessons" },
   },
   {
     title: "Composers",
@@ -603,7 +603,7 @@ export function LandingPage() {
         </div>
       </section>
 
-      {/* Interactive Lessons – Coming Soon */}
+      {/* Interactive Lessons */}
       <section style={{
         padding: "0 24px 72px",
         maxWidth: 960,
@@ -620,13 +620,13 @@ export function LandingPage() {
               fontSize: 12,
               fontWeight: 600,
               letterSpacing: 0.5,
-              color: t.textMuted,
-              background: t.badgeBg,
+              color: dk ? "#6ee7a0" : "#16a34a",
+              background: dk ? "rgba(22,163,74,0.15)" : "rgba(22,163,74,0.08)",
               padding: "4px 12px",
               borderRadius: 12,
               textTransform: "uppercase",
             }}>
-              Coming Soon
+              New
             </span>
           </div>
         </RevealSection>
@@ -634,17 +634,26 @@ export function LandingPage() {
         <RevealSection delay={100}>
           <div className="landing-card" style={cardStyle}>
             <p style={{ fontSize: 15, lineHeight: 1.7, color: t.textSub, margin: "0 0 14px" }}>
-              Structured, pedagogical exercises that teach harmony and part writing from the ground up.
-              Instead of auto-detecting chords for you, lesson mode asks <em>you</em> to do the analysis —
-              identify chord qualities, label roman numerals, spot voice-leading errors, and harmonize
-              melodies and bass lines without breaking the rules.
+              Guided exercises that teach harmony and part writing step by step.
+              Harmonize melodies, realize figured bass lines, and practice Roman numeral analysis
+              with instant feedback.
             </p>
             <ul style={{ margin: 0, paddingLeft: 20, fontSize: 14, lineHeight: 1.8, color: t.textSub }}>
-              <li>Analyze a given chorale and enter the correct roman numerals yourself</li>
-              <li>Find parallel fifths, crossed voices, and other part-writing mistakes in a score</li>
-              <li>Harmonize a soprano melody or figured bass line with proper voice leading</li>
+              <li>Analyze a given chorale and enter the correct Roman numerals</li>
+              <li>Realize a figured bass line with proper voice leading</li>
+              <li>Harmonize a soprano melody in 4-part chorale style</li>
               <li>Progressive difficulty from basic triads through secondary dominants and modulation</li>
             </ul>
+            <div style={{ marginTop: 16 }}>
+              <Link to="/lessons" style={{
+                fontSize: 14,
+                fontWeight: 600,
+                color: dk ? "#6ee7a0" : "#16a34a",
+                textDecoration: "none",
+              }}>
+                Try a lesson &rarr;
+              </Link>
+            </div>
           </div>
         </RevealSection>
       </section>
@@ -675,6 +684,18 @@ export function LandingPage() {
                   <p style={{ fontSize: 12, color: t.textFaint, marginTop: 8, marginBottom: 0, fontStyle: "italic" }}>
                     {p.qualifier}
                   </p>
+                )}
+                {p.link && (
+                  <div style={{ marginTop: 12 }}>
+                    <Link to={p.link.to} style={{
+                      fontSize: 13,
+                      fontWeight: 600,
+                      color: dk ? "#6ee7a0" : "#16a34a",
+                      textDecoration: "none",
+                    }}>
+                      {p.link.text}
+                    </Link>
+                  </div>
                 )}
               </div>
             </RevealSection>

@@ -4,11 +4,15 @@ import { useAuth } from "../auth";
 import { NoteEditor, type LessonConfig, type LessonErrorItem, type PlacedBeat } from "./staff";
 import { fetchLesson, type Lesson } from "../data/lessons";
 
-/** Normalize an RN string for comparison: trim, collapse spaces, convert Unicode super/subscript digits to ASCII. */
+/** Normalize an RN string for comparison: trim, collapse spaces, convert Unicode super/subscript digits to ASCII, normalize quality symbols. */
 function normalizeRn(rn: string): string {
   return rn
     .trim()
     .replace(/\s+/g, "")
+    // Normalize quality symbols: "o" → "°", "0" (zero) → "ø"
+    .replace(/°/g, "°")  // keep degree sign as-is
+    .replace(/([iIvV])(o)(?=\d|$)/g, "$1°")  // letter-o after RN → diminished °
+    .replace(/([iIvV])(0)(?=\d|$)/g, "$1ø")  // zero after RN → half-diminished ø
     // Unicode superscript digits → ASCII
     .replace(/⁰/g, "0").replace(/¹/g, "1").replace(/²/g, "2").replace(/³/g, "3")
     .replace(/⁴/g, "4").replace(/⁵/g, "5").replace(/⁶/g, "6").replace(/⁷/g, "7")
@@ -102,6 +106,7 @@ export function LessonPage() {
 
   // Check completeness
   const isFiguredBass = lesson.template === "figured_bass";
+  const isRomanNumeral = lesson.template === "roman_numeral_analysis";
   // For figured bass, only check beats where the locked bass has actual notes
   const lockedBeats = isFiguredBass ? (lesson.bassBeats ?? []) : lesson.sopranoBeats;
   const checkIndices: number[] = [];
@@ -112,25 +117,28 @@ export function LessonPage() {
 
   const missingVoices: string[] = [];
   if (checked) {
-    for (const i of checkIndices) {
-      const tb = trebleBeats[i];
-      const bb = bassBeats[i];
-      const trebleNotes = tb && !tb.isRest ? tb.notes.length : 0;
-      const bassNotes = bb && !bb.isRest ? bb.notes.length : 0;
-      const beatLabel = `Beat ${(i % lesson.tsTop) + 1}, m. ${Math.floor(i / lesson.tsTop) + 1}`;
-      if (isFiguredBass) {
-        if (trebleNotes < 2) {
-          missingVoices.push(`${beatLabel}: missing soprano or alto`);
-        }
-        if (bassNotes < 2) {
-          missingVoices.push(`${beatLabel}: missing tenor`);
-        }
-      } else {
-        if (trebleNotes < 2) {
-          missingVoices.push(`${beatLabel}: missing alto`);
-        }
-        if (bassNotes < 2) {
-          missingVoices.push(`${beatLabel}: missing tenor or bass`);
+    // For roman numeral analysis, students don't add notes — skip voice checks
+    if (!isRomanNumeral) {
+      for (const i of checkIndices) {
+        const tb = trebleBeats[i];
+        const bb = bassBeats[i];
+        const trebleNotes = tb && !tb.isRest ? tb.notes.length : 0;
+        const bassNotes = bb && !bb.isRest ? bb.notes.length : 0;
+        const beatLabel = `Beat ${(i % lesson.tsTop) + 1}, m. ${Math.floor(i / lesson.tsTop) + 1}`;
+        if (isFiguredBass) {
+          if (trebleNotes < 2) {
+            missingVoices.push(`${beatLabel}: missing soprano or alto`);
+          }
+          if (bassNotes < 2) {
+            missingVoices.push(`${beatLabel}: missing tenor`);
+          }
+        } else {
+          if (trebleNotes < 2) {
+            missingVoices.push(`${beatLabel}: missing alto`);
+          }
+          if (bassNotes < 2) {
+            missingVoices.push(`${beatLabel}: missing tenor or bass`);
+          }
         }
       }
     }

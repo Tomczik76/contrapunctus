@@ -11,13 +11,14 @@ export function parseRomanNumeral(raw: string): { base: string; figures: string[
   const s = raw.trim();
   if (!s) return { base: "", figures: [] };
 
-  // Match the roman numeral part (possibly lowercase), optional quality markers (o, °, +, ø)
-  const rnMatch = s.match(/^([iIvV]+)(o|°|\+|ø)?/);
+  // Match the roman numeral part (possibly lowercase), optional quality markers (o, °, +, ø, 0 for half-dim)
+  const rnMatch = s.match(/^([iIvV]+)(o|°|\+|ø|0)?/);
   if (!rnMatch) return { base: s, figures: [] };
 
   let base = rnMatch[1];
   const quality = rnMatch[2] || "";
   if (quality === "o") base += "\u00B0";
+  else if (quality === "0") base += "\u00F8"; // 0 (zero) → ø (half-diminished)
   else if (quality) base += quality;
 
   const rest = s.slice(rnMatch[0].length);
@@ -48,7 +49,7 @@ export function isValidRomanNumeral(raw: string): boolean {
   const s = raw.trim();
   if (!s) return true; // empty is not invalid, just incomplete
   // Match: optional accidental (b, #, N), roman numeral, optional quality, optional figures
-  return /^([b#]?)(N6|Ger6|Fr6|It6|[iIvV]+)(o|°|\+|ø)?(7|6|64|65|43|42)?$/.test(s);
+  return /^([b#]?)(N6|Ger6|Fr6|It6|[iIvV]+)(o|°|\+|ø|0)?(7|6|64|65|43|42)?$/.test(s);
 }
 
 /** Render formatted figured bass as React elements. */
@@ -227,6 +228,7 @@ export function RnLegend({ dark }: { dark: boolean }) {
     ["V43", "7th, 2nd inv."],
     ["V42", "7th, 3rd inv."],
     ["viio", "Diminished"],
+    ["vii07", "Half-diminished"],
     ["ii", "Minor (lowercase)"],
   ];
 
@@ -264,7 +266,7 @@ export function RnLegend({ dark }: { dark: boolean }) {
             </div>
           ))}
           <div style={{ width: "100%", fontSize: 11, color: muted, marginTop: 4 }}>
-            Use lowercase for minor (ii, iii, vi). Add &ldquo;o&rdquo; for diminished (viio). Add &ldquo;+&rdquo; for augmented.
+            Use lowercase for minor (ii, iii, vi). Add &ldquo;o&rdquo; for diminished (viio). Use &ldquo;0&rdquo; (zero) for half-diminished (vii07). Add &ldquo;+&rdquo; for augmented.
           </div>
         </div>
       )}

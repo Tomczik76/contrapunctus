@@ -468,6 +468,7 @@ function LessonForm({
   const [bassEditorKey, setBassEditorKey] = useState(100);
 
   const isFiguredBass = template === "figured_bass";
+  const isRomanNumeral = template === "roman_numeral_analysis";
 
   const handleTrebleBeatsChanged = useCallback((beats: PlacedBeat[]) => {
     setSopranoBeats(beats);
@@ -484,6 +485,10 @@ function LessonForm({
     if (isFiguredBass) {
       const validBass = bassBeats.filter((b) => !b.isRest && b.notes.length > 0);
       if (validBass.length === 0) { setError("Write at least one note for the bass line"); return; }
+    } else if (isRomanNumeral) {
+      const validTreble = sopranoBeats.filter((b) => !b.isRest && b.notes.length > 0);
+      const validBass = bassBeats.filter((b) => !b.isRest && b.notes.length > 0);
+      if (validTreble.length === 0 && validBass.length === 0) { setError("Write music on both staves"); return; }
     } else {
       const validBeats = sopranoBeats.filter((b) => !b.isRest && b.notes.length > 0);
       if (validBeats.length === 0) { setError("Write at least one note for the soprano melody"); return; }
@@ -508,6 +513,10 @@ function LessonForm({
     if (isFiguredBass) {
       body.bassBeats = bassBeats;
       body.figuredBass = figuredBass;
+    }
+
+    if (isRomanNumeral) {
+      body.bassBeats = bassBeats;
     }
 
     const url = isEdit
@@ -555,6 +564,7 @@ function LessonForm({
           <select value={template} onChange={(e) => setTemplate(e.target.value)} style={inputStyle}>
             <option value="harmonize_melody">Harmonize a Melody</option>
             <option value="figured_bass">Figured Bass</option>
+            <option value="roman_numeral_analysis">Roman Numeral Analysis</option>
           </select>
         </div>
 
@@ -620,7 +630,7 @@ function LessonForm({
         </div>
 
         {/* Soprano Melody Editor (harmonize_melody) */}
-        {!isFiguredBass && (
+        {!isFiguredBass && !isRomanNumeral && (
           <div>
             <label style={labelStyle}>Soprano Melody</label>
             <div style={{ fontSize: 12, color: "#888", marginBottom: 8 }}>
@@ -706,6 +716,50 @@ function LessonForm({
                   border: "1px solid #eee",
                 }}>
                   {JSON.stringify({ bassBeats, figuredBass }, null, 2)}
+                </pre>
+              )}
+            </div>
+          </div>
+        )}
+
+        {/* SATB Editor (roman_numeral_analysis) */}
+        {isRomanNumeral && (
+          <div>
+            <label style={labelStyle}>Complete SATB Music</label>
+            <div style={{ fontSize: 12, color: "#888", marginBottom: 8, lineHeight: 1.6 }}>
+              Write soprano + alto on the treble staff, tenor + bass on the bass staff.
+              Students will see all music locked and must enter roman numeral analysis only.
+            </div>
+            <div style={{
+              border: "1px solid #ccc", borderRadius: 6, overflow: "hidden",
+              height: 700, position: "relative",
+            }}>
+              <NoteEditor
+                key={editorKey}
+                onTrebleBeatsChanged={handleTrebleBeatsChanged}
+                onBassBeatsChanged={handleBassBeatsChanged}
+                initialTonicIdx={tonicIdx}
+                initialScaleName={scaleName}
+                initialTsTop={tsTop}
+                initialTsBottom={tsBottom}
+                initialTrebleBeats={sopranoBeats.length > 0 ? sopranoBeats : undefined}
+                initialBassBeats={bassBeats.length > 0 ? bassBeats : undefined}
+              />
+            </div>
+            <div style={{ marginTop: 8 }}>
+              <button
+                onClick={() => setShowJson(!showJson)}
+                style={{ padding: "3px 8px", fontSize: 11, background: "none", border: "1px solid #ddd", borderRadius: 3, cursor: "pointer", color: "#888" }}
+              >
+                {showJson ? "Hide" : "Show"} JSON
+              </button>
+              {showJson && (
+                <pre style={{
+                  marginTop: 6, padding: 10, background: "#f8f8f8", borderRadius: 4,
+                  fontSize: 11, fontFamily: "monospace", maxHeight: 200, overflow: "auto",
+                  border: "1px solid #eee",
+                }}>
+                  {JSON.stringify({ sopranoBeats, bassBeats }, null, 2)}
                 </pre>
               )}
             </div>

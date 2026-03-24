@@ -893,6 +893,7 @@ export function NoteEditor({ header, lessonConfig, onTrebleBeatsChanged, onBassB
     setIsPlaying(false);
     setIsPaused(false);
     setPlaybackTimeIdx(null);
+    setPlaybackStartIdx(0);
     playbackRef.current = null;
   }, []);
 
@@ -1158,8 +1159,9 @@ export function NoteEditor({ header, lessonConfig, onTrebleBeatsChanged, onBassB
     const beats = getStaffBeats(hoverStaff);
 
     if (restMode) {
-      // In lesson mode, don't allow resting over locked treble beats
+      // In lesson mode, don't allow resting over locked beats
       if (lessonConfig && hoverStaff === "treble") return;
+      if (lessonConfig && hoverStaff === "bass" && lessonConfig.lockedBassBeats) return;
       setter((prev) => {
         if (hoverBeatIdx >= prev.length) return prev;
         const beat = prev[hoverBeatIdx];
@@ -1187,6 +1189,7 @@ export function NoteEditor({ header, lessonConfig, onTrebleBeatsChanged, onBassB
         if (newNotes.length === 0) {
           // In lesson mode, don't allow deleting all notes from a locked beat
           if (lessonConfig && hoverStaff === "treble") return prev;
+          if (lessonConfig && hoverStaff === "bass" && lessonConfig.lockedBassBeats) return prev;
           const updated = [...prev];
           updated[hoverBeatIdx] = { notes: [], duration: beat.duration, isRest: true };
           return updated;
@@ -1249,8 +1252,9 @@ export function NoteEditor({ header, lessonConfig, onTrebleBeatsChanged, onBassB
             ...working.slice(restStart + restsToRemove),
           ];
         }
-        // In lesson mode on treble, don't allow duration changes
+        // In lesson mode, don't allow duration changes on locked staves
         if (lessonConfig && hoverStaff === "treble" && beat.duration !== selectedDuration) return prev;
+        if (lessonConfig && hoverStaff === "bass" && lessonConfig.lockedBassBeats && beat.duration !== selectedDuration) return prev;
         // Different duration selected → replace beat with new note at selected duration
         if (beat.duration !== selectedDuration) {
           // Treat like clicking on the rest space: remove this beat and consecutive rests after it,
