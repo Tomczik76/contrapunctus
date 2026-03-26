@@ -151,6 +151,7 @@ export function EducatorGradePage() {
     onBeatsChanged,
     checked: true,
     initialStudentRomans: work.studentRomans,
+    showStudentRomans: true,
   };
 
   const gradeValid = (() => {

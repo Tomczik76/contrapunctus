@@ -708,4 +708,42 @@ class ChordSuite extends munit.FunSuite:
       )
     )
 
+  test("Inversion rootInterval gives correct bass pitch class"):
+    // The bass note of an inverted chord is: (root.value - rootInterval.value + 12) % 12
+    // This is the formula used in Facade.chordNameLabel for slash chord notation.
+
+    // G major second inversion: root=G(7), bass should be D(2)
+    val gMaj2nd = Chord(NoteType.G, Triads.Major.Inversions.Second)
+    val gMaj2ndBass = (gMaj2nd.root.value - gMaj2nd.chordType.rootInterval.value + 12) % 12
+    assertEquals(gMaj2ndBass, NoteType.D.value) // D = 2
+
+    // G major first inversion: root=G(7), bass should be B(11)
+    val gMaj1st = Chord(NoteType.G, Triads.Major.Inversions.First)
+    val gMaj1stBass = (gMaj1st.root.value - gMaj1st.chordType.rootInterval.value + 12) % 12
+    assertEquals(gMaj1stBass, NoteType.B.value) // B = 11
+
+    // C major first inversion: root=C(0), bass should be E(4)
+    val cMaj1st = Chord(NoteType.C, Triads.Major.Inversions.First)
+    val cMaj1stBass = (cMaj1st.root.value - cMaj1st.chordType.rootInterval.value + 12) % 12
+    assertEquals(cMaj1stBass, NoteType.E.value) // E = 4
+
+    // C major second inversion: root=C(0), bass should be G(7)
+    val cMaj2nd = Chord(NoteType.C, Triads.Major.Inversions.Second)
+    val cMaj2ndBass = (cMaj2nd.root.value - cMaj2nd.chordType.rootInterval.value + 12) % 12
+    assertEquals(cMaj2ndBass, NoteType.G.value) // G = 7
+
+    // A minor first inversion: root=A(9), bass should be C(0)
+    val aMin1st = Chord(NoteType.A, Triads.Minor.Inversions.First)
+    val aMin1stBass = (aMin1st.root.value - aMin1st.chordType.rootInterval.value + 12) % 12
+    assertEquals(aMin1stBass, NoteType.C.value) // C = 0
+
+    // C dominant seventh third inversion: root=C(0), bass should be Bb(10)
+    val cDom7_3rd = Chord(NoteType.C, Sevenths.DominantSeventh.Inversions.Third)
+    val cDom7_3rdBass = (cDom7_3rd.root.value - cDom7_3rd.chordType.rootInterval.value + 12) % 12
+    assertEquals(cDom7_3rdBass, NoteType.Bb.value) // Bb = 10
+
+    // Root position should have rootInterval = PerfectUnison (0)
+    val cMajRoot = Chord(NoteType.C, Triads.Major.Inversions.Root)
+    assertEquals(cMajRoot.chordType.rootInterval.value, 0)
+
 end ChordSuite

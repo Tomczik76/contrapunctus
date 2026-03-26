@@ -53,6 +53,8 @@ export interface LessonConfig {
   checked?: boolean;
   /** Pre-populate student roman numeral entries (e.g. from a saved draft). */
   initialStudentRomans?: Record<number, string>;
+  /** When true (with checked), show student-submitted RN labels instead of computed ones. */
+  showStudentRomans?: boolean;
 }
 
 export interface NoteEditorProps {

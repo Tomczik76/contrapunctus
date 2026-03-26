@@ -332,7 +332,7 @@ function RevealSection({ children, delay = 0, style }: {
 const features = [
   {
     title: "Real-Time Harmonic Analysis",
-    desc: "Roman numerals and chord types appear instantly as you write. Triads, sevenths, extensions, secondary dominants, and more — all labeled in context.",
+    desc: "Roman numerals and chord types appear instantly as you write. Triads, sevenths, extensions, secondary dominants, and more, all labeled in context.",
   },
   {
     title: "Part-Writing Error Detection",
@@ -359,11 +359,11 @@ const features = [
 const personas: { title: string; desc: string; qualifier?: string; link?: { text: string; to: string } }[] = [
   {
     title: "Students",
-    desc: "Join your instructor's class with a link, work through assigned exercises at your own pace, and get instant feedback on part writing, chord analysis, and figured bass realization. Track your progress across every assignment.",
+    desc: "Join your instructor's class with a link, work through assigned exercises, save drafts, and submit when ready. View your grades and track your progress across every assignment.",
   },
   {
     title: "Educators",
-    desc: "Create classes, author custom exercises, and assign them in any order. Review student submissions, assign grades, and track completion — all from a single gradebook view.",
+    desc: "Create classes, author custom exercises, and assign them in any order. Review student submissions, assign grades, and track completion from a single gradebook view.",
     link: { text: "Sign up as an educator \u2192", to: "/signup" },
   },
   {
@@ -375,8 +375,8 @@ const personas: { title: string; desc: string; qualifier?: string; link?: { text
 
 const roadmap = [
   { title: "Counterpoint analysis", desc: "Species counterpoint rules and Fux-style exercises" },
+  { title: "Interval & chord exercises", desc: "Identification, spelling, and ear training drills" },
   { title: "MIDI export", desc: "Export your compositions to any DAW" },
-  { title: "Analytics dashboard", desc: "Deeper insights into student performance trends over time" },
 ];
 
 // ── Component ───────────────────────────────────────────────────────
@@ -528,12 +528,12 @@ export function LandingPage() {
           fontSize: "clamp(16px, 3vw, 19px)",
           lineHeight: 1.65,
           color: t.textSub,
-          maxWidth: 560,
+          maxWidth: 620,
           marginBottom: 32,
         }}>
-          Students write directly on the staff and get instant feedback on harmony,
-          voice leading, and part writing. Educators create classes, assign exercises,
-          and track progress — all in one place.
+          A music theory education platform where educators author exercises, assign them to a class,
+          and track student progress through a built-in gradebook. Powered by real-time harmonic analysis,
+          part-writing feedback, and non-chord tone detection.
         </p>
         <div className="landing-hero-btns" style={{ display: "flex", gap: 14, flexWrap: "wrap", justifyContent: "center" }}>
           <Link to="/signup" className="landing-cta" style={{
@@ -576,7 +576,7 @@ export function LandingPage() {
         <StaffIllustration color={t.illustrationColor} />
       </div>
 
-      {/* Features */}
+      {/* Classroom */}
       <section style={{
         padding: "48px 24px 72px",
         maxWidth: 960,
@@ -584,79 +584,9 @@ export function LandingPage() {
         width: "100%",
       }}>
         <RevealSection>
-          <h2 style={sectionHeadingStyle}>
-            Built for music theory
-          </h2>
-        </RevealSection>
-        <div className="features-grid" style={{
-          display: "grid",
-          gridTemplateColumns: "repeat(3, 1fr)",
-          gap: 28,
-        }}>
-          {features.map((f, i) => (
-            <RevealSection key={f.title} delay={i * 120}>
-              <div className="landing-card" style={{ ...cardStyle, height: "100%" }}>
-                <h3 style={{ fontSize: 16, fontWeight: 700, marginBottom: 8, color: t.text }}>{f.title}</h3>
-                <p style={{ fontSize: 14, lineHeight: 1.6, color: t.textSub, margin: 0 }}>{f.desc}</p>
-              </div>
-            </RevealSection>
-          ))}
-        </div>
-      </section>
-
-      {/* Interactive Lessons */}
-      <section style={{
-        padding: "0 24px 72px",
-        maxWidth: 960,
-        margin: "0 auto",
-        width: "100%",
-      }}>
-        <RevealSection>
           <div style={{ textAlign: "center", marginBottom: 40 }}>
             <h2 style={{ ...sectionHeadingStyle, marginBottom: 12 }}>
-              Interactive Lessons
-            </h2>
-          </div>
-        </RevealSection>
-
-        <RevealSection delay={100}>
-          <div className="landing-card" style={cardStyle}>
-            <p style={{ fontSize: 15, lineHeight: 1.7, color: t.textSub, margin: "0 0 14px" }}>
-              Guided exercises that teach harmony and part writing step by step.
-              Harmonize melodies, realize figured bass lines, and practice Roman numeral analysis
-              with instant feedback on every attempt.
-            </p>
-            <ul style={{ margin: 0, paddingLeft: 20, fontSize: 14, lineHeight: 1.8, color: t.textSub }}>
-              <li>Analyze a given chorale and enter the correct Roman numerals</li>
-              <li>Realize a figured bass line with proper voice leading</li>
-              <li>Harmonize a soprano melody in 4-part chorale style</li>
-              <li>Progressive difficulty from basic triads through secondary dominants and modulation</li>
-            </ul>
-            <div style={{ marginTop: 16 }}>
-              <Link to="/lessons" style={{
-                fontSize: 14,
-                fontWeight: 600,
-                color: dk ? "#6ee7a0" : "#16a34a",
-                textDecoration: "none",
-              }}>
-                Try a lesson &rarr;
-              </Link>
-            </div>
-          </div>
-        </RevealSection>
-      </section>
-
-      {/* Classroom */}
-      <section style={{
-        padding: "0 24px 72px",
-        maxWidth: 960,
-        margin: "0 auto",
-        width: "100%",
-      }}>
-        <RevealSection>
-          <div style={{ textAlign: "center", marginBottom: 40 }}>
-            <h2 style={{ ...sectionHeadingStyle, marginBottom: 12 }}>
-              Built for the Classroom
+              Designed for the theory classroom
             </h2>
             <span style={{
               display: "inline-block",
@@ -683,26 +613,77 @@ export function LandingPage() {
             <div className="landing-card" style={{ ...cardStyle, height: "100%" }}>
               <h3 style={{ fontSize: 16, fontWeight: 700, marginBottom: 8, color: t.text }}>Create Classes</h3>
               <p style={{ fontSize: 14, lineHeight: 1.6, color: t.textSub, margin: 0 }}>
-                Set up a class and share an invite link. Students join with one click — no codes to type, no roster to manage.
+                Set up a class and share an invite link. Students join with one click, no codes to type, no roster to manage.
               </p>
             </div>
           </RevealSection>
           <RevealSection delay={220}>
             <div className="landing-card" style={{ ...cardStyle, height: "100%" }}>
-              <h3 style={{ fontSize: 16, fontWeight: 700, marginBottom: 8, color: t.text }}>Author Custom Lessons</h3>
+              <h3 style={{ fontSize: 16, fontWeight: 700, marginBottom: 8, color: t.text }}>Author Exercises</h3>
               <p style={{ fontSize: 14, lineHeight: 1.6, color: t.textSub, margin: 0 }}>
-                Build melody harmonization, figured bass, and Roman numeral analysis exercises with the same editor your students use. Preview before assigning.
+                Build melody harmonization, figured bass realization, and Roman numeral analysis exercises with the same editor your students use. Preview before assigning.
               </p>
             </div>
           </RevealSection>
           <RevealSection delay={340}>
             <div className="landing-card" style={{ ...cardStyle, height: "100%" }}>
-              <h3 style={{ fontSize: 16, fontWeight: 700, marginBottom: 8, color: t.text }}>Track Progress</h3>
+              <h3 style={{ fontSize: 16, fontWeight: 700, marginBottom: 8, color: t.text }}>Grade &amp; Track Progress</h3>
               <p style={{ fontSize: 14, lineHeight: 1.6, color: t.textSub, margin: 0 }}>
                 See which students have submitted each assignment, review their work, and assign grades. A color-coded gradebook shows scores and averages at a glance.
               </p>
             </div>
           </RevealSection>
+        </div>
+
+        {/* Exercise types */}
+        <RevealSection delay={460}>
+          <div className="landing-card" style={{ ...cardStyle, marginTop: 28 }}>
+            <h3 style={{ fontSize: 16, fontWeight: 700, marginBottom: 10, color: t.text }}>Exercise types</h3>
+            <ul style={{ margin: 0, paddingLeft: 20, fontSize: 14, lineHeight: 1.8, color: t.textSub }}>
+              <li>Harmonize a soprano melody in 4-part chorale style</li>
+              <li>Realize a figured bass line with proper voice leading</li>
+              <li>Analyze a given chorale and enter the correct Roman numerals</li>
+              <li>Progressive difficulty from basic triads through secondary dominants and modulation</li>
+            </ul>
+            <div style={{ marginTop: 16 }}>
+              <Link to="/lessons" style={{
+                fontSize: 14,
+                fontWeight: 600,
+                color: dk ? "#6ee7a0" : "#16a34a",
+                textDecoration: "none",
+              }}>
+                Try a lesson &rarr;
+              </Link>
+            </div>
+          </div>
+        </RevealSection>
+      </section>
+
+      {/* Analysis features */}
+      <section style={{
+        padding: "0 24px 72px",
+        maxWidth: 960,
+        margin: "0 auto",
+        width: "100%",
+      }}>
+        <RevealSection>
+          <h2 style={sectionHeadingStyle}>
+            Powered by real-time analysis
+          </h2>
+        </RevealSection>
+        <div className="features-grid" style={{
+          display: "grid",
+          gridTemplateColumns: "repeat(3, 1fr)",
+          gap: 28,
+        }}>
+          {features.map((f, i) => (
+            <RevealSection key={f.title} delay={i * 120}>
+              <div className="landing-card" style={{ ...cardStyle, height: "100%" }}>
+                <h3 style={{ fontSize: 16, fontWeight: 700, marginBottom: 8, color: t.text }}>{f.title}</h3>
+                <p style={{ fontSize: 14, lineHeight: 1.6, color: t.textSub, margin: 0 }}>{f.desc}</p>
+              </div>
+            </RevealSection>
+          ))}
         </div>
       </section>
 
@@ -843,7 +824,7 @@ export function LandingPage() {
               Contrapunctus
             </span>
             <span style={{ fontSize: 13, color: t.textMuted, display: "block" }}>
-              Real-time harmonic analysis for the modern musician.
+              Purpose-built for music theory education.
             </span>
           </div>
           <div style={{ display: "flex", gap: 24, flexWrap: "wrap" }}>

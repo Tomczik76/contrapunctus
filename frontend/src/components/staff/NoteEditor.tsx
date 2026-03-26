@@ -2,7 +2,7 @@ import { useState, useRef, useCallback, useMemo, useEffect } from "react";
 import type { RenderData, NoteRender, BeatRender, Staff as StaffDef, ContrapunctusApi } from "../../contrapunctus";
 import { Contrapunctus } from "contrapunctus";
 import { useAuth, API_BASE } from "../../auth";
-import * as Tone from "tone";
+import type * as ToneNs from "tone";
 
 import {
   STEP, SPACE, BEAT_WIDTH, CLEF_WIDTH, TS_WIDTH, LEFT_MARGIN, RIGHT_MARGIN,
@@ -166,7 +166,31 @@ export function NoteEditor({ header, lessonConfig, onTrebleBeatsChanged, onBassB
   const [zoom, setZoom] = useState(() => {
     try { const z = localStorage.getItem("contrapunctus_zoom"); return z ? Number(z) : 1; } catch { return 1; }
   });
-  const [toolbarExpanded, setToolbarExpanded] = useState(true);
+  const [isMobile, setIsMobile] = useState(() => typeof window !== "undefined" && window.innerWidth < 700);
+  const [isLandscape, setIsLandscape] = useState(() => typeof window !== "undefined" && window.innerWidth > window.innerHeight);
+  const [isShortScreen, setIsShortScreen] = useState(() => typeof window !== "undefined" && window.innerHeight < 500);
+  useEffect(() => {
+    const mqMobile = window.matchMedia("(max-width: 700px)");
+    const mqLandscape = window.matchMedia("(orientation: landscape)");
+    const mqShort = window.matchMedia("(max-height: 500px)");
+    const handleMobile = (e: MediaQueryListEvent) => setIsMobile(e.matches);
+    const handleLandscape = (e: MediaQueryListEvent) => setIsLandscape(e.matches);
+    const handleShort = (e: MediaQueryListEvent) => setIsShortScreen(e.matches);
+    mqMobile.addEventListener("change", handleMobile);
+    mqLandscape.addEventListener("change", handleLandscape);
+    mqShort.addEventListener("change", handleShort);
+    return () => {
+      mqMobile.removeEventListener("change", handleMobile);
+      mqLandscape.removeEventListener("change", handleLandscape);
+      mqShort.removeEventListener("change", handleShort);
+    };
+  }, []);
+  const [toolbarExpanded, setToolbarExpanded] = useState(() => typeof window !== "undefined" && window.innerWidth >= 700);
+
+  // Auto-collapse toolbar when screen is short (landscape mobile)
+  useEffect(() => {
+    if (isShortScreen) setToolbarExpanded(false);
+  }, [isShortScreen]);
   const [darkMode, setDarkMode] = useState(() => {
     try { return localStorage.getItem("contrapunctus_dark") === "true"; } catch { return false; }
   });
@@ -227,14 +251,30 @@ export function NoteEditor({ header, lessonConfig, onTrebleBeatsChanged, onBassB
   const trebleYOffset = (displayTopDp - ED_TREBLE_TOP) * STEP;
   const bassYOffset = trebleYOffset + (ED_TREBLE_TOP - ED_TREBLE_LINES[0]) * STEP + STAFF_GAP;
   const displayBotDp = 14;
+  // Per-staff note placement bounds (a few ledger lines beyond each staff)
+  const TREBLE_MIN_DP = 24; // ~3 ledger lines below treble staff (C4)
+  const BASS_MAX_DP = 32;   // ~3 ledger lines above bass staff (B4)
   const staffHeight = bassYOffset + (ED_BASS_TOP - displayBotDp) * STEP + STEP * 2;
 
-  // Pad the shorter staff with whole-measure rests so both staves have equal measures
+  // Pad the shorter staff with whole-measure rests so both staves have equal measures.
+  // If the last measure has notes, add an extra empty measure for easy continuation.
   const [paddedTrebleBeats, paddedBassBeats] = useMemo(() => {
     const measureCap = tsTop / tsBottom;
     const tMeasures = computeMeasures(trebleBeats, tsTop, tsBottom);
     const bMeasures = computeMeasures(bassBeats, tsTop, tsBottom);
-    const maxM = Math.max(tMeasures.length, bMeasures.length);
+    let maxM = Math.max(tMeasures.length, bMeasures.length);
+    // Check if the last measure of either staff has a note
+    const lastMeasureHasNote = (beats: PlacedBeat[], measures: { startIdx: number; count: number }[]): boolean => {
+      if (measures.length === 0) return false;
+      const last = measures[measures.length - 1];
+      for (let i = last.startIdx; i < last.startIdx + last.count; i++) {
+        if (!beats[i].isRest && beats[i].notes.length > 0) return true;
+      }
+      return false;
+    };
+    if (!lessonConfig && (lastMeasureHasNote(trebleBeats, tMeasures) || lastMeasureHasNote(bassBeats, bMeasures))) {
+      maxM += 1;
+    }
     const padToMeasures = (beats: PlacedBeat[], mCount: number): PlacedBeat[] => {
       if (mCount >= maxM) return beats;
       const padding: PlacedBeat[] = [];
@@ -247,7 +287,7 @@ export function NoteEditor({ header, lessonConfig, onTrebleBeatsChanged, onBassB
       padToMeasures(trebleBeats, tMeasures.length),
       padToMeasures(bassBeats, bMeasures.length),
     ];
-  }, [trebleBeats, bassBeats, tsTop, tsBottom]);
+  }, [trebleBeats, bassBeats, tsTop, tsBottom, lessonConfig]);
 
   // Time-based beat positioning
   const trebleTimes = useMemo(() => beatTimeOffsets(paddedTrebleBeats), [paddedTrebleBeats]);
@@ -657,7 +697,16 @@ export function NoteEditor({ header, lessonConfig, onTrebleBeatsChanged, onBassB
   const rafRef = useRef<number>(0);
   const playbackRef = useRef<{ startTimeVal: number; wholeNoteSec: number; startIdx: number } | null>(null);
 
-  function getOrCreateSynth(): SynthLike {
+  // Lazy-load Tone.js — only fetched when user first triggers playback
+  const toneRef = useRef<typeof ToneNs | null>(null);
+  async function getTone(): Promise<typeof ToneNs> {
+    if (toneRef.current) return toneRef.current;
+    const mod = await import("tone");
+    toneRef.current = mod;
+    return mod;
+  }
+
+  function getOrCreateSynth(Tone: typeof ToneNs): SynthLike {
     if (synthRef.current && synthInstrumentRef.current === instrument) {
       return synthRef.current;
     }
@@ -752,6 +801,7 @@ export function NoteEditor({ header, lessonConfig, onTrebleBeatsChanged, onBassB
   }
 
   const handlePlay = useCallback(async () => {
+    const Tone = await getTone();
     await Tone.start();
     const transport = Tone.getTransport();
 
@@ -784,7 +834,7 @@ export function NoteEditor({ header, lessonConfig, onTrebleBeatsChanged, onBassB
     transport.stop();
     transport.position = 0;
 
-    const s = getOrCreateSynth();
+    const s = getOrCreateSynth(Tone);
 
     // Wait for sampler to finish loading (piano samples from CDN)
     if (!samplerLoadedRef.current) {
@@ -880,6 +930,8 @@ export function NoteEditor({ header, lessonConfig, onTrebleBeatsChanged, onBassB
   }, [isPaused, tempo, playbackStartIdx, allTimePoints, paddedTrebleBeats, paddedBassBeats, trebleTimes, bassTimes, keySig, instrument]);
 
   const handlePause = useCallback(() => {
+    const Tone = toneRef.current;
+    if (!Tone) return;
     Tone.getTransport().pause();
     cancelAnimationFrame(rafRef.current);
     setIsPaused(true);
@@ -887,9 +939,12 @@ export function NoteEditor({ header, lessonConfig, onTrebleBeatsChanged, onBassB
   }, []);
 
   const handleStop = useCallback(() => {
-    const transport = Tone.getTransport();
-    transport.stop();
-    transport.cancel();
+    const Tone = toneRef.current;
+    if (Tone) {
+      const transport = Tone.getTransport();
+      transport.stop();
+      transport.cancel();
+    }
     cancelAnimationFrame(rafRef.current);
     synthRef.current?.releaseAll();
     setIsPlaying(false);
@@ -909,8 +964,11 @@ export function NoteEditor({ header, lessonConfig, onTrebleBeatsChanged, onBassB
   useEffect(() => {
     return () => {
       cancelAnimationFrame(rafRef.current);
-      Tone.getTransport().stop();
-      Tone.getTransport().cancel();
+      const Tone = toneRef.current;
+      if (Tone) {
+        Tone.getTransport().stop();
+        Tone.getTransport().cancel();
+      }
       synthRef.current?.releaseAll();
       synthRef.current?.dispose();
       synthRef.current = null;
@@ -1035,6 +1093,10 @@ export function NoteEditor({ header, lessonConfig, onTrebleBeatsChanged, onBassB
     return closest;
   }
 
+  // Keep a ref so touch handlers always call the latest xToBeatIdx (avoids stale closures)
+  const xToBeatIdxRef = useRef(xToBeatIdx);
+  xToBeatIdxRef.current = xToBeatIdx;
+
   /** Convert a pixel Y to the nearest diatonic position and which staff it's on. */
   const yToDpAndStaff = useCallback((mouseY: number): { dp: number; staff: "treble" | "bass" } => {
     const trebleBotY = dpToY(ED_TREBLE_LINES[0], ED_TREBLE_TOP, trebleYOffset);
@@ -1060,6 +1122,14 @@ export function NoteEditor({ header, lessonConfig, onTrebleBeatsChanged, onBassB
     moved: boolean;
   } | null>(null);
 
+  /** Check if a dp is within the valid placement range for its staff. */
+  const isValidStaffDp = useCallback((dp: number, staff: "treble" | "bass"): boolean => {
+    if (dp < displayBotDp || dp > displayTopDp) return false;
+    if (staff === "treble" && dp < TREBLE_MIN_DP) return false;
+    if (staff === "bass" && dp > BASS_MAX_DP) return false;
+    return true;
+  }, []);
+
   const handleMouseMove = useCallback((e: React.MouseEvent<SVGSVGElement>) => {
     const svg = svgRef.current;
     if (!svg) return;
@@ -1071,7 +1141,7 @@ export function NoteEditor({ header, lessonConfig, onTrebleBeatsChanged, onBassB
     const sysIdx = Math.min(Math.floor(mouseY / systemTotalHeight), systemCount - 1);
     const localY = mouseY - sysIdx * systemTotalHeight;
     const { dp, staff } = yToDpAndStaff(localY);
-    if (dp >= displayBotDp && dp <= displayTopDp) {
+    if (isValidStaffDp(dp, staff)) {
       setHoverDp(dp);
       setHoverStaff(staff);
       setHoverBeatIdx(xToBeatIdx(mouseX, staff, sysIdx));
@@ -1128,22 +1198,27 @@ export function NoteEditor({ header, lessonConfig, onTrebleBeatsChanged, onBassB
     }
   }, [hoverDp, hoverStaff, hoverBeatIdx, trebleBeats, bassBeats, deleteMode, isLockedNote]);
 
-  const handleMouseUp = useCallback(() => {
+  /** Core click/tap handler. Accepts explicit position to avoid stale state from touch events. */
+  const handleMouseUpWithPos = useCallback((overrideDp?: number, overrideStaff?: "treble" | "bass", overrideBeatIdx?: number) => {
+    const curDp = overrideDp ?? hoverDp;
+    const curStaff = overrideStaff ?? hoverStaff;
+    const curBeatIdx = overrideBeatIdx ?? hoverBeatIdx;
+
     const drag = dragRef.current;
     dragRef.current = null;
 
-    if (drag && drag.moved && hoverDp !== null && hoverStaff !== null) {
+    if (drag && drag.moved && curDp !== null && curStaff !== null) {
       // Drag only within the same staff
-      if (hoverStaff === drag.staff) {
+      if (curStaff === drag.staff) {
         const setter = setStaffBeats(drag.staff);
         setter((prev) => {
           if (drag.beatIdx >= prev.length) return prev;
           const beat = prev[drag.beatIdx];
           const origMatch = (n: PlacedNote) => n.dp === drag.note.dp;
           const withoutOrig = beat.notes.filter((n) => !origMatch(n));
-          const destMatch = (n: PlacedNote) => n.dp === hoverDp;
+          const destMatch = (n: PlacedNote) => n.dp === curDp;
           const filtered = withoutOrig.filter((n) => !destMatch(n));
-          const movedNote: PlacedNote = { dp: hoverDp, staff: hoverStaff, accidental: drag.note.accidental };
+          const movedNote: PlacedNote = { dp: curDp!, staff: curStaff!, accidental: drag.note.accidental };
           const newNotes = [...filtered, movedNote];
           const updated = [...prev];
           updated[drag.beatIdx] = { ...beat, notes: newNotes };
@@ -1154,23 +1229,61 @@ export function NoteEditor({ header, lessonConfig, onTrebleBeatsChanged, onBassB
     }
 
     // No drag (or didn't move) — treat as regular click
-    if (hoverDp === null || hoverBeatIdx === null || hoverStaff === null) return;
+    if (curDp === null || curBeatIdx === null || curStaff === null) return;
 
-    const posMatch = (n: PlacedNote) => n.dp === hoverDp;
-    const hoverNote: PlacedNote = { dp: hoverDp, staff: hoverStaff, accidental: selectedAccidental };
-    const setter = setStaffBeats(hoverStaff);
-    const beats = getStaffBeats(hoverStaff);
+    const posMatch = (n: PlacedNote) => n.dp === curDp;
+    const hoverNote: PlacedNote = { dp: curDp, staff: curStaff, accidental: selectedAccidental };
+    const setter = setStaffBeats(curStaff);
+    const beats = getStaffBeats(curStaff);
 
     if (restMode) {
       // In lesson mode, don't allow resting over locked beats
-      if (lessonConfig && hoverStaff === "treble") return;
-      if (lessonConfig && hoverStaff === "bass" && lessonConfig.lockedBassBeats) return;
+      if (lessonConfig && curStaff === "treble") return;
+      if (lessonConfig && curStaff === "bass" && lessonConfig.lockedBassBeats) return;
       setter((prev) => {
-        if (hoverBeatIdx >= prev.length) return prev;
-        const beat = prev[hoverBeatIdx];
-        if (beat.isRest) return prev;
-        const updated = [...prev];
-        updated[hoverBeatIdx] = { notes: [], duration: beat.duration, isRest: true };
+        // If clicking a padded rest (beyond raw beats), expand prev to include the measure
+        let working = prev;
+        if (curBeatIdx >= prev.length) {
+          const dBeats = curStaff === "treble" ? paddedTrebleBeats : paddedBassBeats;
+          if (curBeatIdx < dBeats.length) {
+            const measures = computeMeasures(dBeats, tsTop, tsBottom);
+            const measure = measures.find((m) => curBeatIdx >= m.startIdx && curBeatIdx < m.startIdx + m.count);
+            if (measure) {
+              working = dBeats.slice(0, measure.startIdx + measure.count);
+            } else {
+              working = dBeats.slice(0, curBeatIdx + 1);
+            }
+          } else {
+            return prev;
+          }
+        }
+        if (curBeatIdx >= working.length) return prev;
+        const beat = working[curBeatIdx];
+        if (beat.isRest) {
+          // Split the rest if a smaller duration is selected
+          const selectedVal = DURATION_VALUE[selectedDuration] * (dottedMode ? 1.5 : 1);
+          const restVal = beatValue(beat);
+          if (selectedVal >= restVal - 1e-9) return prev; // same or larger — no-op
+          // Find position in measure for correct rest alignment
+          const measures = computeMeasures(working, tsTop, tsBottom);
+          const measure = measures.find((m) => curBeatIdx >= m.startIdx && curBeatIdx < m.startIdx + m.count);
+          let posInMeasure = 0;
+          if (measure) {
+            for (let i = measure.startIdx; i < curBeatIdx; i++) posInMeasure += beatValue(working[i]);
+          }
+          const newRest: PlacedBeat = { notes: [], duration: selectedDuration, isRest: true, dotted: dottedMode || undefined };
+          const leftover = restVal - beatValue(newRest);
+          const bUnit = 1 / tsBottom;
+          const fillerRests = leftover > 1e-9 ? fillWithRests(leftover, posInMeasure + beatValue(newRest), bUnit) : [];
+          return [
+            ...working.slice(0, curBeatIdx),
+            newRest,
+            ...fillerRests,
+            ...working.slice(curBeatIdx + 1),
+          ];
+        }
+        const updated = [...working];
+        updated[curBeatIdx] = { notes: [], duration: beat.duration, isRest: true };
         return updated;
       });
       return;
@@ -1178,27 +1291,50 @@ export function NoteEditor({ header, lessonConfig, onTrebleBeatsChanged, onBassB
 
     if (deleteMode) {
       // Don't delete locked notes
-      if (isLockedNote(hoverStaff, hoverBeatIdx, hoverDp)) return;
+      if (isLockedNote(curStaff, curBeatIdx, curDp)) return;
       setter((prev) => {
-        if (hoverBeatIdx >= prev.length) return prev;
-        const beat = prev[hoverBeatIdx];
+        if (curBeatIdx >= prev.length) {
+          // Beat is in the padded display area — check if it's a real trailing rest measure
+          const measures = computeMeasures(prev, tsTop, tsBottom);
+          if (measures.length <= 1) return prev;
+          const last = measures[measures.length - 1];
+          const allRests = prev.slice(last.startIdx, last.startIdx + last.count).every((b) => b.isRest);
+          if (allRests) {
+            // Trim the trailing all-rest measure
+            const trimmed = prev.slice(0, last.startIdx);
+            return trimmed.length > 0 ? trimmed : fillWithRests(tsTop / tsBottom);
+          }
+          return prev;
+        }
+        const beat = prev[curBeatIdx];
         if (beat.isRest) {
-          // Remove the rest beat entirely
-          const updated = prev.filter((_, i) => i !== hoverBeatIdx);
+          // Check if this rest is in a trailing all-rest measure — if so, trim the whole measure
+          const measures = computeMeasures(prev, tsTop, tsBottom);
+          const measure = measures.find((m) => curBeatIdx >= m.startIdx && curBeatIdx < m.startIdx + m.count);
+          if (measure) {
+            const isLastMeasure = measure.startIdx + measure.count >= prev.length;
+            const allRests = prev.slice(measure.startIdx, measure.startIdx + measure.count).every((b) => b.isRest);
+            if (isLastMeasure && allRests && measures.length > 1) {
+              const trimmed = prev.slice(0, measure.startIdx);
+              return trimmed.length > 0 ? trimmed : fillWithRests(tsTop / tsBottom);
+            }
+          }
+          // Otherwise remove just this rest beat
+          const updated = prev.filter((_, i) => i !== curBeatIdx);
           return updated.length > 0 ? updated : fillWithRests(tsTop / tsBottom);
         }
         if (!beat.notes.some(posMatch)) return prev;
         const newNotes = beat.notes.filter((n) => !posMatch(n));
         if (newNotes.length === 0) {
           // In lesson mode, don't allow deleting all notes from a locked beat
-          if (lessonConfig && hoverStaff === "treble") return prev;
-          if (lessonConfig && hoverStaff === "bass" && lessonConfig.lockedBassBeats) return prev;
+          if (lessonConfig && curStaff === "treble") return prev;
+          if (lessonConfig && curStaff === "bass" && lessonConfig.lockedBassBeats) return prev;
           const updated = [...prev];
-          updated[hoverBeatIdx] = { notes: [], duration: beat.duration, isRest: true };
+          updated[curBeatIdx] = { notes: [], duration: beat.duration, isRest: true };
           return updated;
         }
         const updated = [...prev];
-        updated[hoverBeatIdx] = { ...beat, notes: newNotes };
+        updated[curBeatIdx] = { ...beat, notes: newNotes };
         return updated;
       });
       return;
@@ -1207,26 +1343,26 @@ export function NoteEditor({ header, lessonConfig, onTrebleBeatsChanged, onBassB
     setter((prev) => {
       // If clicking a padded rest (beyond raw beats), expand prev to include it
       let working = prev;
-      if (hoverBeatIdx >= prev.length) {
-        const dBeats = hoverStaff === "treble" ? paddedTrebleBeats : paddedBassBeats;
-        if (hoverBeatIdx < dBeats.length) {
-          working = dBeats.slice(0, hoverBeatIdx + 1);
-          // Ensure we include at least through the measure containing hoverBeatIdx
+      if (curBeatIdx >= prev.length) {
+        const dBeats = curStaff === "treble" ? paddedTrebleBeats : paddedBassBeats;
+        if (curBeatIdx < dBeats.length) {
+          working = dBeats.slice(0, curBeatIdx + 1);
+          // Ensure we include at least through the measure containing curBeatIdx
           const measureCap = tsTop / tsBottom;
           const measures = computeMeasures(dBeats, tsTop, tsBottom);
-          const measure = measures.find((m) => hoverBeatIdx >= m.startIdx && hoverBeatIdx < m.startIdx + m.count);
+          const measure = measures.find((m) => curBeatIdx >= m.startIdx && curBeatIdx < m.startIdx + m.count);
           if (measure) {
             working = dBeats.slice(0, measure.startIdx + measure.count);
           }
         }
       }
-      if (hoverBeatIdx < working.length) {
-        const beat = working[hoverBeatIdx];
+      if (curBeatIdx < working.length) {
+        const beat = working[curBeatIdx];
         if (beat.isRest) {
           const measures = computeMeasures(working, tsTop, tsBottom);
-          const measure = measures.find((m) => hoverBeatIdx >= m.startIdx && hoverBeatIdx < m.startIdx + m.count);
+          const measure = measures.find((m) => curBeatIdx >= m.startIdx && curBeatIdx < m.startIdx + m.count);
           if (!measure) return prev;
-          const restStart = hoverBeatIdx;
+          const restStart = curBeatIdx;
           const measureEnd = measure.startIdx + measure.count;
           let available = 0;
           for (let i = restStart; i < measureEnd; i++) {
@@ -1256,20 +1392,20 @@ export function NoteEditor({ header, lessonConfig, onTrebleBeatsChanged, onBassB
           ];
         }
         // In lesson mode, don't allow duration changes on locked staves
-        if (lessonConfig && hoverStaff === "treble" && beat.duration !== selectedDuration) return prev;
-        if (lessonConfig && hoverStaff === "bass" && lessonConfig.lockedBassBeats && beat.duration !== selectedDuration) return prev;
+        if (lessonConfig && curStaff === "treble" && beat.duration !== selectedDuration) return prev;
+        if (lessonConfig && curStaff === "bass" && lessonConfig.lockedBassBeats && beat.duration !== selectedDuration) return prev;
         // Different duration selected → replace beat with new note at selected duration
         if (beat.duration !== selectedDuration) {
           // Treat like clicking on the rest space: remove this beat and consecutive rests after it,
           // then insert the new note and fill remaining space
           const measures = computeMeasures(working, tsTop, tsBottom);
-          const measure = measures.find((m) => hoverBeatIdx >= m.startIdx && hoverBeatIdx < m.startIdx + m.count);
+          const measure = measures.find((m) => curBeatIdx >= m.startIdx && curBeatIdx < m.startIdx + m.count);
           if (!measure) return prev;
           const measureEnd = measure.startIdx + measure.count;
           // Free space from this beat onward (this beat + any consecutive rests after it)
           let beatsToRemove = 1;
           let spaceFreed = beatValue(beat);
-          for (let i = hoverBeatIdx + 1; i < measureEnd && working[i].isRest; i++) {
+          for (let i = curBeatIdx + 1; i < measureEnd && working[i].isRest; i++) {
             beatsToRemove++;
             spaceFreed += beatValue(working[i]);
           }
@@ -1277,48 +1413,51 @@ export function NoteEditor({ header, lessonConfig, onTrebleBeatsChanged, onBassB
           const newBeat: PlacedBeat = { notes: [...beat.notes], duration: selectedDuration, dotted: dottedMode || undefined };
           const leftover = spaceFreed - beatValue(newBeat);
           let posInMeasure = 0;
-          for (let i = measure.startIdx; i < hoverBeatIdx; i++) posInMeasure += beatValue(working[i]);
+          for (let i = measure.startIdx; i < curBeatIdx; i++) posInMeasure += beatValue(working[i]);
           posInMeasure += beatValue(newBeat);
           const bUnit = 1 / tsBottom;
           const fillerRests = leftover > 1e-9 ? fillWithRests(leftover, posInMeasure, bUnit) : [];
           return [
-            ...working.slice(0, hoverBeatIdx),
+            ...working.slice(0, curBeatIdx),
             newBeat,
             ...fillerRests,
-            ...working.slice(hoverBeatIdx + beatsToRemove),
+            ...working.slice(curBeatIdx + beatsToRemove),
           ];
         }
         // Same duration — toggle/add notes within the beat
         const existing = beat.notes.find(posMatch);
         if (existing) {
           // Don't allow toggling off or changing locked soprano notes
-          if (isLockedNote(hoverStaff, hoverBeatIdx, hoverDp)) return prev;
+          if (isLockedNote(curStaff, curBeatIdx, curDp)) return prev;
           if (existing.accidental === selectedAccidental) {
             // Toggle off this note
             const newNotes = beat.notes.filter((n) => !posMatch(n));
             if (newNotes.length === 0) {
               const updated = [...working];
-              updated[hoverBeatIdx] = { notes: [], duration: beat.duration, isRest: true };
+              updated[curBeatIdx] = { notes: [], duration: beat.duration, isRest: true };
               return updated;
             }
             const updated = [...working];
-            updated[hoverBeatIdx] = { ...beat, notes: newNotes };
+            updated[curBeatIdx] = { ...beat, notes: newNotes };
             return updated;
           }
           // Change accidental on existing note
           const updated = [...working];
-          updated[hoverBeatIdx] = { ...beat, notes: beat.notes.map((n) => posMatch(n) ? hoverNote : n) };
+          updated[curBeatIdx] = { ...beat, notes: beat.notes.map((n) => posMatch(n) ? hoverNote : n) };
           return updated;
         }
         // Add note to chord
         const updated = [...working];
-        updated[hoverBeatIdx] = { ...beat, notes: [...beat.notes, hoverNote] };
+        updated[curBeatIdx] = { ...beat, notes: [...beat.notes, hoverNote] };
         return updated;
       }
       // Past the end — start a new measure
       return [...working, { notes: [hoverNote], duration: selectedDuration, dotted: dottedMode || undefined }];
     });
   }, [hoverDp, hoverStaff, hoverBeatIdx, selectedDuration, selectedAccidental, dottedMode, deleteMode, restMode, tsTop, tsBottom, trebleBeats, bassBeats, paddedTrebleBeats, paddedBassBeats, isLockedNote, lessonConfig, readOnly]);
+
+  /** No-arg wrapper for mouse events (uses current hover state from closure). */
+  const handleMouseUp = useCallback(() => handleMouseUpWithPos(), [handleMouseUpWithPos]);
 
   const handleUndo = useCallback(() => {
     const { past, future } = historyRef.current;
@@ -1388,6 +1527,126 @@ export function NoteEditor({ header, lessonConfig, onTrebleBeatsChanged, onBassB
     window.addEventListener("keydown", handler);
     return () => window.removeEventListener("keydown", handler);
   }, [handleUndo, handleRedo, handlePlay, handlePause, isPlaying]);
+
+  // ── Touch event handlers for mobile ─────────────────────────────────
+  const svgCoordsFromClient = useCallback((clientX: number, clientY: number) => {
+    const svg = svgRef.current;
+    if (!svg) return null;
+    const rect = svg.getBoundingClientRect();
+    const scaleY = svgHeight / rect.height;
+    const scaleX = staffW / rect.width;
+    const mouseY = (clientY - rect.top) * scaleY;
+    const mouseX = (clientX - rect.left) * scaleX;
+    const sysIdx = Math.min(Math.floor(mouseY / systemTotalHeight), systemCount - 1);
+    const localY = mouseY - sysIdx * systemTotalHeight;
+    return { mouseX, mouseY, sysIdx, localY };
+  }, [svgHeight, staffW, systemTotalHeight, systemCount]);
+
+  const updateHoverFromTouch = useCallback((clientX: number, clientY: number) => {
+    const coords = svgCoordsFromClient(clientX, clientY);
+    if (!coords) return;
+    const { mouseX, sysIdx, localY } = coords;
+    const { dp, staff } = yToDpAndStaff(localY);
+    if (isValidStaffDp(dp, staff)) {
+      setHoverDp(dp);
+      setHoverStaff(staff);
+      setHoverBeatIdx(xToBeatIdxRef.current(mouseX, staff, sysIdx));
+    } else {
+      setHoverDp(null);
+      setHoverStaff(null);
+      setHoverBeatIdx(null);
+    }
+  }, [svgCoordsFromClient, yToDpAndStaff, isValidStaffDp]);
+
+  /** Check if a touch point is on a valid staff position (not in the dead zone). */
+  const isTouchOnStaff = useCallback((clientX: number, clientY: number): boolean => {
+    const coords = svgCoordsFromClient(clientX, clientY);
+    if (!coords) return false;
+    const { dp, staff } = yToDpAndStaff(coords.localY);
+    return isValidStaffDp(dp, staff);
+  }, [svgCoordsFromClient, yToDpAndStaff, isValidStaffDp]);
+
+  const touchActiveRef = useRef(false);
+  const touchHoverRef = useRef<{ dp: number; staff: "treble" | "bass"; beatIdx: number } | null>(null);
+
+  const handleTouchStartNative = useCallback((e: TouchEvent) => {
+    if (readOnly) return;
+    const touch = e.touches[0];
+    if (!isTouchOnStaff(touch.clientX, touch.clientY)) {
+      touchActiveRef.current = false;
+      return; // allow scrolling in dead zone
+    }
+    e.preventDefault();
+    touchActiveRef.current = true;
+    // Compute and store hover synchronously
+    const coords = svgCoordsFromClient(touch.clientX, touch.clientY);
+    if (coords) {
+      const { mouseX, sysIdx, localY } = coords;
+      const { dp, staff } = yToDpAndStaff(localY);
+      if (isValidStaffDp(dp, staff)) {
+        const beatIdx = xToBeatIdxRef.current(mouseX, staff, sysIdx);
+        touchHoverRef.current = { dp, staff, beatIdx };
+        setHoverDp(dp);
+        setHoverStaff(staff);
+        setHoverBeatIdx(beatIdx);
+      }
+    }
+  }, [readOnly, isTouchOnStaff, svgCoordsFromClient, yToDpAndStaff, isValidStaffDp]);
+
+  const handleTouchMoveNative = useCallback((e: TouchEvent) => {
+    if (readOnly || !touchActiveRef.current) return;
+    e.preventDefault();
+    const touch = e.touches[0];
+    const coords = svgCoordsFromClient(touch.clientX, touch.clientY);
+    if (coords) {
+      const { mouseX, sysIdx, localY } = coords;
+      const { dp, staff } = yToDpAndStaff(localY);
+      if (isValidStaffDp(dp, staff)) {
+        const beatIdx = xToBeatIdxRef.current(mouseX, staff, sysIdx);
+        touchHoverRef.current = { dp, staff, beatIdx };
+        setHoverDp(dp);
+        setHoverStaff(staff);
+        setHoverBeatIdx(beatIdx);
+      } else {
+        touchHoverRef.current = null;
+        setHoverDp(null);
+        setHoverStaff(null);
+        setHoverBeatIdx(null);
+      }
+    }
+  }, [readOnly, svgCoordsFromClient, yToDpAndStaff, isValidStaffDp]);
+
+  const handleTouchEndNative = useCallback((e: TouchEvent) => {
+    if (readOnly || !touchActiveRef.current) return;
+    e.preventDefault();
+    touchActiveRef.current = false;
+    const hover = touchHoverRef.current;
+    if (hover) {
+      // Call handleMouseUp with the touch position injected via refs,
+      // bypassing stale React state by temporarily overriding it
+      handleMouseUpWithPos(hover.dp, hover.staff, hover.beatIdx);
+    }
+    setTimeout(() => {
+      setHoverDp(null);
+      setHoverStaff(null);
+      setHoverBeatIdx(null);
+      touchHoverRef.current = null;
+    }, 100);
+  }, [readOnly, handleMouseUpWithPos]);
+
+  // Attach touch listeners imperatively with { passive: false } so preventDefault works
+  useEffect(() => {
+    const svg = svgRef.current;
+    if (!svg) return;
+    svg.addEventListener("touchstart", handleTouchStartNative, { passive: false });
+    svg.addEventListener("touchmove", handleTouchMoveNative, { passive: false });
+    svg.addEventListener("touchend", handleTouchEndNative, { passive: false });
+    return () => {
+      svg.removeEventListener("touchstart", handleTouchStartNative);
+      svg.removeEventListener("touchmove", handleTouchMoveNative);
+      svg.removeEventListener("touchend", handleTouchEndNative);
+    };
+  }, [handleTouchStartNative, handleTouchMoveNative, handleTouchEndNative]);
 
   /** Render a rest glyph on a single staff given its line Y positions. */
   function renderRestOnStaff(dur: Duration, x: number, lineYs: number[], opacity = 1) {
@@ -1693,7 +1952,7 @@ export function NoteEditor({ header, lessonConfig, onTrebleBeatsChanged, onBassB
   const durationShortcuts: Record<Duration, string> = { whole: "1", half: "2", quarter: "3", eighth: "4", sixteenth: "5" };
 
   const btnBase: React.CSSProperties = {
-    width: 34, height: 34,
+    width: isMobile ? 40 : 34, height: isMobile ? 40 : 34,
     borderRadius: 6,
     cursor: "pointer",
     display: "flex",
@@ -1790,6 +2049,10 @@ export function NoteEditor({ header, lessonConfig, onTrebleBeatsChanged, onBassB
         .cp-toolbar button.cp-active-danger:hover:not([disabled]) { background: #d94444 !important; color: #fff !important; }
         .cp-toolbar button:active:not([disabled]) { transform: scale(0.96); }
         .cp-fade { transition: opacity 0.25s ease; }
+        @media (max-width: 700px) {
+          .cp-toolbar { padding: 0 8px !important; }
+          .cp-toolbar .cp-group-label { display: none; }
+        }
       `}</style>
       {/* Fixed top bar */}
       <div ref={topBarRef} className="cp-toolbar" style={{
@@ -1803,8 +2066,8 @@ export function NoteEditor({ header, lessonConfig, onTrebleBeatsChanged, onBassB
         padding: "0 16px",
         color: theme.text,
       }}>
-        {/* Title bar — hidden in embedded mode */}
-        {!embedded && <div style={{
+        {/* Title bar — hidden in embedded mode and when screen is short (landscape mobile) */}
+        {!embedded && !isShortScreen && <div style={{
           display: "flex",
           alignItems: "center",
           justifyContent: "center",
@@ -1825,9 +2088,23 @@ export function NoteEditor({ header, lessonConfig, onTrebleBeatsChanged, onBassB
         <div style={{
           display: "flex",
           alignItems: "center",
+          flexWrap: "wrap",
           padding: "6px 0",
-          gap: 8,
+          gap: (isMobile || isShortScreen) ? 4 : 8,
         }}>
+          {/* Expand toggle — always visible first on mobile/landscape */}
+          {(isMobile || isShortScreen) && (
+            <button
+              onClick={() => setToolbarExpanded(true)}
+              style={{ ...btnBase, width: 32, height: 32, color: "#888", flexShrink: 0 }}
+              title="Expand toolbar"
+            >
+              <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M3 5.5 L7 9.5 L11 5.5" />
+              </svg>
+            </button>
+          )}
+
           {/* Note values — compact */}
           <div style={groupStyle}>
             {durations.map((key) => (
@@ -1894,7 +2171,31 @@ export function NoteEditor({ header, lessonConfig, onTrebleBeatsChanged, onBassB
             </button>
           </div>
 
-          {/* Note indicator + expand toggle — pushed right */}
+          {/* Zoom — visible on mobile/landscape in collapsed toolbar */}
+          {(isMobile || isShortScreen) && (
+            <div style={groupStyle}>
+              <button onClick={() => { const z = Math.max(0.5, +(zoom - 0.1).toFixed(1)); setZoom(z); localStorage.setItem("contrapunctus_zoom", String(z)); }}
+                style={{ ...btnBase, width: 28, height: 28 }} title="Zoom out">−</button>
+              <span style={{ fontSize: 12, color: theme.textMuted, minWidth: 32, textAlign: "center" }}>{Math.round(zoom * 100)}%</span>
+              <button onClick={() => { const z = Math.min(2, +(zoom + 0.1).toFixed(1)); setZoom(z); localStorage.setItem("contrapunctus_zoom", String(z)); }}
+                style={{ ...btnBase, width: 28, height: 28 }} title="Zoom in">+</button>
+            </div>
+          )}
+
+          {/* Note indicator — pushed right on mobile/landscape */}
+          {(isMobile || isShortScreen) && (
+            <span style={{ marginLeft: "auto", color: theme.textMuted, fontSize: 18, fontFamily: "serif", minWidth: 36, textAlign: "right", flexShrink: 0 }}>
+              {hoverDp !== null ? (() => {
+                const letterIdx = ((hoverDp % 7) + 7) % 7;
+                const octave = Math.floor(hoverDp / 7);
+                const acc = accidentalSymbol(effectiveAccidental(selectedAccidental, hoverDp, keySig));
+                return `${LETTERS[letterIdx]}${acc}${octave}`;
+              })() : "\u00A0"}
+            </span>
+          )}
+
+          {/* Note indicator + expand toggle — pushed right (desktop only) */}
+          {!isMobile && !isShortScreen && (
           <div style={{ marginLeft: "auto", display: "flex", alignItems: "center", gap: 8 }}>
             <span style={{ color: theme.textMuted, fontSize: 18, fontFamily: "serif", minWidth: 40, textAlign: "right" }}>
               {hoverDp !== null ? (() => {
@@ -1914,6 +2215,7 @@ export function NoteEditor({ header, lessonConfig, onTrebleBeatsChanged, onBassB
               </svg>
             </button>
           </div>
+          )}
         </div>
         )}
 
@@ -1929,7 +2231,7 @@ export function NoteEditor({ header, lessonConfig, onTrebleBeatsChanged, onBassB
         }}>
           {/* Note values */}
           <div style={groupStyle}>
-            <span style={groupLabel}>Note</span>
+            <span className="cp-group-label" style={groupLabel}>Note</span>
             {durations.map((key) => (
               <button key={key} onClick={() => setSelectedDuration(key)}
                 style={btnOn(selectedDuration === key)} title={`${key} (${durationShortcuts[key]})`}>
@@ -1945,7 +2247,7 @@ export function NoteEditor({ header, lessonConfig, onTrebleBeatsChanged, onBassB
 
           {/* Accidentals */}
           <div style={groupStyle}>
-            <span style={groupLabel}>Acc</span>
+            <span className="cp-group-label" style={groupLabel}>Acc</span>
             {([["n", "\u266E"], ["#", "\u266F"], ["b", "\u266D"]] as [Accidental, string][]).map(([acc, sym]) => (
               <button key={acc} onClick={() => setSelectedAccidental((prev) => prev === acc ? "" : acc)}
                 style={{ ...btnOn(selectedAccidental === acc), fontSize: 18 }}
@@ -1957,7 +2259,7 @@ export function NoteEditor({ header, lessonConfig, onTrebleBeatsChanged, onBassB
 
           {/* Edit actions */}
           <div style={groupStyle}>
-            <span style={groupLabel}>Edit</span>
+            <span className="cp-group-label" style={groupLabel}>Edit</span>
             <button
               onClick={() => { setRestMode((r) => !r); setDeleteMode(false); }}
               style={textBtnStyle(restMode)}
@@ -1981,7 +2283,7 @@ export function NoteEditor({ header, lessonConfig, onTrebleBeatsChanged, onBassB
 
           {/* Analysis toggles — hidden in lesson mode */}
           {!lessonConfig && (<div style={groupStyle}>
-            <span style={groupLabel}>Analysis</span>
+            <span className="cp-group-label" style={groupLabel}>Analysis</span>
             <button
               onClick={() => setLabelMode((m) => m === "roman" ? "chord" : "roman")}
               style={textBtnStyle(labelMode === "chord")}
@@ -2083,7 +2385,7 @@ export function NoteEditor({ header, lessonConfig, onTrebleBeatsChanged, onBassB
         }}>
           {/* Playback */}
           <div style={groupStyle}>
-            <span style={groupLabel}>Play</span>
+            <span className="cp-group-label" style={groupLabel}>Play</span>
             <button
               onClick={isPlaying ? handlePause : handlePlay}
               style={textBtnStyle(isPlaying)}
@@ -2135,7 +2437,7 @@ export function NoteEditor({ header, lessonConfig, onTrebleBeatsChanged, onBassB
 
           {/* Time signature */}
           <div style={groupStyle}>
-            <span style={groupLabel}>Time</span>
+            <span className="cp-group-label" style={groupLabel}>Time</span>
             <select value={tsTop} onChange={(e) => setTsTop(Number(e.target.value))} style={selectStyle} disabled={!!lessonConfig}>
               {[2, 3, 4, 5, 6, 7, 8, 9, 12].map((n) => (
                 <option key={n} value={n}>{n}</option>
@@ -2151,7 +2453,7 @@ export function NoteEditor({ header, lessonConfig, onTrebleBeatsChanged, onBassB
 
           {/* Key */}
           <div style={groupStyle}>
-            <span style={groupLabel}>Key</span>
+            <span className="cp-group-label" style={groupLabel}>Key</span>
             <select value={tonicIdx} onChange={(e) => {
               const newIdx = Number(e.target.value);
               const oldKS = keySig;
@@ -2180,7 +2482,7 @@ export function NoteEditor({ header, lessonConfig, onTrebleBeatsChanged, onBassB
 
           {/* Zoom */}
           <div style={groupStyle}>
-            <span style={groupLabel}>Zoom</span>
+            <span className="cp-group-label" style={groupLabel}>Zoom</span>
             <button onClick={() => { const z = Math.max(0.5, +(zoom - 0.1).toFixed(1)); setZoom(z); localStorage.setItem("contrapunctus_zoom", String(z)); }}
               style={{ ...btnBase, width: 28, height: 28 }} title="Zoom out">−</button>
             <span style={{ fontSize: 12, color: theme.textMuted, minWidth: 32, textAlign: "center" }}>{Math.round(zoom * 100)}%</span>
@@ -2480,9 +2782,11 @@ export function NoteEditor({ header, lessonConfig, onTrebleBeatsChanged, onBassB
       {/* Main content: score + optional error panel */}
       <div style={{
         display: "flex",
+        flexDirection: isMobile ? "column" : "row",
         justifyContent: "center",
         gap: 16,
-        padding: "24px 16px",
+        padding: isShortScreen ? "4px 4px" : isMobile ? "12px 4px" : "24px 16px",
+        paddingBottom: header ? (isMobile ? 100 : 80) : undefined,
         alignItems: "flex-start",
       }}>
 
@@ -2490,9 +2794,9 @@ export function NoteEditor({ header, lessonConfig, onTrebleBeatsChanged, onBassB
       <div style={{
         maxWidth: 960,
         width: "100%",
-        minWidth: 960,
+        minWidth: (isMobile || isShortScreen) ? undefined : 960,
         flex: showErrors && errorPanelOpen ? "1 1 0" : undefined,
-        padding: "36px 40px 48px",
+        padding: isShortScreen ? "8px 8px 12px" : isMobile ? "16px 8px 24px" : "36px 40px 48px",
         borderRadius: 8,
         boxShadow: dk ? "0 1px 3px rgba(0,0,0,0.3), 0 4px 12px rgba(0,0,0,0.2)" : "0 1px 3px rgba(0,0,0,0.12), 0 4px 12px rgba(0,0,0,0.08)",
         zoom: zoom !== 1 ? zoom : undefined,
@@ -2649,6 +2953,8 @@ export function NoteEditor({ header, lessonConfig, onTrebleBeatsChanged, onBassB
                   if (!pos || pos.sys !== sysIdx) return null;
                   const bx = pos.x;
                   if (beat.isRest) {
+                    // Don't render rest symbols for padded (virtual) beats
+                    if (i >= trebleBeats.length) return null;
                     return <g key={`tb-${i}`}>{renderRestOnStaff(beat.duration, bx, trebleLineYs)}</g>;
                   }
                   const tNct = trebleTimes[i] !== undefined ? timeToNct.get(trebleTimes[i]) : undefined;
@@ -2679,6 +2985,8 @@ export function NoteEditor({ header, lessonConfig, onTrebleBeatsChanged, onBassB
                   if (!pos || pos.sys !== sysIdx) return null;
                   const bx = pos.x;
                   if (beat.isRest) {
+                    // Don't render rest symbols for padded (virtual) beats
+                    if (i >= bassBeats.length) return null;
                     return <g key={`bb-${i}`}>{renderRestOnStaff(beat.duration, bx, bassLineYs)}</g>;
                   }
                   const bNct = bassTimes[i] !== undefined ? timeToNct.get(bassTimes[i]) : undefined;
@@ -2703,8 +3011,10 @@ export function NoteEditor({ header, lessonConfig, onTrebleBeatsChanged, onBassB
 
               {/* Roman numerals + chord errors (shown in normal mode and lesson checked mode) */}
               {(!lessonConfig || lessonConfig.checked) && allTimePoints.map((t, i) => {
-                const rns = activeLabels[i];
-                const hasRn = hasRN && rns && rns.length > 0;
+                const useStudentRn = lessonConfig?.showStudentRomans && lessonConfig.checked;
+                const studentVal = useStudentRn ? (studentRomans[i] ?? "").trim() : "";
+                const rns = useStudentRn ? (studentVal ? [studentVal] : []) : activeLabels[i];
+                const hasRn = useStudentRn ? studentVal.length > 0 : (hasRN && rns && rns.length > 0);
                 const beatChordErrs = timeToChordErrors.get(t);
                 const hasChordErr = beatChordErrs && beatChordErrs.length > 0;
                 if (!hasRn && !hasChordErr) return null;
@@ -2952,11 +3262,11 @@ export function NoteEditor({ header, lessonConfig, onTrebleBeatsChanged, onBassB
       {/* Right-side error panel */}
       {showErrors && errorPanelOpen && (
         <div style={{
-          width: 300,
-          minWidth: 300,
-          maxHeight: "calc(100vh - 120px)",
-          position: "sticky",
-          top: 80,
+          width: isMobile ? "100%" : 300,
+          minWidth: isMobile ? undefined : 300,
+          maxHeight: isMobile ? "50vh" : "calc(100vh - 120px)",
+          position: isMobile ? "relative" : "sticky",
+          top: isMobile ? undefined : 80,
           overflowY: "auto",
           borderRadius: 8,
           background: dk ? "#2a2a30" : "#fff",
@@ -3056,7 +3366,8 @@ export function NoteEditor({ header, lessonConfig, onTrebleBeatsChanged, onBassB
       </div>{/* end flex container */}
 
       {header && <div style={{
-        position: "fixed", bottom: 0, left: 0, right: 0, zIndex: 100,
+        position: isShortScreen ? "relative" : "fixed", bottom: isShortScreen ? undefined : 0,
+        left: isShortScreen ? undefined : 0, right: isShortScreen ? undefined : 0, zIndex: 100,
         background: dk ? "#222228" : "#f0ede9", borderTop: `1px solid ${theme.footerBorder}`, color: theme.text,
       }}>
         {lessonConfig && !lessonConfig.checked && <RnLegend dark={dk} />}

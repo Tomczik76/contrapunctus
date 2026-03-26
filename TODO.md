@@ -4,4 +4,4 @@
 - Save to Server
 - Export Midi
 - Transforms to change modes 
-- AI asstant No
+- AI asstant

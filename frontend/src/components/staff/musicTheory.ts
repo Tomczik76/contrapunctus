@@ -162,7 +162,38 @@ export function fillWithRests(remaining: number, posInMeasure = 0, beatUnit = 1 
   return rests;
 }
 
-/** Auto-fill the last measure of a beats array with rests. */
+/** Consolidate consecutive rests within each measure into optimal rest values. */
+export function consolidateRests(beats: PlacedBeat[], tsTop: number, tsBottom: number): PlacedBeat[] {
+  const measures = computeMeasures(beats, tsTop, tsBottom);
+  if (measures.length === 0) return beats;
+  const bUnit = 1 / tsBottom;
+  const result: PlacedBeat[] = [];
+  for (const m of measures) {
+    let i = m.startIdx;
+    const end = m.startIdx + m.count;
+    let posInMeasure = 0;
+    while (i < end) {
+      if (!beats[i].isRest) {
+        result.push(beats[i]);
+        posInMeasure += beatValue(beats[i]);
+        i++;
+        continue;
+      }
+      // Collect consecutive rests
+      let restTotal = 0;
+      while (i < end && beats[i].isRest) {
+        restTotal += beatValue(beats[i]);
+        i++;
+      }
+      // Re-fill the rest span with optimal rest values
+      result.push(...fillWithRests(restTotal, posInMeasure, bUnit));
+      posInMeasure += restTotal;
+    }
+  }
+  return result;
+}
+
+/** Auto-fill the last measure of a beats array with rests, then consolidate. */
 export function autoFillBeats(beats: PlacedBeat[], tsTop: number, tsBottom: number): PlacedBeat[] {
   const measureCap = tsTop / tsBottom;
   const measures = computeMeasures(beats, tsTop, tsBottom);
@@ -173,25 +204,30 @@ export function autoFillBeats(beats: PlacedBeat[], tsTop: number, tsBottom: numb
     used += beatValue(beats[i]);
   }
   const remaining = measureCap - used;
+  let filled: PlacedBeat[];
   if (remaining > 1e-9) {
     let trimEnd = beats.length;
     while (trimEnd > last.startIdx && beats[trimEnd - 1].isRest) trimEnd--;
     if (trimEnd <= last.startIdx) {
-      return [...beats.slice(0, last.startIdx), ...fillWithRests(measureCap)];
+      filled = [...beats.slice(0, last.startIdx), ...fillWithRests(measureCap)];
+    } else {
+      const trimmed = beats.slice(0, trimEnd);
+      let usedAfterTrim = 0;
+      for (let i = last.startIdx; i < trimmed.length; i++) {
+        usedAfterTrim += beatValue(trimmed[i]);
+      }
+      const remAfterTrim = measureCap - usedAfterTrim;
+      if (remAfterTrim > 1e-9) {
+        const bUnit = tsBottom > 0 ? 1 / tsBottom : 1 / 4;
+        filled = [...trimmed, ...fillWithRests(remAfterTrim, usedAfterTrim, bUnit)];
+      } else {
+        filled = trimmed;
+      }
     }
-    const trimmed = beats.slice(0, trimEnd);
-    let usedAfterTrim = 0;
-    for (let i = last.startIdx; i < trimmed.length; i++) {
-      usedAfterTrim += beatValue(trimmed[i]);
-    }
-    const remAfterTrim = measureCap - usedAfterTrim;
-    if (remAfterTrim > 1e-9) {
-      const bUnit = tsBottom > 0 ? 1 / tsBottom : 1 / 4;
-      return [...trimmed, ...fillWithRests(remAfterTrim, usedAfterTrim, bUnit)];
-    }
-    return trimmed;
+  } else {
+    filled = beats;
   }
-  return beats;
+  return filled;
 }
 
 /** Round to avoid floating point issues with music durations. */

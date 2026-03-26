@@ -169,7 +169,7 @@ private object Helpers:
     val slash = if inv.index > 0 then
       // Find the bass note for slash chord notation
       val bassInterval = inv.rootInterval
-      val bassPc = (ac.chord.root.value + bassInterval.value) % 12
+      val bassPc = (ac.chord.root.value - bassInterval.value + 12) % 12
       NoteType.values.find(_.value == bassPc) match
         case Some(bassNote) => "/" + letterOf(bassNote) + accidentalOf(bassNote)
         case None => ""
