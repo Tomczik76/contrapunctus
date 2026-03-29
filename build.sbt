@@ -33,6 +33,35 @@ lazy val core = crossProject(JVMPlatform, JSPlatform)
     }
   )
 
+lazy val crawler = (project in file("crawler"))
+  .settings(
+    name         := "contrapunctus-crawler",
+    version      := "0.0.1-SNAPSHOT",
+    scalaVersion := scala3Version,
+    organization := "io.github.tomczik76",
+    libraryDependencies ++= Seq(
+      "org.http4s"           %% "http4s-ember-client" % Http4sVersion,
+      "org.http4s"           %% "http4s-circe"        % Http4sVersion,
+      "io.circe"             %% "circe-generic"       % CirceVersion,
+      "io.circe"             %% "circe-parser"        % CirceVersion,
+      "org.jsoup"            %  "jsoup"               % "1.18.1",
+      "software.amazon.awssdk" % "bedrockruntime"     % "2.31.1",
+      "com.github.pureconfig" %% "pureconfig-core"    % PureConfigVersion,
+      "org.tpolecat"         %% "skunk-core"          % SkunkVersion,
+      "ch.qos.logback"       %  "logback-classic"     % LogbackVersion,
+      "org.scalameta"        %% "munit"               % MunitVersion % Test,
+    ),
+    testFrameworks += new TestFramework("munit.Framework"),
+    assembly / mainClass := Some("contrapunctus.crawler.Main"),
+    assembly / assemblyJarName := "crawler.jar",
+    assembly / assemblyMergeStrategy := {
+      case PathList("META-INF", "services", _*) => MergeStrategy.concat
+      case PathList("META-INF", _*)             => MergeStrategy.discard
+      case "reference.conf"                     => MergeStrategy.concat
+      case _                                    => MergeStrategy.first
+    }
+  )
+
 lazy val backend = (project in file("backend"))
   .settings(
     name         := "contrapunctus-backend",
