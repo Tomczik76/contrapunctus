@@ -11,8 +11,8 @@ import org.http4s.server.Router
 import org.http4s.server.middleware.{CORS, Logger}
 import org.http4s.ember.server.EmberServerBuilder
 import skunk.Session
-import contrapunctus.backend.routes.{AdminRoutes, BugReportRoutes, EducatorRoutes, FeatureRequestRoutes, JoinRoutes, LessonRoutes, LoginRoutes, RoadmapRoutes, SignupRoutes, StudentRoutes}
-import contrapunctus.backend.services.{BugReportService, EducatorService, FeatureRequestService, LessonService, UserService}
+import contrapunctus.backend.routes.{AdminRoutes, BugReportRoutes, CorrectionRoutes, EducatorRoutes, FeatureRequestRoutes, JoinRoutes, LessonRoutes, LoginRoutes, RoadmapRoutes, SignupRoutes, StudentRoutes}
+import contrapunctus.backend.services.{BugReportService, CorrectionService, EducatorService, FeatureRequestService, LessonService, UserService}
 
 object Server:
   def run(pool: Resource[IO, Session[IO]], jwtSecret: String, adminPassword: String): IO[Nothing] =
@@ -21,6 +21,7 @@ object Server:
     val userService           = UserService.make(pool, jwtSecret)
     val bugReportService      = BugReportService.make(pool)
     val featureRequestService = FeatureRequestService.make(pool)
+    val correctionService     = CorrectionService.make(pool)
     val lessonService         = LessonService.make(pool)
     val educatorService       = EducatorService.make(pool)
 
@@ -29,6 +30,7 @@ object Server:
                    <+> LoginRoutes.routes(userService)
                    <+> BugReportRoutes.routes(bugReportService, jwtSecret)
                    <+> FeatureRequestRoutes.routes(featureRequestService, jwtSecret)
+                   <+> CorrectionRoutes.routes(correctionService, jwtSecret)
                    <+> RoadmapRoutes.routes(pool, jwtSecret)
                    <+> EducatorRoutes.routes(educatorService, jwtSecret)
                    <+> StudentRoutes.routes(educatorService, jwtSecret)

@@ -132,9 +132,16 @@ object StudentRoutes:
                 case false => Forbidden(Json.obj("error" -> Json.fromString("not enrolled")))
                 case true =>
                   req.as[SaveWorkRequest].flatMap { body =>
-                    educatorService.saveWork(userId, lid, cid, body.trebleBeats, body.bassBeats, body.studentRomans).flatMap {
-                      case Some(work) => Ok(work.asJson)
-                      case None       => Conflict(Json.obj("error" -> Json.fromString("lesson already submitted")))
+                    import Validation._
+                    validate(
+                      jsonTooBig(body.trebleBeats)   -> "trebleBeats too large",
+                      jsonTooBig(body.bassBeats)     -> "bassBeats too large",
+                      jsonTooBig(body.studentRomans) -> "studentRomans too large",
+                    ) {
+                      educatorService.saveWork(userId, lid, cid, body.trebleBeats, body.bassBeats, body.studentRomans).flatMap {
+                        case Some(work) => Ok(work.asJson)
+                        case None       => Conflict(Json.obj("error" -> Json.fromString("lesson already submitted")))
+                      }
                     }
                   }
               }

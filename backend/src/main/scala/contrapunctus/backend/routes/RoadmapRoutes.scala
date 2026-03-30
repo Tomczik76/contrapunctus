@@ -38,13 +38,19 @@ object RoadmapRoutes:
           case None =>
             Forbidden(Json.obj("error" -> Json.fromString("invalid or missing token")))
           case Some(userId) =>
-            pool.use { session =>
-              for
-                exists <- session.unique(RoadmapVotes.exists, (userId, featureKey))
-                _      <- if exists then session.execute(RoadmapVotes.delete, (userId, featureKey))
-                          else session.execute(RoadmapVotes.upsert, (userId, featureKey))
-                resp   <- Ok(Json.obj("voted" -> Json.fromBoolean(!exists)))
-              yield resp
+            import Validation._
+            validate(
+              featureKey.isBlank                  -> "feature key is required",
+              tooLong(featureKey, MaxShortText)   -> s"feature key must be at most $MaxShortText characters",
+            ) {
+              pool.use { session =>
+                for
+                  exists <- session.unique(RoadmapVotes.exists, (userId, featureKey))
+                  _      <- if exists then session.execute(RoadmapVotes.delete, (userId, featureKey))
+                            else session.execute(RoadmapVotes.upsert, (userId, featureKey))
+                  resp   <- Ok(Json.obj("voted" -> Json.fromBoolean(!exists)))
+                yield resp
+              }
             }
         }.handleErrorWith { e =>
           IO(e.printStackTrace()) *>

@@ -28,9 +28,16 @@ object BugReportRoutes:
             Forbidden(Json.obj("error" -> Json.fromString("invalid or missing token")))
           case Some(userId) =>
             req.as[BugReportRequest].flatMap { body =>
-              bugReportService
-                .submit(userId, body.description, body.stateJson)
-                .flatMap(report => Created(report.asJson))
+              import Validation._
+              validate(
+                body.description.isBlank             -> "description is required",
+                tooLong(body.description, MaxTextLength) -> s"description must be at most $MaxTextLength characters",
+                jsonTooBig(body.stateJson)            -> "stateJson too large",
+              ) {
+                bugReportService
+                  .submit(userId, body.description, body.stateJson)
+                  .flatMap(report => Created(report.asJson))
+              }
             }
         }.handleErrorWith { e =>
           IO(e.printStackTrace()) *>

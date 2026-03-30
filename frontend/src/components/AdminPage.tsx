@@ -24,6 +24,24 @@ interface FeatureRequest {
   createdAt: string;
 }
 
+interface Correction {
+  id: string;
+  userId: string;
+  category: string;
+  measure: number;
+  beat: number;
+  voice: string | null;
+  currentAnalysis: unknown;
+  suggestedCorrection: unknown;
+  description: string | null;
+  stateSnapshot: unknown;
+  status: string;
+  upvotes: number;
+  downvotes: number;
+  createdAt: string;
+  updatedAt: string;
+}
+
 interface AdminLesson {
   id: string;
   title: string;
@@ -41,7 +59,7 @@ interface AdminLesson {
   createdAt: string;
 }
 
-type Tab = "users" | "bug-reports" | "feature-requests" | "roadmap-votes" | "lessons";
+type Tab = "users" | "bug-reports" | "corrections" | "feature-requests" | "roadmap-votes" | "lessons";
 
 const TONIC_LABELS = ["C", "C#", "Db", "D", "Eb", "E", "F", "F#", "Gb", "G", "Ab", "A", "Bb", "B"];
 
@@ -56,7 +74,10 @@ export function AdminPage() {
   const [users, setUsers] = useState<User[]>([]);
   const [bugReports, setBugReports] = useState<BugReport[]>([]);
   const [featureRequests, setFeatureRequests] = useState<FeatureRequest[]>([]);
+  const [corrections, setCorrections] = useState<Correction[]>([]);
   const [selectedReport, setSelectedReport] = useState<BugReport | null>(null);
+  const [selectedCorrection, setSelectedCorrection] = useState<Correction | null>(null);
+  const [correctionsRefresh, setCorrectionsRefresh] = useState(0);
   const [roadmapVotes, setRoadmapVotes] = useState<Record<string, number>>({});
   const [lessons, setLessons] = useState<AdminLesson[]>([]);
   const [lessonsRefresh, setLessonsRefresh] = useState(0);
@@ -106,6 +127,14 @@ export function AdminPage() {
 
   useEffect(() => {
     if (!authed) return;
+    fetch(`${API_BASE}/api/admin/corrections`, { headers: adminHeaders() })
+      .then(async (res) => {
+        if (res.ok) setCorrections(await res.json());
+      });
+  }, [authed, correctionsRefresh]);
+
+  useEffect(() => {
+    if (!authed) return;
     fetch(`${API_BASE}/api/admin/roadmap-votes`, { headers: adminHeaders() })
       .then(async (res) => {
         if (res.ok) setRoadmapVotes(await res.json());
@@ -149,6 +178,7 @@ export function AdminPage() {
   const tabLabels: Record<Tab, string> = {
     users: "Users",
     "bug-reports": "Bug Reports",
+    corrections: "Corrections",
     "feature-requests": "Feature Requests",
     "roadmap-votes": "Roadmap Votes",
     lessons: "Lessons",
@@ -165,10 +195,10 @@ export function AdminPage() {
 
       <div style={{ display: "flex", gap: 0, padding: "24px 24px" }}>
         <div style={{ display: "flex", flexDirection: "column", gap: 4, marginRight: 24 }}>
-          {(["users", "bug-reports", "feature-requests", "roadmap-votes", "lessons"] as Tab[]).map((t) => (
+          {(["users", "bug-reports", "corrections", "feature-requests", "roadmap-votes", "lessons"] as Tab[]).map((t) => (
             <button
               key={t}
-              onClick={() => { setTab(t); setSelectedReport(null); }}
+              onClick={() => { setTab(t); setSelectedReport(null); setSelectedCorrection(null); }}
               style={{
                 padding: "8px 16px",
                 fontSize: 13,
@@ -194,6 +224,15 @@ export function AdminPage() {
               userMap={userMap}
               selectedReport={selectedReport}
               onSelect={setSelectedReport}
+            />
+          )}
+          {tab === "corrections" && (
+            <CorrectionsTab
+              corrections={corrections}
+              userMap={userMap}
+              selectedCorrection={selectedCorrection}
+              onSelect={setSelectedCorrection}
+              onRefresh={() => setCorrectionsRefresh((n) => n + 1)}
             />
           )}
           {tab === "feature-requests" && <FeatureRequestsTab requests={featureRequests} userMap={userMap} />}
@@ -293,6 +332,156 @@ function BugReportsTab({
         ))}
         {reports.length === 0 && (
           <tr><td colSpan={3} style={{ padding: 24, textAlign: "center", color: "#999" }}>No bug reports yet</td></tr>
+        )}
+      </tbody>
+    </table>
+  );
+}
+
+const CATEGORY_LABELS: Record<string, string> = {
+  chord_label: "Chord Label",
+  nct_detection: "NCT Detection",
+  part_writing: "Part-Writing Error",
+};
+
+const STATUS_OPTIONS = ["pending", "confirmed", "rejected", "fixed"];
+
+function CorrectionsTab({
+  corrections,
+  userMap,
+  selectedCorrection,
+  onSelect,
+  onRefresh,
+}: {
+  corrections: Correction[];
+  userMap: Record<string, User>;
+  selectedCorrection: Correction | null;
+  onSelect: (c: Correction | null) => void;
+  onRefresh: () => void;
+}) {
+  const [updatingStatus, setUpdatingStatus] = useState(false);
+
+  async function handleStatusChange(id: string, newStatus: string) {
+    setUpdatingStatus(true);
+    await fetch(`${API_BASE}/api/admin/corrections/${id}/status`, {
+      method: "PUT",
+      headers: { ...adminHeaders(), "Content-Type": "application/json" },
+      body: JSON.stringify({ status: newStatus }),
+    });
+    setUpdatingStatus(false);
+    onRefresh();
+    onSelect(null);
+  }
+
+  if (selectedCorrection) {
+    const statusColor = selectedCorrection.status === "confirmed" ? "#080" : selectedCorrection.status === "fixed" ? "#06a" : selectedCorrection.status === "rejected" ? "#c00" : "#b80";
+    return (
+      <div style={{ padding: 16 }}>
+        <button
+          onClick={() => onSelect(null)}
+          style={{ marginBottom: 12, padding: "4px 10px", fontSize: 12, background: "none", border: "1px solid #ccc", borderRadius: 4, cursor: "pointer" }}
+        >
+          Back
+        </button>
+        <h3 style={{ margin: "0 0 8px", fontSize: 15 }}>Correction Report</h3>
+        <div style={{ fontSize: 13, marginBottom: 8 }}>
+          <strong>User:</strong> {userMap[selectedCorrection.userId]?.email ?? selectedCorrection.userId}
+        </div>
+        <div style={{ fontSize: 13, marginBottom: 8 }}>
+          <strong>Date:</strong> {new Date(selectedCorrection.createdAt).toLocaleString()}
+        </div>
+        <div style={{ fontSize: 13, marginBottom: 8 }}>
+          <strong>Category:</strong> {CATEGORY_LABELS[selectedCorrection.category] ?? selectedCorrection.category}
+        </div>
+        <div style={{ fontSize: 13, marginBottom: 8 }}>
+          <strong>Location:</strong> Measure {selectedCorrection.measure}, Beat {selectedCorrection.beat}
+          {selectedCorrection.voice && ` (${selectedCorrection.voice})`}
+        </div>
+        <div style={{ fontSize: 13, marginBottom: 8 }}>
+          <strong>Votes:</strong> +{selectedCorrection.upvotes} / -{selectedCorrection.downvotes}
+        </div>
+        {selectedCorrection.description && (
+          <div style={{ fontSize: 13, marginBottom: 8 }}>
+            <strong>Description:</strong> {selectedCorrection.description}
+          </div>
+        )}
+        <div style={{ fontSize: 13, marginBottom: 8 }}>
+          <strong>Current Analysis:</strong>
+          <pre style={{ margin: "4px 0", padding: 8, background: "#f8f8f8", borderRadius: 4, fontSize: 12, fontFamily: "monospace", whiteSpace: "pre-wrap", wordBreak: "break-all" }}>
+            {JSON.stringify(selectedCorrection.currentAnalysis, null, 2)}
+          </pre>
+        </div>
+        <div style={{ fontSize: 13, marginBottom: 8 }}>
+          <strong>Suggested Correction:</strong>
+          <pre style={{ margin: "4px 0", padding: 8, background: "#f0f8f0", borderRadius: 4, fontSize: 12, fontFamily: "monospace", whiteSpace: "pre-wrap", wordBreak: "break-all" }}>
+            {JSON.stringify(selectedCorrection.suggestedCorrection, null, 2)}
+          </pre>
+        </div>
+        <div style={{ fontSize: 13, marginBottom: 12 }}>
+          <strong>Status: </strong>
+          <span style={{ color: statusColor, fontWeight: 600 }}>{selectedCorrection.status}</span>
+        </div>
+        <div style={{ display: "flex", gap: 8, marginBottom: 16 }}>
+          {STATUS_OPTIONS.filter((s) => s !== selectedCorrection.status).map((s) => (
+            <button
+              key={s}
+              onClick={() => handleStatusChange(selectedCorrection.id, s)}
+              disabled={updatingStatus}
+              style={{
+                padding: "6px 14px", fontSize: 12, fontWeight: 600,
+                background: s === "confirmed" ? "#080" : s === "fixed" ? "#06a" : s === "rejected" ? "#c00" : "#b80",
+                color: "#fff", border: "none", borderRadius: 4, cursor: "pointer",
+                opacity: updatingStatus ? 0.6 : 1,
+                textTransform: "capitalize",
+              }}
+            >
+              {s === "confirmed" ? "Confirm" : s === "rejected" ? "Reject" : s === "fixed" ? "Mark Fixed" : "Set Pending"}
+            </button>
+          ))}
+        </div>
+        <div style={{ fontSize: 12, fontFamily: "monospace", background: "#f8f8f8", padding: 12, borderRadius: 4, maxHeight: 500, overflow: "auto", whiteSpace: "pre-wrap", wordBreak: "break-all" }}>
+          <strong style={{ fontFamily: "sans-serif" }}>State Snapshot:</strong>
+          <br />
+          {JSON.stringify(selectedCorrection.stateSnapshot, null, 2)}
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
+      <thead>
+        <tr style={{ borderBottom: "2px solid #eee", textAlign: "left" }}>
+          <th style={{ padding: "10px 12px" }}>User</th>
+          <th style={{ padding: "10px 12px" }}>Category</th>
+          <th style={{ padding: "10px 12px" }}>Location</th>
+          <th style={{ padding: "10px 12px" }}>Status</th>
+          <th style={{ padding: "10px 12px" }}>Votes</th>
+          <th style={{ padding: "10px 12px" }}>Created</th>
+        </tr>
+      </thead>
+      <tbody>
+        {corrections.map((c) => {
+          const statusColor = c.status === "confirmed" ? "#080" : c.status === "fixed" ? "#06a" : c.status === "rejected" ? "#c00" : "#b80";
+          return (
+            <tr
+              key={c.id}
+              onClick={() => onSelect(c)}
+              style={{ borderBottom: "1px solid #f0f0f0", cursor: "pointer" }}
+              onMouseOver={(e) => (e.currentTarget.style.background = "#f8f8ff")}
+              onMouseOut={(e) => (e.currentTarget.style.background = "")}
+            >
+              <td style={{ padding: "8px 12px" }}>{userMap[c.userId]?.email ?? c.userId}</td>
+              <td style={{ padding: "8px 12px" }}>{CATEGORY_LABELS[c.category] ?? c.category}</td>
+              <td style={{ padding: "8px 12px" }}>m.{c.measure} b.{c.beat}</td>
+              <td style={{ padding: "8px 12px", color: statusColor, fontWeight: 600 }}>{c.status}</td>
+              <td style={{ padding: "8px 12px" }}>+{c.upvotes} / -{c.downvotes}</td>
+              <td style={{ padding: "8px 12px" }}>{new Date(c.createdAt).toLocaleString()}</td>
+            </tr>
+          );
+        })}
+        {corrections.length === 0 && (
+          <tr><td colSpan={6} style={{ padding: 24, textAlign: "center", color: "#999" }}>No correction reports yet</td></tr>
         )}
       </tbody>
     </table>

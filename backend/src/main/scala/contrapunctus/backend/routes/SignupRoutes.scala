@@ -27,12 +27,24 @@ object SignupRoutes:
       case req @ POST -> Root / "signup" =>
         req.as[SignupRequest]
           .flatMap { body =>
-            val input = SignupInput(body.email, body.displayName, body.password, body.isEducator)
+            import Validation._
+            val emailRegex = "^[^@\\s]+@[^@\\s]+\\.[^@\\s]+$".r
+            validate(
+              body.email.isBlank                           -> "email is required",
+              tooLong(body.email, MaxShortText)             -> s"email must be at most $MaxShortText characters",
+              emailRegex.findFirstIn(body.email).isEmpty   -> "invalid email format",
+              body.displayName.isBlank                     -> "display name is required",
+              tooLong(body.displayName, MaxShortText)       -> s"display name must be at most $MaxShortText characters",
+              (body.password.length < 8)                    -> "password must be at least 8 characters",
+              tooLong(body.password, MaxShortText)          -> s"password must be at most $MaxShortText characters",
+            ) {
+            val input = SignupInput(body.email.trim, body.displayName.trim, body.password, body.isEducator)
             userService.signup(input).flatMap {
               case Right((user, token)) =>
                 Created(AuthResponse(token, user).asJson)
               case Left(UserService.SignupError.EmailAlreadyRegistered) =>
                 Conflict(Json.obj("error" -> Json.fromString("email already registered")))
+            }
             }
           }
           .handleErrorWith { e =>

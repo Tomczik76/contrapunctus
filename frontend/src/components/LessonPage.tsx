@@ -1,5 +1,5 @@
 import { useParams, Link, Navigate } from "react-router-dom";
-import { useState, useCallback, useEffect } from "react";
+import { useState, useCallback, useEffect, useMemo } from "react";
 import { useAuth } from "../auth";
 import { NoteEditor, type LessonConfig, type LessonErrorItem, type PlacedBeat } from "./staff";
 import { fetchLesson, type Lesson } from "../data/lessons";
@@ -86,23 +86,26 @@ export function LessonPage() {
     setBassBeats(bass);
   }, []);
 
-  if (loadingLesson) return <div style={{ minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center", color: "#888", fontSize: 14 }}>Loading lesson...</div>;
-  if (!lesson) return <Navigate to="/lessons" replace />;
+  const lessonConfig: LessonConfig | null = useMemo(() => {
+    if (!lesson) return null;
+    return {
+      lockedTrebleBeats: lesson.sopranoBeats,
+      lockedBassBeats: lesson.bassBeats,
+      figuredBass: lesson.figuredBass,
+      tonicIdx: lesson.tonicIdx,
+      scaleName: lesson.scaleName,
+      tsTop: lesson.tsTop,
+      tsBottom: lesson.tsBottom,
+      onErrorsComputed,
+      onRomansComputed,
+      onStudentRomansChanged,
+      onBeatsChanged,
+      checked,
+    };
+  }, [lesson, onErrorsComputed, onRomansComputed, onStudentRomansChanged, onBeatsChanged, checked]);
 
-  const lessonConfig: LessonConfig = {
-    lockedTrebleBeats: lesson.sopranoBeats,
-    lockedBassBeats: lesson.bassBeats,
-    figuredBass: lesson.figuredBass,
-    tonicIdx: lesson.tonicIdx,
-    scaleName: lesson.scaleName,
-    tsTop: lesson.tsTop,
-    tsBottom: lesson.tsBottom,
-    onErrorsComputed,
-    onRomansComputed,
-    onStudentRomansChanged,
-    onBeatsChanged,
-    checked,
-  };
+  if (loadingLesson) return <div style={{ minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center", color: "#888", fontSize: 14 }}>Loading lesson...</div>;
+  if (!lesson || !lessonConfig) return <Navigate to="/lessons" replace />;
 
   // Check completeness
   const isFiguredBass = lesson.template === "figured_bass";

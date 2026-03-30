@@ -1,14 +1,20 @@
 package contrapunctus.backend.routes
 
 import cats.effect.{IO, Resource}
-import io.circe.Json
+import io.circe.{Decoder, Json}
+import io.circe.generic.semiauto.deriveDecoder
 import io.circe.syntax._
 import org.http4s.{HttpRoutes, Request}
 import org.http4s.circe.CirceEntityCodec._
 import org.http4s.dsl.io._
 import skunk.Session
 import contrapunctus.backend.db.{Admin, RoadmapVotes}
-import contrapunctus.backend.domain.{BugReport, FeatureRequest, User}
+import contrapunctus.backend.domain.{AnalysisCorrection, BugReport, FeatureRequest, User}
+
+case class StatusUpdate(status: String)
+
+object StatusUpdate:
+  given Decoder[StatusUpdate] = deriveDecoder
 
 object AdminRoutes:
   def routes(pool: Resource[IO, Session[IO]], adminPassword: String): HttpRoutes[IO] =
@@ -33,6 +39,25 @@ object AdminRoutes:
           pool.use(_.execute(RoadmapVotes.countsByFeature)).flatMap { counts =>
             val countsMap = counts.map((k, v) => k -> Json.fromLong(v)).toMap
             Ok(Json.fromJsonObject(io.circe.JsonObject.fromMap(countsMap)))
+          }
+        }
+
+      case req @ GET -> Root / "admin" / "corrections" =>
+        withAdminAuth(req, adminPassword) {
+          pool.use(_.execute(Admin.allCorrections)).flatMap(corrections => Ok(corrections.asJson))
+        }
+
+      case req @ PUT -> Root / "admin" / "corrections" / UUIDVar(id) / "status" =>
+        withAdminAuth(req, adminPassword) {
+          req.as[StatusUpdate].flatMap { body =>
+            import Validation._
+            validate(
+              notIn(body.status, CorrectionStatuses) -> s"status must be one of: ${CorrectionStatuses.mkString(", ")}"
+            ) {
+              pool.use(_.execute(Admin.updateCorrectionStatus)((body.status, id))).flatMap(_ =>
+                Ok(Json.obj("ok" -> Json.fromBoolean(true)))
+              )
+            }
           }
         }
     }

@@ -27,9 +27,15 @@ object FeatureRequestRoutes:
             Forbidden(Json.obj("error" -> Json.fromString("invalid or missing token")))
           case Some(userId) =>
             req.as[FeatureRequestBody].flatMap { body =>
-              featureRequestService
-                .submit(userId, body.description)
-                .flatMap(fr => Created(fr.asJson))
+              import Validation._
+              validate(
+                body.description.isBlank             -> "description is required",
+                tooLong(body.description, MaxTextLength) -> s"description must be at most $MaxTextLength characters",
+              ) {
+                featureRequestService
+                  .submit(userId, body.description)
+                  .flatMap(fr => Created(fr.asJson))
+              }
             }
         }.handleErrorWith { e =>
           IO(e.printStackTrace()) *>

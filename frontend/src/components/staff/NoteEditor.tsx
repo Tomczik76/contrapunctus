@@ -30,6 +30,7 @@ import {
 } from "./musicTheory";
 import { NoteIcon } from "./NoteIcon";
 import { FormattedRn, FbEditInput, RnInput, RnLegend } from "./romanNumeral";
+import { CorrectionModal, type CorrectionCategory, type SelectedElement } from "./CorrectionModal";
 
 const C = Contrapunctus as ContrapunctusApi;
 
@@ -666,6 +667,18 @@ export function NoteEditor({ header, lessonConfig, onTrebleBeatsChanged, onBassB
   const [bugReportOpen, setBugReportOpen] = useState(false);
   const [bugReportDesc, setBugReportDesc] = useState("");
   const [bugReportStatus, setBugReportStatus] = useState<"idle" | "sending" | "sent" | "error">("idle");
+
+  // Refs mirroring bugReportOpen/correctionSelectionMode so event handlers can read
+  // current values without being recreated (avoids dep-array churn & render loops).
+  const bugReportOpenRef = useRef(bugReportOpen);
+  bugReportOpenRef.current = bugReportOpen;
+  const correctionSelectionModeRef = useRef(false);
+
+  // Correction modal state
+  const [correctionSelectionMode, setCorrectionSelectionMode] = useState(false);
+  correctionSelectionModeRef.current = correctionSelectionMode;
+  const [correctionCategory, setCorrectionCategory] = useState<CorrectionCategory | null>(null);
+  const [selectedCorrectionElement, setSelectedCorrectionElement] = useState<SelectedElement | null>(null);
   const [featureRequestOpen, setFeatureRequestOpen] = useState(false);
   const [featureRequestDesc, setFeatureRequestDesc] = useState("");
   const [featureRequestStatus, setFeatureRequestStatus] = useState<"idle" | "sending" | "sent" | "error">("idle");
@@ -975,6 +988,29 @@ export function NoteEditor({ header, lessonConfig, onTrebleBeatsChanged, onBassB
     };
   }, []);
 
+  const getCorrectionStateSnapshot = useCallback(() => ({
+    trebleBeats,
+    bassBeats,
+    settings: {
+      tsTop, tsBottom, tonicIdx, scaleName, showNct, showErrors, rnSelections,
+    },
+    analysisResults: { romanNumerals, chordNames, nctMaps, noteErrorMaps, chordErrors },
+  }), [trebleBeats, bassBeats, tsTop, tsBottom, tonicIdx, scaleName, showNct, showErrors, rnSelections, romanNumerals, chordNames, nctMaps, noteErrorMaps, chordErrors]);
+
+  const handleCorrectionElementClick = useCallback((beatIdx: number, category: CorrectionCategory, currentType: string, displayText: string, voice?: string) => {
+    const measureCap = timeKey(tsTop / tsBottom);
+    const t = allTimePoints[beatIdx] ?? 0;
+    const measure = Math.floor(t / measureCap + 1e-9) + 1;
+    const beatInMeasure = Math.round((t % measureCap) / (1 / tsBottom) + 1e-9) + 1;
+    setSelectedCorrectionElement({
+      location: { measure, beat: beatInMeasure, beatIdx, voice },
+      category,
+      currentAnalysis: { type: currentType, displayText },
+    });
+    setCorrectionSelectionMode(false);
+    setBugReportOpen(true);
+  }, [tsTop, tsBottom, allTimePoints]);
+
   const submitBugReport = async () => {
     if (!token || !bugReportDesc.trim()) return;
     setBugReportStatus("sending");
@@ -1131,6 +1167,7 @@ export function NoteEditor({ header, lessonConfig, onTrebleBeatsChanged, onBassB
   }, []);
 
   const handleMouseMove = useCallback((e: React.MouseEvent<SVGSVGElement>) => {
+    if (readOnly || correctionSelectionModeRef.current || bugReportOpenRef.current) return;
     const svg = svgRef.current;
     if (!svg) return;
     const rect = svg.getBoundingClientRect();
@@ -1155,7 +1192,7 @@ export function NoteEditor({ header, lessonConfig, onTrebleBeatsChanged, onBassB
       setHoverStaff(null);
       setHoverBeatIdx(null);
     }
-  }, [yToDpAndStaff, trebleBeatPositions, bassBeatPositions, svgHeight, staffW, systemTotalHeight, systemCount]);
+  }, [readOnly, yToDpAndStaff, trebleBeatPositions, bassBeatPositions, svgHeight, staffW, systemTotalHeight, systemCount]);
 
   /** In lesson mode, check if a note at the given staff/beat/dp is locked (part of the given soprano). */
   const isLockedNote = useCallback((staff: "treble" | "bass", beatIdx: number, dp: number): boolean => {
@@ -1174,7 +1211,7 @@ export function NoteEditor({ header, lessonConfig, onTrebleBeatsChanged, onBassB
   }, [lessonConfig]);
 
   const handleMouseDown = useCallback((e: React.MouseEvent<SVGSVGElement>) => {
-    if (readOnly) return;
+    if (readOnly || correctionSelectionModeRef.current || bugReportOpenRef.current) return;
     if (hoverDp === null || hoverBeatIdx === null || hoverStaff === null) return;
     if (deleteMode) return;
     const beats = getStaffBeats(hoverStaff);
@@ -1196,10 +1233,11 @@ export function NoteEditor({ header, lessonConfig, onTrebleBeatsChanged, onBassB
         return;
       }
     }
-  }, [hoverDp, hoverStaff, hoverBeatIdx, trebleBeats, bassBeats, deleteMode, isLockedNote]);
+  }, [hoverDp, hoverStaff, hoverBeatIdx, trebleBeats, bassBeats, deleteMode, isLockedNote, readOnly]);
 
   /** Core click/tap handler. Accepts explicit position to avoid stale state from touch events. */
   const handleMouseUpWithPos = useCallback((overrideDp?: number, overrideStaff?: "treble" | "bass", overrideBeatIdx?: number) => {
+    if (readOnly || correctionSelectionModeRef.current || bugReportOpenRef.current) return;
     const curDp = overrideDp ?? hoverDp;
     const curStaff = overrideStaff ?? hoverStaff;
     const curBeatIdx = overrideBeatIdx ?? hoverBeatIdx;
@@ -1570,7 +1608,7 @@ export function NoteEditor({ header, lessonConfig, onTrebleBeatsChanged, onBassB
   const touchHoverRef = useRef<{ dp: number; staff: "treble" | "bass"; beatIdx: number } | null>(null);
 
   const handleTouchStartNative = useCallback((e: TouchEvent) => {
-    if (readOnly) return;
+    if (readOnly || correctionSelectionModeRef.current || bugReportOpenRef.current) return;
     const touch = e.touches[0];
     if (!isTouchOnStaff(touch.clientX, touch.clientY)) {
       touchActiveRef.current = false;
@@ -1594,7 +1632,7 @@ export function NoteEditor({ header, lessonConfig, onTrebleBeatsChanged, onBassB
   }, [readOnly, isTouchOnStaff, svgCoordsFromClient, yToDpAndStaff, isValidStaffDp]);
 
   const handleTouchMoveNative = useCallback((e: TouchEvent) => {
-    if (readOnly || !touchActiveRef.current) return;
+    if (readOnly || correctionSelectionModeRef.current || bugReportOpenRef.current || !touchActiveRef.current) return;
     e.preventDefault();
     const touch = e.touches[0];
     const coords = svgCoordsFromClient(touch.clientX, touch.clientY);
@@ -1617,7 +1655,7 @@ export function NoteEditor({ header, lessonConfig, onTrebleBeatsChanged, onBassB
   }, [readOnly, svgCoordsFromClient, yToDpAndStaff, isValidStaffDp]);
 
   const handleTouchEndNative = useCallback((e: TouchEvent) => {
-    if (readOnly || !touchActiveRef.current) return;
+    if (readOnly || correctionSelectionModeRef.current || bugReportOpenRef.current || !touchActiveRef.current) return;
     e.preventDefault();
     touchActiveRef.current = false;
     const hover = touchHoverRef.current;
@@ -1735,7 +1773,9 @@ export function NoteEditor({ header, lessonConfig, onTrebleBeatsChanged, onBassB
   }
 
   /** Render a complete beat (chord) with shared stem and flag. */
-  function renderBeat(beat: PlacedBeat, x: number, opacity = 1, nctMap?: Record<number, string>, noteErrorMap?: Record<number, string[]>) {
+  function renderBeat(beat: PlacedBeat, x: number, opacity = 1, nctMap?: Record<number, string>, noteErrorMap?: Record<number, string[]>, beatTime?: number) {
+    // Resolve beat time to allTimePoints index for correction click handling
+    const beatIdx = beatTime !== undefined ? allTimePoints.indexOf(beatTime) : undefined;
     const dur = beat.duration;
     const s = GLYPH_SCALE;
     const head = dur === "whole" ? NOTEHEAD_WHOLE
@@ -1794,11 +1834,13 @@ export function NoteEditor({ header, lessonConfig, onTrebleBeatsChanged, onBassB
               const tw = errText.length * 5.8 + padX * 2 + 2;
               const labelX = x + headW / 2 + 4;
               const labelY = y - 12;
+              const errSelectable = correctionSelectionMode && correctionCategory === "part_writing_error" && beatIdx !== undefined;
               return (
-                <g className="cp-fade" style={{ opacity: showErrors ? 1 : 0, pointerEvents: showErrors ? "auto" : "none" }}>
+                <g className="cp-fade" style={{ opacity: showErrors || errSelectable ? 1 : 0, pointerEvents: showErrors || errSelectable ? "auto" : "none", cursor: errSelectable ? "pointer" : undefined }}
+                  onClick={errSelectable ? (e) => { e.stopPropagation(); handleCorrectionElementClick(beatIdx, "part_writing_error", errText, `${errTip}`, "soprano"); } : undefined}>
                   <title>{errTip}</title>
-                  <circle cx={x} cy={y} r={headW / 2 + 3} fill="none" stroke={theme.errStroke} strokeWidth={1.5} opacity={0.85} />
-                  <rect x={labelX - padX} y={labelY - badgeH + 3} width={tw} height={badgeH} rx={3} fill={theme.errBadgeBg} />
+                  <circle cx={x} cy={y} r={headW / 2 + 3} fill="none" stroke={errSelectable ? "#7c3aed" : theme.errStroke} strokeWidth={1.5} opacity={0.85} />
+                  <rect x={labelX - padX} y={labelY - badgeH + 3} width={tw} height={badgeH} rx={3} fill={errSelectable ? (dk ? "#7c3aed" : "#6d28d9") : theme.errBadgeBg} />
                   <text x={labelX} y={labelY} fontSize={10} fill={theme.errText} fontFamily="sans-serif" fontWeight="700">{errText}</text>
                 </g>
               );
@@ -1809,10 +1851,12 @@ export function NoteEditor({ header, lessonConfig, onTrebleBeatsChanged, onBassB
               const tw = nctLabel.length * 6 + padX * 2 + 2;
               const labelX = x + headW / 2 + 4;
               const labelY = y + 14;
+              const nctSelectable = correctionSelectionMode && correctionCategory === "nct_detection" && beatIdx !== undefined;
               return (
-                <g className="cp-fade" style={{ opacity: showNct ? 1 : 0, pointerEvents: showNct ? "auto" : "none" }}>
+                <g className="cp-fade" style={{ opacity: showNct || nctSelectable ? 1 : 0, pointerEvents: showNct || nctSelectable ? "auto" : "none", cursor: nctSelectable ? "pointer" : undefined }}
+                  onClick={nctSelectable ? (e) => { e.stopPropagation(); handleCorrectionElementClick(beatIdx, "nct_detection", nctLabel, `${nctTooltip(nctLabel)}`, "soprano"); } : undefined}>
                   <title>{nctTooltip(nctLabel)}</title>
-                  <rect x={labelX - padX} y={labelY - badgeH + 3} width={tw} height={badgeH} rx={3} fill={theme.nctBadgeBg} />
+                  <rect x={labelX - padX} y={labelY - badgeH + 3} width={tw} height={badgeH} rx={3} fill={nctSelectable ? (dk ? "#2563eb" : "#1d4ed8") : theme.nctBadgeBg} />
                   <text x={labelX} y={labelY} fontSize={10} fill={theme.nctText} fontFamily="sans-serif" fontWeight="700">{nctLabel}</text>
                 </g>
               );
@@ -1862,11 +1906,13 @@ export function NoteEditor({ header, lessonConfig, onTrebleBeatsChanged, onBassB
               const tw = errText.length * 5.8 + padX * 2 + 2;
               const labelX = x + headW / 2 + 4;
               const labelY = y - 12;
+              const errSelectable = correctionSelectionMode && correctionCategory === "part_writing_error" && beatIdx !== undefined;
               return (
-                <g className="cp-fade" style={{ opacity: showErrors ? 1 : 0, pointerEvents: showErrors ? "auto" : "none" }}>
+                <g className="cp-fade" style={{ opacity: showErrors || errSelectable ? 1 : 0, pointerEvents: showErrors || errSelectable ? "auto" : "none", cursor: errSelectable ? "pointer" : undefined }}
+                  onClick={errSelectable ? (e) => { e.stopPropagation(); handleCorrectionElementClick(beatIdx, "part_writing_error", errText, `${errTip}`, "bass"); } : undefined}>
                   <title>{errTip}</title>
-                  <circle cx={x} cy={y} r={headW / 2 + 3} fill="none" stroke={theme.errStroke} strokeWidth={1.5} opacity={0.85} />
-                  <rect x={labelX - padX} y={labelY - badgeH + 3} width={tw} height={badgeH} rx={3} fill={theme.errBadgeBg} />
+                  <circle cx={x} cy={y} r={headW / 2 + 3} fill="none" stroke={errSelectable ? "#7c3aed" : theme.errStroke} strokeWidth={1.5} opacity={0.85} />
+                  <rect x={labelX - padX} y={labelY - badgeH + 3} width={tw} height={badgeH} rx={3} fill={errSelectable ? (dk ? "#7c3aed" : "#6d28d9") : theme.errBadgeBg} />
                   <text x={labelX} y={labelY} fontSize={10} fill={theme.errText} fontFamily="sans-serif" fontWeight="700">{errText}</text>
                 </g>
               );
@@ -1877,10 +1923,12 @@ export function NoteEditor({ header, lessonConfig, onTrebleBeatsChanged, onBassB
               const tw = nctLabel.length * 6 + padX * 2 + 2;
               const labelX = x + headW / 2 + 4;
               const labelY = y + 14;
+              const nctSelectable = correctionSelectionMode && correctionCategory === "nct_detection" && beatIdx !== undefined;
               return (
-                <g className="cp-fade" style={{ opacity: showNct ? 1 : 0, pointerEvents: showNct ? "auto" : "none" }}>
+                <g className="cp-fade" style={{ opacity: showNct || nctSelectable ? 1 : 0, pointerEvents: showNct || nctSelectable ? "auto" : "none", cursor: nctSelectable ? "pointer" : undefined }}
+                  onClick={nctSelectable ? (e) => { e.stopPropagation(); handleCorrectionElementClick(beatIdx, "nct_detection", nctLabel, `${nctTooltip(nctLabel)}`, "bass"); } : undefined}>
                   <title>{nctTooltip(nctLabel)}</title>
-                  <rect x={labelX - padX} y={labelY - badgeH + 3} width={tw} height={badgeH} rx={3} fill={theme.nctBadgeBg} />
+                  <rect x={labelX - padX} y={labelY - badgeH + 3} width={tw} height={badgeH} rx={3} fill={nctSelectable ? (dk ? "#2563eb" : "#1d4ed8") : theme.nctBadgeBg} />
                   <text x={labelX} y={labelY} fontSize={10} fill={theme.nctText} fontFamily="sans-serif" fontWeight="700">{nctLabel}</text>
                 </g>
               );
@@ -2341,9 +2389,9 @@ export function NoteEditor({ header, lessonConfig, onTrebleBeatsChanged, onBassB
           {/* Meta actions */}
           <div style={groupStyle}>
             <button
-              onClick={() => { setBugReportOpen(true); setBugReportStatus("idle"); }}
-              style={textBtnStyle(false)}
-              title="Report a bug"
+              onClick={() => { setBugReportOpen(true); setBugReportStatus("idle"); setCorrectionSelectionMode(false); setSelectedCorrectionElement(null); }}
+              style={textBtnStyle(correctionSelectionMode)}
+              title="Report a bug or incorrect analysis"
             >
               Bug
             </button>
@@ -2515,56 +2563,19 @@ export function NoteEditor({ header, lessonConfig, onTrebleBeatsChanged, onBassB
         </div>
         </>)}
 
-      {/* Bug report modal */}
-      {bugReportOpen && (
-        <div style={{
-          position: "fixed", top: 0, left: 0, right: 0, bottom: 0,
-          background: "rgba(0,0,0,0.3)", display: "flex", alignItems: "center",
-          justifyContent: "center", zIndex: 1000,
-        }} onClick={() => { if (bugReportStatus !== "sending") { setBugReportOpen(false); setBugReportStatus("idle"); } }}>
-          <div style={{
-            background: "#fff", borderRadius: 8, padding: 24, width: 400,
-            maxWidth: "90vw", boxShadow: "0 4px 20px rgba(0,0,0,0.15)",
-          }} onClick={(e) => e.stopPropagation()}>
-            <h3 style={{ margin: "0 0 12px", fontSize: 16, fontFamily: "inherit" }}>Report a Bug</h3>
-            <p style={{ margin: "0 0 12px", fontSize: 13, color: "#666" }}>
-              Your current editor state and undo history will be included automatically.
-            </p>
-            <textarea
-              value={bugReportDesc}
-              onChange={(e) => setBugReportDesc(e.target.value)}
-              placeholder="Describe what went wrong..."
-              rows={4}
-              style={{
-                width: "100%", boxSizing: "border-box", padding: 8, fontSize: 13,
-                fontFamily: "inherit", border: "1px solid #ccc", borderRadius: 4,
-                resize: "vertical",
-              }}
-            />
-            <div style={{ display: "flex", gap: 8, marginTop: 12, justifyContent: "flex-end" }}>
-              <button
-                onClick={() => { setBugReportOpen(false); setBugReportStatus("idle"); }}
-                disabled={bugReportStatus === "sending"}
-                style={{ padding: "6px 16px", fontSize: 13, fontFamily: "inherit", cursor: "pointer", border: "1px solid #ccc", borderRadius: 4, background: "none" }}
-              >
-                Cancel
-              </button>
-              <button
-                onClick={submitBugReport}
-                disabled={bugReportStatus === "sending" || !bugReportDesc.trim()}
-                style={{
-                  padding: "6px 16px", fontSize: 13, fontFamily: "inherit", cursor: "pointer",
-                  border: "1px solid #333", borderRadius: 4,
-                  background: bugReportStatus === "sent" ? "#27ae60" : bugReportStatus === "error" ? "#c0392b" : "#333",
-                  color: "#fff",
-                }}
-              >
-                {bugReportStatus === "sending" ? "Sending..." : bugReportStatus === "sent" ? "Sent!" : bugReportStatus === "error" ? "Failed - Retry" : "Submit"}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+      {/* Bug report / correction modal */}
+      <CorrectionModal
+        open={bugReportOpen || correctionSelectionMode}
+        onClose={() => { setBugReportOpen(false); setCorrectionSelectionMode(false); setCorrectionCategory(null); }}
+        token={token}
+        dark={dk}
+        isMobile={isMobile}
+        stateSnapshot={getCorrectionStateSnapshot}
+        selectedElement={selectedCorrectionElement}
+        clearSelection={() => setSelectedCorrectionElement(null)}
+        onEnterSelectionMode={(cat) => { setCorrectionCategory(cat); setCorrectionSelectionMode(true); setBugReportOpen(false); }}
+        selectionMode={correctionSelectionMode}
+      />
       {/* Feature request modal */}
       {featureRequestOpen && (
         <div style={{
@@ -2822,7 +2833,7 @@ export function NoteEditor({ header, lessonConfig, onTrebleBeatsChanged, onBassB
         height={svgHeight}
         viewBox={`0 0 ${staffW} ${svgHeight}`}
         preserveAspectRatio="xMinYMin meet"
-        style={{ fontFamily: "serif", cursor: deleteMode ? "not-allowed" : "crosshair", display: "block" }}
+        style={{ fontFamily: "serif", cursor: correctionSelectionMode ? "pointer" : deleteMode ? "not-allowed" : "crosshair", display: "block" }}
         onMouseMove={handleMouseMove}
         onMouseDown={handleMouseDown}
         onMouseUp={handleMouseUp}
@@ -2968,12 +2979,12 @@ export function NoteEditor({ header, lessonConfig, onTrebleBeatsChanged, onBassB
                     };
                     return (
                       <g key={`tb-${i}`}>
-                        {filtered.notes.length > 0 && renderBeat(filtered, bx, 1, tNct, tNoteErrs)}
+                        {filtered.notes.length > 0 && renderBeat(filtered, bx, 1, tNct, tNoteErrs, trebleTimes[i])}
                         {renderNotehead(drag.note.dp, beat.duration, bx, ED_TREBLE_TOP, ED_TREBLE_LINES[0], trebleYOffset, drag.note.accidental, 0.2)}
                       </g>
                     );
                   }
-                  return <g key={`tb-${i}`}>{renderBeat(beat, bx, 1, tNct, tNoteErrs)}</g>;
+                  return <g key={`tb-${i}`}>{renderBeat(beat, bx, 1, tNct, tNoteErrs, trebleTimes[i])}</g>;
                 });
               })()}
 
@@ -3000,12 +3011,12 @@ export function NoteEditor({ header, lessonConfig, onTrebleBeatsChanged, onBassB
                     };
                     return (
                       <g key={`bb-${i}`}>
-                        {filtered.notes.length > 0 && renderBeat(filtered, bx, 1, bNct, bNoteErrs)}
+                        {filtered.notes.length > 0 && renderBeat(filtered, bx, 1, bNct, bNoteErrs, bassTimes[i])}
                         {renderNotehead(drag.note.dp, beat.duration, bx, ED_BASS_TOP, ED_BASS_LINES[0], bassYOffset, drag.note.accidental, 0.2)}
                       </g>
                     );
                   }
-                  return <g key={`bb-${i}`}>{renderBeat(beat, bx, 1, bNct, bNoteErrs)}</g>;
+                  return <g key={`bb-${i}`}>{renderBeat(beat, bx, 1, bNct, bNoteErrs, bassTimes[i])}</g>;
                 });
               })()}
 
@@ -3025,10 +3036,19 @@ export function NoteEditor({ header, lessonConfig, onTrebleBeatsChanged, onBassB
                 const selIdx = rnSelections[i] ?? 0;
                 const label = hasRn ? (rns![selIdx] ?? rns![0]) : "";
                 const hasAlts = hasRn && rns!.length > 1;
+                const rnClickable = correctionSelectionMode && correctionCategory === "chord_label" && hasRn;
+                const ceClickable = correctionSelectionMode && correctionCategory === "part_writing_error" && hasChordErr;
                 return (
                   <g key={`rn-${i}`}
-                    style={hasAlts ? { cursor: "pointer" } : undefined}
-                    onClick={hasAlts ? (e) => { e.stopPropagation(); setOpenRnDropdown(openRnDropdown === i ? null : i); } : undefined}
+                    style={(hasAlts || rnClickable) ? { cursor: "pointer" } : undefined}
+                    onClick={rnClickable ? (e) => {
+                      e.stopPropagation();
+                      const rn = romanNumerals[i]?.[0] || "";
+                      const measureCap = timeKey(tsTop / tsBottom);
+                      const measure = Math.floor(t / measureCap + 1e-9) + 1;
+                      const beatInMeasure = Math.round((t % measureCap) / (1 / tsBottom) + 1e-9) + 1;
+                      handleCorrectionElementClick(i, "chord_label", label, `${label} - Beat ${beatInMeasure}, m. ${measure}`);
+                    } : hasAlts ? (e) => { e.stopPropagation(); setOpenRnDropdown(openRnDropdown === i ? null : i); } : undefined}
                   >
                     {hasAlts && (() => {
                       const boxW = Math.max(22, label.length * 9 + 2);
@@ -3050,9 +3070,10 @@ export function NoteEditor({ header, lessonConfig, onTrebleBeatsChanged, onBassB
                       const padX = 4;
                       const ceW = ceText.length * 5.8 + padX * 2 + 2;
                       return (
-                        <g className="cp-fade" style={{ opacity: showErrors ? 1 : 0, pointerEvents: showErrors ? "auto" : "none" }}>
+                        <g className="cp-fade" style={{ opacity: showErrors || ceClickable ? 1 : 0, pointerEvents: showErrors || ceClickable ? "auto" : "none", cursor: ceClickable ? "pointer" : undefined }}
+                          onClick={ceClickable ? (e) => { e.stopPropagation(); handleCorrectionElementClick(i, "part_writing_error", ceText, `${ceTip} - Beat ${Math.round((t % timeKey(tsTop / tsBottom)) / (1 / tsBottom) + 1e-9) + 1}, m. ${Math.floor(t / timeKey(tsTop / tsBottom) + 1e-9) + 1}`); } : undefined}>
                           <title>{ceTip}</title>
-                          <rect x={rx - ceW / 2} y={ceY - badgeH + 3} width={ceW} height={badgeH} rx={3} fill={theme.errBadgeBg} />
+                          <rect x={rx - ceW / 2} y={ceY - badgeH + 3} width={ceW} height={badgeH} rx={3} fill={ceClickable ? (dk ? "#7c3aed" : "#6d28d9") : theme.errBadgeBg} />
                           <text x={rx} y={ceY} fontSize={10}
                             textAnchor="middle" fill={theme.errText} fontFamily="sans-serif" fontWeight="700">
                             {ceText}

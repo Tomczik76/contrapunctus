@@ -3,7 +3,7 @@ package contrapunctus.backend.routes
 import cats.effect.IO
 import io.circe.{Json, JsonObject}
 import io.circe.syntax._
-import org.http4s.{HttpRoutes, Request}
+import org.http4s.{HttpRoutes, Request, Response}
 import org.http4s.circe.CirceEntityCodec._
 import org.http4s.dsl.io._
 import contrapunctus.backend.services.LessonService
@@ -55,8 +55,10 @@ object LessonRoutes:
             result match
               case Left(err) => BadRequest(Json.obj("error" -> Json.fromString(err.getMessage)))
               case Right((title, description, difficulty, template, tonicIdx, scaleName, tsTop, tsBottom, sopranoBeats, bassBeats, figuredBass, sortOrder)) =>
-                lessonService.create(title, description, difficulty, template, tonicIdx, scaleName, tsTop, tsBottom, sopranoBeats, bassBeats, figuredBass, sortOrder)
-                  .flatMap(lesson => Created(lesson.asJson))
+                validateAdminLesson(title, description, difficulty, template, tonicIdx, scaleName, tsTop, tsBottom, sopranoBeats, bassBeats, figuredBass) {
+                  lessonService.create(title.trim, description.trim, difficulty, template, tonicIdx, scaleName, tsTop, tsBottom, sopranoBeats, bassBeats, figuredBass, sortOrder)
+                    .flatMap(lesson => Created(lesson.asJson))
+                }
           }
         }
 
@@ -85,8 +87,10 @@ object LessonRoutes:
                 result match
                   case Left(err) => BadRequest(Json.obj("error" -> Json.fromString(err.getMessage)))
                   case Right((title, description, difficulty, template, tonicIdx, scaleName, tsTop, tsBottom, sopranoBeats, bassBeats, figuredBass, sortOrder)) =>
-                    lessonService.update(uuid, title, description, difficulty, template, tonicIdx, scaleName, tsTop, tsBottom, sopranoBeats, bassBeats, figuredBass, sortOrder)
-                      .flatMap(lesson => Ok(lesson.asJson))
+                    validateAdminLesson(title, description, difficulty, template, tonicIdx, scaleName, tsTop, tsBottom, sopranoBeats, bassBeats, figuredBass) {
+                      lessonService.update(uuid, title.trim, description.trim, difficulty, template, tonicIdx, scaleName, tsTop, tsBottom, sopranoBeats, bassBeats, figuredBass, sortOrder)
+                        .flatMap(lesson => Ok(lesson.asJson))
+                    }
               }
           }
         }
@@ -100,6 +104,28 @@ object LessonRoutes:
           }
         }
     }
+
+  private def validateAdminLesson(
+    title: String, description: String, difficulty: String, template: String,
+    tonicIdx: Int, scaleName: String, tsTop: Int, tsBottom: Int,
+    sopranoBeats: Json, bassBeats: Option[Json], figuredBass: Option[Json]
+  )(action: => IO[Response[IO]]): IO[Response[IO]] =
+    import Validation._
+    validate(
+      title.isBlank                           -> "title is required",
+      tooLong(title, MaxShortText)              -> s"title must be at most $MaxShortText characters",
+      description.isBlank                     -> "description is required",
+      tooLong(description, MaxTextLength)        -> s"description must be at most $MaxTextLength characters",
+      notIn(difficulty, Difficulties)         -> s"difficulty must be one of: ${Difficulties.mkString(", ")}",
+      notIn(template, Templates)              -> s"template must be one of: ${Templates.mkString(", ")}",
+      outOfRange(tonicIdx, 0, 13)             -> "tonicIdx must be between 0 and 13",
+      notIn(scaleName, ScaleNames)            -> s"scaleName must be one of: ${ScaleNames.mkString(", ")}",
+      outOfRange(tsTop, 1, 12)                -> "tsTop must be between 1 and 12",
+      (tsBottom != 2 && tsBottom != 4 && tsBottom != 8) -> "tsBottom must be 2, 4, or 8",
+      jsonTooBig(sopranoBeats)                -> "sopranoBeats too large",
+      bassBeats.exists(jsonTooBig(_))         -> "bassBeats too large",
+      figuredBass.exists(jsonTooBig(_))       -> "figuredBass too large",
+    )(action)
 
   private def withAdminAuth(req: Request[IO], adminPassword: String)(action: IO[org.http4s.Response[IO]]): IO[org.http4s.Response[IO]] =
     val token = req.headers.get(org.typelevel.ci.CIString("X-Admin-Token")).map(_.head.value)

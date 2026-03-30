@@ -135,7 +135,13 @@ object EducatorRoutes:
       case req @ POST -> Root / "educator" / "classes" =>
         withEducator(req, jwtSecret) { userId =>
           req.as[CreateClassRequest].flatMap { body =>
-            educatorService.createClass(userId, body.name).flatMap(cls => Created(cls.asJson))
+            import Validation._
+            validate(
+              body.name.isBlank              -> "name is required",
+              tooLong(body.name, MaxShortText) -> s"name must be at most $MaxShortText characters",
+            ) {
+              educatorService.createClass(userId, body.name.trim).flatMap(cls => Created(cls.asJson))
+            }
           }
         }
 
@@ -156,9 +162,16 @@ object EducatorRoutes:
             case None => BadRequest(Json.obj("error" -> Json.fromString("invalid class id")))
             case Some(cid) =>
               req.as[UpdateClassRequest].flatMap { body =>
-                educatorService.updateClass(cid, userId, body.name, body.status).flatMap {
-                  case Some(cls) => Ok(cls.asJson)
-                  case None      => NotFound(Json.obj("error" -> Json.fromString("class not found")))
+                import Validation._
+                validate(
+                  body.name.isBlank                    -> "name is required",
+                  tooLong(body.name, MaxShortText)       -> s"name must be at most $MaxShortText characters",
+                  notIn(body.status, ClassStatuses)     -> s"status must be one of: ${ClassStatuses.mkString(", ")}",
+                ) {
+                  educatorService.updateClass(cid, userId, body.name.trim, body.status).flatMap {
+                    case Some(cls) => Ok(cls.asJson)
+                    case None      => NotFound(Json.obj("error" -> Json.fromString("class not found")))
+                  }
                 }
               }
         }
@@ -271,11 +284,13 @@ object EducatorRoutes:
       case req @ POST -> Root / "educator" / "lessons" =>
         withEducator(req, jwtSecret) { userId =>
           req.as[CreateLessonRequest].flatMap { body =>
-            educatorService.createLesson(
-              userId, body.title, body.description, body.difficulty, body.template,
-              body.tonicIdx, body.scaleName, body.tsTop, body.tsBottom,
-              body.sopranoBeats, body.bassBeats, body.figuredBass
-            ).flatMap(lesson => Created(lesson.asJson))
+            validateLesson(body) {
+              educatorService.createLesson(
+                userId, body.title.trim, body.description.trim, body.difficulty, body.template,
+                body.tonicIdx, body.scaleName, body.tsTop, body.tsBottom,
+                body.sopranoBeats, body.bassBeats, body.figuredBass
+              ).flatMap(lesson => Created(lesson.asJson))
+            }
           }
         }
 
@@ -296,13 +311,15 @@ object EducatorRoutes:
             case None => BadRequest(Json.obj("error" -> Json.fromString("invalid lesson id")))
             case Some(lid) =>
               req.as[CreateLessonRequest].flatMap { body =>
-                educatorService.updateLesson(
-                  lid, userId, body.title, body.description, body.difficulty, body.template,
-                  body.tonicIdx, body.scaleName, body.tsTop, body.tsBottom,
-                  body.sopranoBeats, body.bassBeats, body.figuredBass
-                ).flatMap {
-                  case Some(lesson) => Ok(lesson.asJson)
-                  case None         => NotFound(Json.obj("error" -> Json.fromString("lesson not found")))
+                validateLesson(body) {
+                  educatorService.updateLesson(
+                    lid, userId, body.title.trim, body.description.trim, body.difficulty, body.template,
+                    body.tonicIdx, body.scaleName, body.tsTop, body.tsBottom,
+                    body.sopranoBeats, body.bassBeats, body.figuredBass
+                  ).flatMap {
+                    case Some(lesson) => Ok(lesson.asJson)
+                    case None         => NotFound(Json.obj("error" -> Json.fromString("lesson not found")))
+                  }
                 }
               }
         }
@@ -380,6 +397,10 @@ object EducatorRoutes:
                 case None => NotFound(Json.obj("error" -> Json.fromString("class not found")))
                 case Some(_) =>
                   req.as[GradeWorkRequest].flatMap { body =>
+                    import Validation._
+                    validate(
+                      (body.score < 0 || body.score > 100) -> "score must be between 0 and 100"
+                    ) {
                     educatorService.gradeWork(sid, lid, cid, body.score).flatMap {
                       case Some(work) => Ok(Json.obj(
                         "score"  -> work.score.map(_.toDouble).asJson,
@@ -387,11 +408,30 @@ object EducatorRoutes:
                       ))
                       case None => NotFound(Json.obj("error" -> Json.fromString("no submitted work found")))
                     }
+                    }
                   }
               }
             case _ => BadRequest(Json.obj("error" -> Json.fromString("invalid id")))
         }
     }
+
+  private def validateLesson(body: CreateLessonRequest)(action: => IO[org.http4s.Response[IO]]): IO[org.http4s.Response[IO]] =
+    import Validation._
+    validate(
+      body.title.isBlank                      -> "title is required",
+      tooLong(body.title, MaxShortText)         -> s"title must be at most $MaxShortText characters",
+      body.description.isBlank                -> "description is required",
+      tooLong(body.description, MaxTextLength)  -> s"description must be at most $MaxTextLength characters",
+      notIn(body.difficulty, Difficulties)    -> s"difficulty must be one of: ${Difficulties.mkString(", ")}",
+      notIn(body.template, Templates)         -> s"template must be one of: ${Templates.mkString(", ")}",
+      outOfRange(body.tonicIdx, 0, 13)        -> "tonicIdx must be between 0 and 13",
+      notIn(body.scaleName, ScaleNames)       -> s"scaleName must be one of: ${ScaleNames.mkString(", ")}",
+      outOfRange(body.tsTop, 1, 12)           -> "tsTop must be between 1 and 12",
+      (body.tsBottom != 2 && body.tsBottom != 4 && body.tsBottom != 8) -> "tsBottom must be 2, 4, or 8",
+      jsonTooBig(body.sopranoBeats)           -> "sopranoBeats too large",
+      body.bassBeats.exists(jsonTooBig(_))    -> "bassBeats too large",
+      body.figuredBass.exists(jsonTooBig(_))  -> "figuredBass too large",
+    )(action)
 
   private def withEducator(req: Request[IO], jwtSecret: String)(action: UUID => IO[org.http4s.Response[IO]]): IO[org.http4s.Response[IO]] =
     extractUserId(req, jwtSecret).flatMap {
