@@ -108,19 +108,21 @@ export function Dashboard() {
           </span>
         </Link>
 
-        <Link to="/lessons" style={cardStyle}
+        <Link to="/community" style={cardStyle}
           onMouseEnter={(e) => { e.currentTarget.style.transform = "translateY(-2px)"; }}
           onMouseLeave={(e) => { e.currentTarget.style.transform = ""; }}
         >
           <span style={{ fontSize: 28, marginBottom: 4 }}>
             <svg width="28" height="28" viewBox="0 0 28 28" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round">
-              <path d="M14 6 C14 6 10 4 4 5 V22 C10 21 14 23 14 23 C14 23 18 21 24 22 V5 C18 4 14 6 14 6 Z" />
-              <line x1="14" y1="6" x2="14" y2="23" />
+              <circle cx="9" cy="11" r="3.5" />
+              <circle cx="19" cy="11" r="3.5" />
+              <path d="M4 23 C4 19 6 17 9 17 C12 17 14 19 14 23" />
+              <path d="M14 23 C14 19 16 17 19 17 C22 17 24 19 24 23" />
             </svg>
           </span>
-          <span style={{ fontSize: 17, fontWeight: 700 }}>Lessons</span>
+          <span style={{ fontSize: 17, fontWeight: 700 }}>Community</span>
           <span style={{ fontSize: 13, color: theme.textSub, lineHeight: 1.5 }}>
-            Learn 4-part harmony through guided exercises
+            Create and attempt exercises, earn points, climb the leaderboard
           </span>
         </Link>
 

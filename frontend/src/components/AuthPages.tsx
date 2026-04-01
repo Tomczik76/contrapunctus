@@ -77,7 +77,7 @@ export function SignupPage() {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const redirect = searchParams.get("redirect");
-  const [role, setRole] = useState<"student" | "educator" | null>(redirect ? "student" : null);
+  const [role, setRole] = useState<"individual" | "educator" | null>(redirect ? "individual" : null);
   const [email, setEmail] = useState("");
   const [displayName, setDisplayName] = useState("");
   const [password, setPassword] = useState("");
@@ -169,7 +169,7 @@ export function SignupPage() {
         }}>
           <div
             style={cardStyle}
-            onClick={() => setRole("student")}
+            onClick={() => setRole("individual")}
             onMouseEnter={(e) => { e.currentTarget.style.transform = "translateY(-2px)"; }}
             onMouseLeave={(e) => { e.currentTarget.style.transform = ""; }}
           >
@@ -179,7 +179,7 @@ export function SignupPage() {
                 <line x1="14" y1="6" x2="14" y2="23" />
               </svg>
             </span>
-            <span style={{ fontSize: 17, fontWeight: 700 }}>Student</span>
+            <span style={{ fontSize: 17, fontWeight: 700 }}>Individual</span>
             <span style={{ fontSize: 13, color: "#555", lineHeight: 1.5 }}>
               Practice four-part harmony through guided lessons and free composition
             </span>

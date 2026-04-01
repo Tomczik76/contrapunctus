@@ -359,12 +359,17 @@ const features = [
 const personas: { title: string; desc: string; qualifier?: string; link?: { text: string; to: string } }[] = [
   {
     title: "Students",
-    desc: "Join your instructor's class with a link, work through assigned exercises, save drafts, and submit when ready. View your grades and track your progress across every assignment.",
+    desc: "Join your instructor's class with a link, work through assigned exercises, save drafts, and submit when ready. Join the community to practice beyond your coursework with exercises created by fellow students and theory enthusiasts.",
   },
   {
     title: "Educators",
     desc: "Create classes, author custom exercises, and assign them in any order. Review student submissions, assign grades, and track completion from a single gradebook view.",
     link: { text: "Sign up as an educator \u2192", to: "/signup" },
+  },
+  {
+    title: "Theory Enthusiasts",
+    desc: "Challenge yourself with community-created exercises, create your own for others to solve, and climb the ranks from Motif to Opus. Whether you're studying for an AP exam, brushing up on fundamentals, or just love theory puzzles, there's always a new challenge waiting.",
+    link: { text: "Browse exercises \u2192", to: "/community" },
   },
   {
     title: "Composers",
@@ -377,6 +382,8 @@ const roadmap = [
   { title: "Counterpoint analysis", desc: "Species counterpoint rules and Fux-style exercises" },
   { title: "Interval & chord exercises", desc: "Identification, spelling, and ear training drills" },
   { title: "MIDI export", desc: "Export your compositions to any DAW" },
+  { title: "LMS Integration", desc: "Connect with Canvas, Blackboard, and Moodle for seamless classroom use" },
+  { title: "Exercise Collections", desc: "Curate and share playlists of community exercises" },
 ];
 
 // ── Component ───────────────────────────────────────────────────────
@@ -522,7 +529,7 @@ export function LandingPage() {
           marginBottom: 20,
           letterSpacing: 0.3,
         }}>
-          Built for theory students, composers, and educators.
+          Built for theory students, educators, and the music theory community.
         </p>
         <p style={{
           fontSize: "clamp(16px, 3vw, 19px)",
@@ -531,9 +538,9 @@ export function LandingPage() {
           maxWidth: 620,
           marginBottom: 32,
         }}>
-          A music theory education platform where educators author exercises, assign them to a class,
-          and track student progress through a built-in gradebook. Powered by real-time harmonic analysis,
-          part-writing feedback, and non-chord tone detection.
+          A music theory platform with real-time harmonic analysis, part-writing feedback,
+          and non-chord tone detection. Join a community of theory enthusiasts solving exercises,
+          or use the classroom tools to author assignments and track student progress.
         </p>
         <div className="landing-hero-btns" style={{ display: "flex", gap: 14, flexWrap: "wrap", justifyContent: "center" }}>
           <Link to="/signup" className="landing-cta" style={{
@@ -575,6 +582,108 @@ export function LandingPage() {
       <div style={{ padding: "0 24px 48px", overflow: "hidden" }}>
         <StaffIllustration color={t.illustrationColor} />
       </div>
+
+      {/* Community */}
+      <section style={{
+        padding: "48px 24px 72px",
+        maxWidth: 960,
+        margin: "0 auto",
+        width: "100%",
+      }}>
+        <RevealSection>
+          <div style={{ textAlign: "center", marginBottom: 40 }}>
+            <h2 style={{ ...sectionHeadingStyle, marginBottom: 12 }}>
+              Practice with the community
+            </h2>
+            <p style={{ fontSize: 16, lineHeight: 1.6, color: t.textSub, maxWidth: 560, margin: "0 auto" }}>
+              Create exercises, solve others' challenges, earn points, and climb the ranks.
+            </p>
+          </div>
+        </RevealSection>
+
+        <div className="features-grid" style={{
+          display: "grid",
+          gridTemplateColumns: "repeat(3, 1fr)",
+          gap: 28,
+        }}>
+          <RevealSection delay={100}>
+            <div className="landing-card" style={{ ...cardStyle, height: "100%" }}>
+              <h3 style={{ fontSize: 16, fontWeight: 700, marginBottom: 8, color: t.text }}>Create &amp; Solve</h3>
+              <p style={{ fontSize: 14, lineHeight: 1.6, color: t.textSub, margin: 0 }}>
+                Build your own theory exercises or attempt challenges created by the community.
+                Harmonize melodies, analyze chord progressions, and sharpen your skills with fresh content every day.
+              </p>
+            </div>
+          </RevealSection>
+          <RevealSection delay={220}>
+            <div className="landing-card" style={{ ...cardStyle, height: "100%" }}>
+              <h3 style={{ fontSize: 16, fontWeight: 700, marginBottom: 8, color: t.text }}>Earn Your Rank</h3>
+              <p style={{ fontSize: 14, lineHeight: 1.6, color: t.textSub, margin: 0 }}>
+                Earn points for completing exercises, creating content, and contributing corrections.
+                Progress through 15 music-themed ranks.
+              </p>
+              <div style={{
+                display: "flex",
+                flexWrap: "wrap",
+                gap: 6,
+                marginTop: 14,
+              }}>
+                {["Motif", "Phrase", "Period", "Theme", "Variation", "Invention", "Fugue", "Suite", "Sonata", "Concerto", "Symphony", "Requiem", "Oratorio", "Mass", "Opus"].map((rank, i) => (
+                  <span key={rank} style={{
+                    fontSize: 11,
+                    padding: "2px 8px",
+                    borderRadius: 10,
+                    background: i < 3 ? (dk ? "rgba(110,231,160,0.15)" : "rgba(22,163,74,0.08)") : (dk ? "#32323a" : "#f0eeeb"),
+                    color: i < 3 ? (dk ? "#6ee7a0" : "#16a34a") : t.textMuted,
+                    fontWeight: i === 14 ? 700 : 400,
+                  }}>
+                    {rank}
+                  </span>
+                ))}
+              </div>
+            </div>
+          </RevealSection>
+          <RevealSection delay={340}>
+            <div className="landing-card" style={{ ...cardStyle, height: "100%" }}>
+              <h3 style={{ fontSize: 16, fontWeight: 700, marginBottom: 8, color: t.text }}>Compete &amp; Climb</h3>
+              <p style={{ fontSize: 14, lineHeight: 1.6, color: t.textSub, margin: 0 }}>
+                See how you stack up on the weekly and all-time leaderboards.
+                Upvote the best exercises and help surface quality content for the whole community.
+              </p>
+            </div>
+          </RevealSection>
+        </div>
+
+        <RevealSection delay={460}>
+          <div style={{ display: "flex", gap: 14, justifyContent: "center", marginTop: 36, flexWrap: "wrap" }}>
+            <Link to="/community" className="landing-cta" style={{
+              padding: "14px 32px",
+              fontSize: 16,
+              fontWeight: 700,
+              fontFamily: "inherit",
+              color: t.btnText,
+              background: t.btnBg,
+              textDecoration: "none",
+              borderRadius: 6,
+            }}>
+              Browse Exercises
+            </Link>
+            <Link to="/signup" className="landing-cta" style={{
+              padding: "14px 32px",
+              fontSize: 16,
+              fontWeight: 700,
+              fontFamily: "inherit",
+              color: t.text,
+              background: "none",
+              textDecoration: "none",
+              border: `1px solid ${t.borderColor}`,
+              borderRadius: 6,
+            }}>
+              Create Free Account
+            </Link>
+          </div>
+        </RevealSection>
+      </section>
 
       {/* Classroom */}
       <section style={{
@@ -621,7 +730,7 @@ export function LandingPage() {
             <div className="landing-card" style={{ ...cardStyle, height: "100%" }}>
               <h3 style={{ fontSize: 16, fontWeight: 700, marginBottom: 8, color: t.text }}>Author Exercises</h3>
               <p style={{ fontSize: 14, lineHeight: 1.6, color: t.textSub, margin: 0 }}>
-                Build melody harmonization, figured bass realization, and Roman numeral analysis exercises with the same editor your students use. Preview before assigning.
+                Build melody harmonization, figured bass realization, and Roman numeral analysis assignments with the same editor your students use. Preview before assigning.
               </p>
             </div>
           </RevealSection>
@@ -646,13 +755,13 @@ export function LandingPage() {
               <li>Progressive difficulty from basic triads through secondary dominants and modulation</li>
             </ul>
             <div style={{ marginTop: 16 }}>
-              <Link to="/lessons" style={{
+              <Link to="/community" style={{
                 fontSize: 14,
                 fontWeight: 600,
                 color: dk ? "#6ee7a0" : "#16a34a",
                 textDecoration: "none",
               }}>
-                Try a lesson &rarr;
+                Try an exercise &rarr;
               </Link>
             </div>
           </div>
@@ -701,7 +810,7 @@ export function LandingPage() {
         </RevealSection>
         <div className="personas-grid" style={{
           display: "grid",
-          gridTemplateColumns: "repeat(3, 1fr)",
+          gridTemplateColumns: "repeat(4, 1fr)",
           gap: 28,
         }}>
           {personas.map((p, i) => (
@@ -824,7 +933,7 @@ export function LandingPage() {
               Contrapunctus
             </span>
             <span style={{ fontSize: 13, color: t.textMuted, display: "block" }}>
-              Purpose-built for music theory education.
+              Purpose-built for the music theory community.
             </span>
           </div>
           <div style={{ display: "flex", gap: 24, flexWrap: "wrap" }}>

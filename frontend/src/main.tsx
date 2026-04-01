@@ -15,6 +15,8 @@ import { EducatorLessonEditor } from "./components/EducatorLessonEditor";
 import { StudentClassPage } from "./components/StudentClassPage";
 import { ClassLessonPage } from "./components/ClassLessonPage";
 import { EducatorGradePage } from "./components/EducatorGradePage";
+import { CommunityPage } from "./components/CommunityPage";
+import { CommunityExercisePage } from "./components/CommunityExercisePage";
 
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
   const { user, loading } = useAuth();
@@ -116,6 +118,16 @@ function App() {
           <Route path="/classes/:classId/lessons/:lessonId" element={
             <ProtectedRoute>
               <ClassLessonPage />
+            </ProtectedRoute>
+          } />
+          <Route path="/community" element={
+            <ProtectedRoute>
+              <CommunityPage />
+            </ProtectedRoute>
+          } />
+          <Route path="/community/:id" element={
+            <ProtectedRoute>
+              <CommunityExercisePage />
             </ProtectedRoute>
           } />
           <Route path="/educator" element={

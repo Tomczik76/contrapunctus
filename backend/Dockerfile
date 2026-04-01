@@ -18,7 +18,7 @@ COPY backend/ backend/
 RUN sbt backend/assembly
 
 # ── Stage 2: Runtime ─────────────────────────────────────────────────────────
-FROM --platform=linux/arm64 eclipse-temurin:21-jre-jammy
+FROM --platform=linux/arm64 gcr.io/distroless/java21-debian12
 
 WORKDIR /app
 COPY --from=builder /build/backend/target/scala-3.5.2/backend.jar app.jar

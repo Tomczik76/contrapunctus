@@ -1,0 +1,588 @@
+package contrapunctus.backend
+
+import cats.effect.IO
+import com.dimafeng.testcontainers.PostgreSQLContainer
+import com.dimafeng.testcontainers.munit.TestContainerForAll
+import io.circe.Json
+import io.circe.syntax._
+import munit.CatsEffectSuite
+import org.http4s._
+import org.http4s.circe.CirceEntityCodec._
+import org.http4s.implicits._
+
+class CommunityE2ESuite extends CatsEffectSuite with TestContainerForAll:
+
+  override val containerDef = PostgreSQLContainer.Def(
+    dockerImageName = org.testcontainers.utility.DockerImageName.parse("postgres:17"),
+    databaseName = "contrapunctus_test",
+    username = "test",
+    password = "test"
+  )
+
+  import TestApp.authHeader
+
+  private val sampleExercise = Json.obj(
+    "title"       -> "Test Exercise".asJson,
+    "description" -> "A test exercise".asJson,
+    "template"    -> "harmonize_melody".asJson,
+    "tonicIdx"    -> 0.asJson,
+    "scaleName"   -> "major".asJson,
+    "tsTop"       -> 4.asJson,
+    "tsBottom"    -> 4.asJson,
+    "sopranoBeats" -> Json.arr(),
+    "tags"        -> List("test").asJson
+  )
+
+  test("create exercise returns 201") {
+    withContainers { case c: PostgreSQLContainer =>
+      TestApp.withApp(c) { app =>
+        for
+          (token, _) <- TestApp.signup(app, "creator@test.com", "Creator")
+          resp <- app.run(
+            Request[IO](Method.POST, uri"/api/community/exercises")
+              .putHeaders(authHeader(token))
+              .withEntity(sampleExercise)
+          )
+          body <- resp.as[Json]
+        yield
+          assertEquals(resp.status, Status.Created)
+          assertEquals(body.hcursor.get[String]("title"), Right("Test Exercise"))
+          assertEquals(body.hcursor.get[String]("status"), Right("draft"))
+      }
+    }
+  }
+
+  test("create exercise without auth returns 403") {
+    withContainers { case c: PostgreSQLContainer =>
+      TestApp.withApp(c) { app =>
+        for
+          resp <- app.run(
+            Request[IO](Method.POST, uri"/api/community/exercises")
+              .withEntity(sampleExercise)
+          )
+        yield assertEquals(resp.status, Status.Forbidden)
+      }
+    }
+  }
+
+  test("create exercise validates title required") {
+    withContainers { case c: PostgreSQLContainer =>
+      TestApp.withApp(c) { app =>
+        for
+          (token, _) <- TestApp.signup(app, "val@test.com", "Validator")
+          resp <- app.run(
+            Request[IO](Method.POST, uri"/api/community/exercises")
+              .putHeaders(authHeader(token))
+              .withEntity(sampleExercise.mapObject(_.add("title", "".asJson)))
+          )
+          body <- resp.as[Json]
+        yield
+          assertEquals(resp.status, Status.BadRequest)
+          assertEquals(body.hcursor.get[String]("error"), Right("title is required"))
+      }
+    }
+  }
+
+  test("create exercise validates template") {
+    withContainers { case c: PostgreSQLContainer =>
+      TestApp.withApp(c) { app =>
+        for
+          (token, _) <- TestApp.signup(app, "val2@test.com", "Validator2")
+          resp <- app.run(
+            Request[IO](Method.POST, uri"/api/community/exercises")
+              .putHeaders(authHeader(token))
+              .withEntity(sampleExercise.mapObject(_.add("template", "invalid".asJson)))
+          )
+          body <- resp.as[Json]
+        yield
+          assertEquals(resp.status, Status.BadRequest)
+          assert(body.hcursor.get[String]("error").toOption.get.contains("template"))
+      }
+    }
+  }
+
+  test("list published exercises (empty initially)") {
+    withContainers { case c: PostgreSQLContainer =>
+      TestApp.withApp(c) { app =>
+        for
+          resp <- app.run(Request[IO](Method.GET, uri"/api/community/exercises"))
+          body <- resp.as[Json]
+        yield
+          assertEquals(resp.status, Status.Ok)
+          assertEquals(body, Json.arr())
+      }
+    }
+  }
+
+  test("publish exercise then list it") {
+    withContainers { case c: PostgreSQLContainer =>
+      TestApp.withApp(c) { app =>
+        for
+          (token, _) <- TestApp.signup(app, "pub@test.com", "Publisher")
+          createResp <- app.run(
+            Request[IO](Method.POST, uri"/api/community/exercises")
+              .putHeaders(authHeader(token))
+              .withEntity(sampleExercise)
+          )
+          createBody <- createResp.as[Json]
+          exId = createBody.hcursor.get[String]("id").toOption.get
+
+          pubResp <- app.run(
+            Request[IO](Method.POST, Uri.unsafeFromString(s"/api/community/exercises/$exId/publish"))
+              .putHeaders(authHeader(token))
+          )
+          pubBody <- pubResp.as[Json]
+          _ = assertEquals(pubResp.status, Status.Ok)
+          _ = assertEquals(pubBody.hcursor.get[String]("status"), Right("published"))
+
+          listResp <- app.run(Request[IO](Method.GET, uri"/api/community/exercises"))
+          listBody <- listResp.as[Json]
+        yield
+          assertEquals(listResp.status, Status.Ok)
+          val exercises = listBody.asArray.get
+          assertEquals(exercises.size, 1)
+          assertEquals(exercises.head.hcursor.get[String]("title"), Right("Test Exercise"))
+      }
+    }
+  }
+
+  test("get exercise by id") {
+    withContainers { case c: PostgreSQLContainer =>
+      TestApp.withApp(c) { app =>
+        for
+          (token, _) <- TestApp.signup(app, "getbyid@test.com", "GetById")
+          createResp <- app.run(
+            Request[IO](Method.POST, uri"/api/community/exercises")
+              .putHeaders(authHeader(token))
+              .withEntity(sampleExercise)
+          )
+          createBody <- createResp.as[Json]
+          exId = createBody.hcursor.get[String]("id").toOption.get
+
+          getResp <- app.run(Request[IO](Method.GET, Uri.unsafeFromString(s"/api/community/exercises/$exId")))
+          getBody <- getResp.as[Json]
+        yield
+          assertEquals(getResp.status, Status.Ok)
+          assertEquals(getBody.hcursor.get[String]("title"), Right("Test Exercise"))
+      }
+    }
+  }
+
+  test("get nonexistent exercise returns 404") {
+    withContainers { case c: PostgreSQLContainer =>
+      TestApp.withApp(c) { app =>
+        for
+          resp <- app.run(Request[IO](Method.GET, uri"/api/community/exercises/00000000-0000-0000-0000-000000000001"))
+        yield assertEquals(resp.status, Status.NotFound)
+      }
+    }
+  }
+
+  test("list my exercises") {
+    withContainers { case c: PostgreSQLContainer =>
+      TestApp.withApp(c) { app =>
+        for
+          (token, _) <- TestApp.signup(app, "mine@test.com", "Mine")
+          _ <- app.run(
+            Request[IO](Method.POST, uri"/api/community/exercises")
+              .putHeaders(authHeader(token))
+              .withEntity(sampleExercise)
+          )
+          _ <- app.run(
+            Request[IO](Method.POST, uri"/api/community/exercises")
+              .putHeaders(authHeader(token))
+              .withEntity(sampleExercise.mapObject(_.add("title", "Second".asJson)))
+          )
+
+          resp <- app.run(
+            Request[IO](Method.GET, uri"/api/community/exercises/mine")
+              .putHeaders(authHeader(token))
+          )
+          body <- resp.as[Json]
+        yield
+          assertEquals(resp.status, Status.Ok)
+          assertEquals(body.asArray.get.size, 2)
+      }
+    }
+  }
+
+  test("delete exercise hides it from my list") {
+    withContainers { case c: PostgreSQLContainer =>
+      TestApp.withApp(c) { app =>
+        for
+          (token, _) <- TestApp.signup(app, "del@test.com", "Deleter")
+          createResp <- app.run(
+            Request[IO](Method.POST, uri"/api/community/exercises")
+              .putHeaders(authHeader(token))
+              .withEntity(sampleExercise)
+          )
+          createBody <- createResp.as[Json]
+          exId = createBody.hcursor.get[String]("id").toOption.get
+
+          delResp <- app.run(
+            Request[IO](Method.DELETE, Uri.unsafeFromString(s"/api/community/exercises/$exId"))
+              .putHeaders(authHeader(token))
+          )
+          _ = assertEquals(delResp.status, Status.Ok)
+
+          listResp <- app.run(
+            Request[IO](Method.GET, uri"/api/community/exercises/mine")
+              .putHeaders(authHeader(token))
+          )
+          listBody <- listResp.as[Json]
+        yield assertEquals(listBody.asArray.get.size, 0)
+      }
+    }
+  }
+
+  test("update draft exercise") {
+    withContainers { case c: PostgreSQLContainer =>
+      TestApp.withApp(c) { app =>
+        for
+          (token, _) <- TestApp.signup(app, "upd@test.com", "Updater")
+          createResp <- app.run(
+            Request[IO](Method.POST, uri"/api/community/exercises")
+              .putHeaders(authHeader(token))
+              .withEntity(sampleExercise)
+          )
+          createBody <- createResp.as[Json]
+          exId = createBody.hcursor.get[String]("id").toOption.get
+
+          updResp <- app.run(
+            Request[IO](Method.PUT, Uri.unsafeFromString(s"/api/community/exercises/$exId"))
+              .putHeaders(authHeader(token))
+              .withEntity(sampleExercise.mapObject(_.add("title", "Updated Title".asJson)))
+          )
+          updBody <- updResp.as[Json]
+        yield
+          assertEquals(updResp.status, Status.Ok)
+          assertEquals(updBody.hcursor.get[String]("title"), Right("Updated Title"))
+      }
+    }
+  }
+
+  test("vote on exercise") {
+    withContainers { case c: PostgreSQLContainer =>
+      TestApp.withApp(c) { app =>
+        for
+          (token1, _) <- TestApp.signup(app, "voter_creator@test.com", "VCreator")
+          (token2, _) <- TestApp.signup(app, "voter@test.com", "Voter")
+
+          createResp <- app.run(
+            Request[IO](Method.POST, uri"/api/community/exercises")
+              .putHeaders(authHeader(token1))
+              .withEntity(sampleExercise)
+          )
+          createBody <- createResp.as[Json]
+          exId = createBody.hcursor.get[String]("id").toOption.get
+          _ <- app.run(
+            Request[IO](Method.POST, Uri.unsafeFromString(s"/api/community/exercises/$exId/publish"))
+              .putHeaders(authHeader(token1))
+          )
+
+          voteResp <- app.run(
+            Request[IO](Method.POST, Uri.unsafeFromString(s"/api/community/exercises/$exId/vote"))
+              .putHeaders(authHeader(token2))
+              .withEntity(Json.obj("vote" -> "up".asJson))
+          )
+          _ = assertEquals(voteResp.status, Status.Ok)
+
+          getVoteResp <- app.run(
+            Request[IO](Method.GET, Uri.unsafeFromString(s"/api/community/exercises/$exId/vote"))
+              .putHeaders(authHeader(token2))
+          )
+          voteBody <- getVoteResp.as[Json]
+          _ = assertEquals(voteBody.hcursor.get[String]("vote"), Right("up"))
+
+          exResp <- app.run(
+            Request[IO](Method.GET, Uri.unsafeFromString(s"/api/community/exercises/$exId"))
+          )
+          exBody <- exResp.as[Json]
+        yield assertEquals(exBody.hcursor.get[Int]("upvotes"), Right(1))
+      }
+    }
+  }
+
+  test("toggle vote off") {
+    withContainers { case c: PostgreSQLContainer =>
+      TestApp.withApp(c) { app =>
+        for
+          (token1, _) <- TestApp.signup(app, "tog_creator@test.com", "TogCreator")
+          (token2, _) <- TestApp.signup(app, "toggler@test.com", "Toggler")
+
+          createResp <- app.run(
+            Request[IO](Method.POST, uri"/api/community/exercises")
+              .putHeaders(authHeader(token1))
+              .withEntity(sampleExercise)
+          )
+          createBody <- createResp.as[Json]
+          exId = createBody.hcursor.get[String]("id").toOption.get
+          _ <- app.run(
+            Request[IO](Method.POST, Uri.unsafeFromString(s"/api/community/exercises/$exId/publish"))
+              .putHeaders(authHeader(token1))
+          )
+
+          _ <- app.run(
+            Request[IO](Method.POST, Uri.unsafeFromString(s"/api/community/exercises/$exId/vote"))
+              .putHeaders(authHeader(token2))
+              .withEntity(Json.obj("vote" -> "up".asJson))
+          )
+          _ <- app.run(
+            Request[IO](Method.POST, Uri.unsafeFromString(s"/api/community/exercises/$exId/vote"))
+              .putHeaders(authHeader(token2))
+              .withEntity(Json.obj("vote" -> "up".asJson))
+          )
+
+          getVoteResp <- app.run(
+            Request[IO](Method.GET, Uri.unsafeFromString(s"/api/community/exercises/$exId/vote"))
+              .putHeaders(authHeader(token2))
+          )
+          voteBody <- getVoteResp.as[Json]
+        yield
+          assert(voteBody.hcursor.get[String]("vote").isLeft || voteBody.hcursor.downField("vote").focus.contains(Json.Null))
+      }
+    }
+  }
+
+  test("save and retrieve attempt") {
+    withContainers { case c: PostgreSQLContainer =>
+      TestApp.withApp(c) { app =>
+        for
+          (token1, _) <- TestApp.signup(app, "att_creator@test.com", "AttCreator")
+          (token2, _) <- TestApp.signup(app, "attempter@test.com", "Attempter")
+
+          createResp <- app.run(
+            Request[IO](Method.POST, uri"/api/community/exercises")
+              .putHeaders(authHeader(token1))
+              .withEntity(sampleExercise)
+          )
+          createBody <- createResp.as[Json]
+          exId = createBody.hcursor.get[String]("id").toOption.get
+          _ <- app.run(
+            Request[IO](Method.POST, Uri.unsafeFromString(s"/api/community/exercises/$exId/publish"))
+              .putHeaders(authHeader(token1))
+          )
+
+          saveResp <- app.run(
+            Request[IO](Method.PUT, Uri.unsafeFromString(s"/api/community/exercises/$exId/attempt"))
+              .putHeaders(authHeader(token2))
+              .withEntity(Json.obj(
+                "trebleBeats"   -> Json.arr(),
+                "bassBeats"     -> Json.arr(),
+                "studentRomans" -> Json.obj()
+              ))
+          )
+          _ = assertEquals(saveResp.status, Status.Ok)
+
+          getResp <- app.run(
+            Request[IO](Method.GET, Uri.unsafeFromString(s"/api/community/exercises/$exId/attempt"))
+              .putHeaders(authHeader(token2))
+          )
+          getBody <- getResp.as[Json]
+        yield
+          assertEquals(getResp.status, Status.Ok)
+          assertEquals(getBody.hcursor.get[String]("status"), Right("draft"))
+      }
+    }
+  }
+
+  test("submit attempt") {
+    withContainers { case c: PostgreSQLContainer =>
+      TestApp.withApp(c) { app =>
+        for
+          (token1, _) <- TestApp.signup(app, "sub_creator@test.com", "SubCreator")
+          (token2, _) <- TestApp.signup(app, "submitter@test.com", "Submitter")
+
+          createResp <- app.run(
+            Request[IO](Method.POST, uri"/api/community/exercises")
+              .putHeaders(authHeader(token1))
+              .withEntity(sampleExercise)
+          )
+          createBody <- createResp.as[Json]
+          exId = createBody.hcursor.get[String]("id").toOption.get
+          _ <- app.run(
+            Request[IO](Method.POST, Uri.unsafeFromString(s"/api/community/exercises/$exId/publish"))
+              .putHeaders(authHeader(token1))
+          )
+
+          _ <- app.run(
+            Request[IO](Method.PUT, Uri.unsafeFromString(s"/api/community/exercises/$exId/attempt"))
+              .putHeaders(authHeader(token2))
+              .withEntity(Json.obj(
+                "trebleBeats"   -> Json.arr(),
+                "bassBeats"     -> Json.arr(),
+                "studentRomans" -> Json.obj()
+              ))
+          )
+
+          subResp <- app.run(
+            Request[IO](Method.POST, Uri.unsafeFromString(s"/api/community/exercises/$exId/submit"))
+              .putHeaders(authHeader(token2))
+              .withEntity(Json.obj("score" -> 85.asJson, "completed" -> true.asJson))
+          )
+          subBody <- subResp.as[Json]
+        yield
+          assertEquals(subResp.status, Status.Ok)
+          assertEquals(subBody.hcursor.get[String]("status"), Right("submitted"))
+          assertEquals(subBody.hcursor.get[Boolean]("completed"), Right(true))
+      }
+    }
+  }
+
+  test("submit without draft returns 409") {
+    withContainers { case c: PostgreSQLContainer =>
+      TestApp.withApp(c) { app =>
+        for
+          (token1, _) <- TestApp.signup(app, "nodraft_c@test.com", "NoDraftC")
+          (token2, _) <- TestApp.signup(app, "nodraft@test.com", "NoDraft")
+
+          createResp <- app.run(
+            Request[IO](Method.POST, uri"/api/community/exercises")
+              .putHeaders(authHeader(token1))
+              .withEntity(sampleExercise)
+          )
+          createBody <- createResp.as[Json]
+          exId = createBody.hcursor.get[String]("id").toOption.get
+
+          subResp <- app.run(
+            Request[IO](Method.POST, Uri.unsafeFromString(s"/api/community/exercises/$exId/submit"))
+              .putHeaders(authHeader(token2))
+              .withEntity(Json.obj("score" -> 50.asJson, "completed" -> false.asJson))
+          )
+        yield assertEquals(subResp.status, Status.Conflict)
+      }
+    }
+  }
+
+  test("points summary available after signup") {
+    withContainers { case c: PostgreSQLContainer =>
+      TestApp.withApp(c) { app =>
+        for
+          (token, _) <- TestApp.signup(app, "points@test.com", "PointsUser")
+          resp <- app.run(
+            Request[IO](Method.GET, uri"/api/community/points")
+              .putHeaders(authHeader(token))
+          )
+          body <- resp.as[Json]
+        yield
+          assertEquals(resp.status, Status.Ok)
+          assertEquals(body.hcursor.get[Int]("totalPoints"), Right(0))
+          assertEquals(body.hcursor.get[String]("rankTitle"), Right("Motif"))
+      }
+    }
+  }
+
+  test("publishing exercise awards points") {
+    withContainers { case c: PostgreSQLContainer =>
+      TestApp.withApp(c) { app =>
+        for
+          (token, _) <- TestApp.signup(app, "pts_pub@test.com", "PtsPub")
+          createResp <- app.run(
+            Request[IO](Method.POST, uri"/api/community/exercises")
+              .putHeaders(authHeader(token))
+              .withEntity(sampleExercise)
+          )
+          createBody <- createResp.as[Json]
+          exId = createBody.hcursor.get[String]("id").toOption.get
+
+          _ <- app.run(
+            Request[IO](Method.POST, Uri.unsafeFromString(s"/api/community/exercises/$exId/publish"))
+              .putHeaders(authHeader(token))
+          )
+
+          ptsResp <- app.run(
+            Request[IO](Method.GET, uri"/api/community/points")
+              .putHeaders(authHeader(token))
+          )
+          ptsBody <- ptsResp.as[Json]
+        yield
+          val totalPoints = ptsBody.hcursor.get[Int]("totalPoints").toOption.get
+          assert(totalPoints > 0, s"Expected points > 0 after publishing, got $totalPoints")
+      }
+    }
+  }
+
+  test("leaderboard hides 0-point users") {
+    withContainers { case c: PostgreSQLContainer =>
+      TestApp.withApp(c) { app =>
+        for
+          _ <- TestApp.signup(app, "zero@test.com", "ZeroPoints")
+          resp <- app.run(Request[IO](Method.GET, uri"/api/community/leaderboard"))
+          body <- resp.as[Json]
+        yield
+          assertEquals(resp.status, Status.Ok)
+          val rows = body.asArray.get
+          assert(rows.forall(r => r.hcursor.get[Int]("totalPoints").toOption.get > 0))
+      }
+    }
+  }
+
+  test("leaderboard includes users with points") {
+    withContainers { case c: PostgreSQLContainer =>
+      TestApp.withApp(c) { app =>
+        for
+          (token, _) <- TestApp.signup(app, "leader@test.com", "Leader")
+          createResp <- app.run(
+            Request[IO](Method.POST, uri"/api/community/exercises")
+              .putHeaders(authHeader(token))
+              .withEntity(sampleExercise)
+          )
+          createBody <- createResp.as[Json]
+          exId = createBody.hcursor.get[String]("id").toOption.get
+          _ <- app.run(
+            Request[IO](Method.POST, Uri.unsafeFromString(s"/api/community/exercises/$exId/publish"))
+              .putHeaders(authHeader(token))
+          )
+
+          resp <- app.run(Request[IO](Method.GET, uri"/api/community/leaderboard"))
+          body <- resp.as[Json]
+        yield
+          val rows = body.asArray.get
+          assert(rows.nonEmpty)
+          assert(rows.exists(r => r.hcursor.get[String]("displayName").toOption.get == "Leader"))
+      }
+    }
+  }
+
+  test("weekly leaderboard") {
+    withContainers { case c: PostgreSQLContainer =>
+      TestApp.withApp(c) { app =>
+        for
+          resp <- app.run(Request[IO](Method.GET, uri"/api/community/leaderboard?timeframe=weekly"))
+          body <- resp.as[Json]
+        yield
+          assertEquals(resp.status, Status.Ok)
+          assert(body.isArray)
+      }
+    }
+  }
+
+  test("points history") {
+    withContainers { case c: PostgreSQLContainer =>
+      TestApp.withApp(c) { app =>
+        for
+          (token, _) <- TestApp.signup(app, "hist@test.com", "Hist")
+          createResp <- app.run(
+            Request[IO](Method.POST, uri"/api/community/exercises")
+              .putHeaders(authHeader(token))
+              .withEntity(sampleExercise)
+          )
+          createBody <- createResp.as[Json]
+          exId = createBody.hcursor.get[String]("id").toOption.get
+          _ <- app.run(
+            Request[IO](Method.POST, Uri.unsafeFromString(s"/api/community/exercises/$exId/publish"))
+              .putHeaders(authHeader(token))
+          )
+
+          resp <- app.run(
+            Request[IO](Method.GET, uri"/api/community/points/history")
+              .putHeaders(authHeader(token))
+          )
+          body <- resp.as[Json]
+        yield
+          assertEquals(resp.status, Status.Ok)
+          val events = body.asArray.get
+          assert(events.nonEmpty)
+      }
+    }
+  }

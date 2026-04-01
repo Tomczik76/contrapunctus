@@ -23,7 +23,7 @@ object Validation:
   // Allowed enum values
   val CorrectionCategories = Set("chord_label", "nct_detection", "part_writing_error")
   val CorrectionStatuses   = Set("pending", "confirmed", "rejected", "fixed")
-  val ClassStatuses         = Set("active", "inactive")
+  val ClassStatuses         = Set("active", "archived")
   val Difficulties          = Set("beginner", "intermediate", "advanced")
   val Templates             = Set("harmonize_melody", "figured_bass", "roman_numeral_analysis")
   val ScaleNames            = Set("major", "minor")

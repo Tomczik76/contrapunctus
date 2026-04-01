@@ -4,6 +4,8 @@ val scala3Version = "3.5.2"
 val Http4sVersion     = "0.23.33"
 val CirceVersion      = "0.14.14"
 val MunitVersion      = "1.1.1"
+val MunitCEVersion    = "2.0.0"
+val TestContVersion   = "0.41.8"
 val LogbackVersion    = "1.5.6"
 val SkunkVersion      = "0.6.5"
 val FlywayVersion     = "10.17.0"
@@ -21,6 +23,7 @@ lazy val core = crossProject(JVMPlatform, JSPlatform)
     scalaVersion := scala3Version,
 
     libraryDependencies ++= Seq("org.scalameta" %%% "munit" % "1.0.0" % Test,
+     "org.scalameta" %%% "munit-scalacheck" % "1.0.0" % Test,
      "org.typelevel" %%% "cats-core" % "2.12.0",
      "io.higherkindness" %%% "droste-core" % "0.10.0"
     )
@@ -75,6 +78,10 @@ lazy val backend = (project in file("backend"))
       "io.circe"       %% "circe-generic"       % CirceVersion,
       "io.circe"       %% "circe-parser"        % CirceVersion,
       "org.scalameta"  %% "munit"               % MunitVersion % Test,
+      "org.scalameta"  %% "munit-scalacheck"    % "1.0.0" % Test,
+      "org.typelevel"  %% "munit-cats-effect"   % MunitCEVersion % Test,
+      "com.dimafeng"   %% "testcontainers-scala-munit" % TestContVersion % Test,
+      "com.dimafeng"   %% "testcontainers-scala-postgresql" % TestContVersion % Test,
       "ch.qos.logback" %  "logback-classic"     % LogbackVersion,
       "org.tpolecat"   %% "skunk-core"          % SkunkVersion,
       "org.tpolecat"   %% "skunk-circe"         % SkunkVersion,
