@@ -146,35 +146,59 @@ enum Scale(val intervals: NonEmptyList[Interval]):
   ): NonEmptySet[AlteredScaleDegree] =
     val interval = tonic.intervalAbove(noteType)
 
-    intervals.toList.indexWhere(_.value >= interval.value) match
-      case index if index >= 0 && intervals.toList(index) == interval =>
-        NonEmptySet.of(
-          AlteredScaleDegree(ScaleDegree.fromOrdinal(index), Natural)
+    // Primary: use note letter names to determine the unambiguous scale
+    // degree. E.g. Ab in C Major → letter A → degree 6 → ♭VI, while
+    // G# → letter G → degree 5 → ♯V. This also correctly handles cases
+    // where enharmonic equivalents (F## vs G) hit the same pitch class
+    // but should map to different degrees.
+    val noteLetterDegree =
+      (noteType.letterIndex - tonic.letterIndex + 7) % 7
+    val degreeInterval = intervals.toList(noteLetterDegree)
+    val rawDiff        = interval.value - degreeInterval.value
+    // Wrap around for enharmonic edge cases (e.g. Cb in C: interval 11,
+    // degree 0 interval 0, rawDiff 11 → adjusted to -1 = Flat)
+    val adjustedDiff =
+      if rawDiff > 6 then rawDiff - 12
+      else if rawDiff < -6 then rawDiff + 12
+      else rawDiff
+
+    if adjustedDiff >= -2 && adjustedDiff <= 2 then
+      NonEmptySet.of(
+        AlteredScaleDegree(
+          ScaleDegree.fromOrdinal(noteLetterDegree),
+          Alteration.unsafeApply(adjustedDiff)
         )
-      case -1 =>
-        // Note exceeds scale's highest interval — treat as sharp of the last degree
-        val last      = intervals.toList.last
-        val lastIndex = intervals.toList.size - 1
-        NonEmptySet.of(
-          AlteredScaleDegree(
-            ScaleDegree.fromOrdinal(lastIndex),
-            Alteration.unsafeApply(interval.value - last.value)
+      )
+    else
+      // Fallback for pathological enharmonic spellings (e.g. E# tonic
+      // with Gb note) where the letter-based alteration exceeds ±2.
+      intervals.toList.indexWhere(_.value >= interval.value) match
+        case index if index >= 0 && intervals.toList(index) == interval =>
+          NonEmptySet.of(
+            AlteredScaleDegree(ScaleDegree.fromOrdinal(index), Natural)
           )
-        )
-      case index =>
-        val closestBelow = intervals.toList(index - 1)
-        val closestAbove = intervals.toList(index)
-        NonEmptySet.of(
-          AlteredScaleDegree(
-            ScaleDegree.fromOrdinal(index - 1),
-            Alteration.unsafeApply(interval.value - closestBelow.value)
-          ),
-          AlteredScaleDegree(
-            ScaleDegree.fromOrdinal(index),
-            Alteration.unsafeApply(interval.value - closestAbove.value)
+        case -1 =>
+          val last      = intervals.toList.last
+          val lastIndex = intervals.toList.size - 1
+          NonEmptySet.of(
+            AlteredScaleDegree(
+              ScaleDegree.fromOrdinal(lastIndex),
+              Alteration.unsafeApply(interval.value - last.value)
+            )
           )
-        )
-    end match
+        case index =>
+          val closestBelow = intervals.toList(index - 1)
+          val closestAbove = intervals.toList(index)
+          NonEmptySet.of(
+            AlteredScaleDegree(
+              ScaleDegree.fromOrdinal(index - 1),
+              Alteration.unsafeApply(interval.value - closestBelow.value)
+            ),
+            AlteredScaleDegree(
+              ScaleDegree.fromOrdinal(index),
+              Alteration.unsafeApply(interval.value - closestAbove.value)
+            )
+          )
   end alteredScaleDegree
 
 end Scale

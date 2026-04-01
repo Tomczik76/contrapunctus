@@ -44,16 +44,49 @@ class ScaleSuite extends munit.FunSuite:
     assertEquals(asd.degree, ScaleDegree.Mediant)
     assertEquals(asd.alteration, Alteration.Natural)
 
-  // --- alteredScaleDegree: between scale degrees ---
+  // --- alteredScaleDegree: spelling-aware disambiguation ---
 
-  test("C# in C Major returns two altered scale degrees"):
+  test("C# in C Major is ♯I (letter C → Tonic)"):
     val result = Scale.Major.alteredScaleDegree(NoteType.C, NoteType.`C#`)
-    // C# is between C (Tonic) and D (Supertonic)
-    assertEquals(result.toNonEmptyList.size, 2)
+    val asd = result.toNonEmptyList.head
+    assertEquals(asd.degree, ScaleDegree.Tonic)
+    assertEquals(asd.alteration, Alteration.Sharp)
+    assertEquals(result.toNonEmptyList.size, 1)
 
-  test("F# in C Major returns two altered scale degrees"):
+  test("Db in C Major is ♭II (letter D → Supertonic)"):
+    val result = Scale.Major.alteredScaleDegree(NoteType.C, NoteType.Db)
+    val asd = result.toNonEmptyList.head
+    assertEquals(asd.degree, ScaleDegree.Supertonic)
+    assertEquals(asd.alteration, Alteration.Flat)
+    assertEquals(result.toNonEmptyList.size, 1)
+
+  test("F# in C Major is ♯IV (letter F → Subdominant)"):
     val result = Scale.Major.alteredScaleDegree(NoteType.C, NoteType.`F#`)
-    assertEquals(result.toNonEmptyList.size, 2)
+    val asd = result.toNonEmptyList.head
+    assertEquals(asd.degree, ScaleDegree.Subdominant)
+    assertEquals(asd.alteration, Alteration.Sharp)
+    assertEquals(result.toNonEmptyList.size, 1)
+
+  test("Gb in C Major is ♭V (letter G → Dominant)"):
+    val result = Scale.Major.alteredScaleDegree(NoteType.C, NoteType.`Gb`)
+    val asd = result.toNonEmptyList.head
+    assertEquals(asd.degree, ScaleDegree.Dominant)
+    assertEquals(asd.alteration, Alteration.Flat)
+    assertEquals(result.toNonEmptyList.size, 1)
+
+  test("Ab in C Major is ♭VI (letter A → Submediant)"):
+    val result = Scale.Major.alteredScaleDegree(NoteType.C, NoteType.Ab)
+    val asd = result.toNonEmptyList.head
+    assertEquals(asd.degree, ScaleDegree.Submediant)
+    assertEquals(asd.alteration, Alteration.Flat)
+    assertEquals(result.toNonEmptyList.size, 1)
+
+  test("G# in C Major is ♯V (letter G → Dominant)"):
+    val result = Scale.Major.alteredScaleDegree(NoteType.C, NoteType.`G#`)
+    val asd = result.toNonEmptyList.head
+    assertEquals(asd.degree, ScaleDegree.Dominant)
+    assertEquals(asd.alteration, Alteration.Sharp)
+    assertEquals(result.toNonEmptyList.size, 1)
 
   // --- alteredScaleDegree: different tonics ---
 

@@ -73,10 +73,13 @@ trait BaseChordType:
 
 trait InvertibleChordType extends BaseChordType with Product:
   val rootIntervals: NonEmptySet[Interval]
-  protected def numInversions: Int
   def isMinorQuality: Boolean
   def qualitySymbol: String
   def figuredBassAt(inversionIndex: Int): String
+
+  /** The number of inversions equals the number of distinct pitch classes. */
+  private lazy val numInversions: Int =
+    rootIntervals.map(_.normalizedValue).toSortedSet.size
 
   private lazy val inversionsList: List[NonEmptyList[Interval]] =
     Iterator
@@ -90,8 +93,9 @@ trait InvertibleChordType extends BaseChordType with Product:
 
   protected def inversionRootInterval(k: Int): Interval =
     if k == 0 then inversionsList(0).head
-    else if k == 1 then inversionsList(1).last
-    else inversionsList(k).toList(numInversions - k)
+    else
+      val intervalCount = inversionsList(k).size
+      inversionsList(k).toList(intervalCount - k)
 
   override lazy val allInversions: List[ChordType] =
     (0 until numInversions).toList.map: i =>
@@ -186,7 +190,6 @@ object Triads extends ChordGroup:
 
 enum Triads(val rootIntervals: NonEmptySet[Interval])
     extends InvertibleChordType:
-  protected def numInversions: Int = 3
 
   def isMinorQuality: Boolean =
     this match
@@ -228,7 +231,6 @@ object Sevenths extends ChordGroup:
 
 enum Sevenths(val rootIntervals: NonEmptySet[Interval])
     extends InvertibleChordType:
-  protected def numInversions: Int = 4
 
   def isMinorQuality: Boolean =
     this match
@@ -339,7 +341,6 @@ object Ninths extends ChordGroup:
 
 enum Ninths(val rootIntervals: NonEmptySet[Interval])
     extends InvertibleChordType:
-  protected def numInversions: Int = 5
 
   def isMinorQuality: Boolean =
     this match
@@ -440,7 +441,6 @@ object AddNinths extends ChordGroup:
 
 enum AddNinths(val rootIntervals: NonEmptySet[Interval])
     extends InvertibleChordType:
-  protected def numInversions: Int = 4
 
   def isMinorQuality: Boolean =
     this match
@@ -466,7 +466,6 @@ object AddElevenths extends ChordGroup:
 
 enum AddElevenths(val rootIntervals: NonEmptySet[Interval])
     extends InvertibleChordType:
-  protected def numInversions: Int = 4
 
   def isMinorQuality: Boolean =
     this match
@@ -492,7 +491,6 @@ object Elevenths extends ChordGroup:
 
 enum Elevenths(val rootIntervals: NonEmptySet[Interval])
     extends InvertibleChordType:
-  protected def numInversions: Int = 6
 
   def isMinorQuality: Boolean =
     this match
@@ -546,7 +544,6 @@ object Thirteenths extends ChordGroup:
 
 enum Thirteenths(val rootIntervals: NonEmptySet[Interval])
     extends InvertibleChordType:
-  protected def numInversions: Int = 7
 
   def isMinorQuality: Boolean =
     this match
@@ -603,7 +600,6 @@ object AlteredChords extends ChordGroup:
 
 enum AlteredChords(val rootIntervals: NonEmptySet[Interval])
     extends InvertibleChordType:
-  protected def numInversions: Int = 5
 
   def isMinorQuality: Boolean = false
 

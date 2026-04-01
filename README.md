@@ -50,7 +50,7 @@ contrapunctus/
 │       ├── db/                 # Skunk queries and DB layer (Database, Migrations, etc.)
 │       ├── services/           # Business logic layer
 │       └── routes/             # http4s route definitions
-├── shared/                     # Scala.js cross-compiled module
+├── shared/                     # Scala.js cross-compiled core module (see below)
 ├── build.sbt                   # sbt build with backend + cross-compiled core
 ├── dev.sh                      # Dev script: starts Postgres, builds Scala.js, runs backend + frontend
 ├── dev.conf                    # Local dev configuration
@@ -59,6 +59,49 @@ contrapunctus/
     ├── deploy-backend.sh       # Build Docker image, push to ECR, update ECS
     └── deploy-frontend.sh      # Build Vite, sync to S3, invalidate CloudFront
 ```
+
+## The Shared Music Theory Engine
+
+The `shared/` directory is a Scala.js cross-compiled module containing the core music theory domain model. It compiles to both JVM (used by the backend) and JS (available to the frontend). The sbt project names are `coreJVM` and `coreJS`.
+
+### Running tests
+
+```bash
+sbt coreJVM/test                        # Run all shared module tests
+sbt 'coreJVM/testOnly *ChordSuite'      # Run a specific suite
+```
+
+### Package structure
+
+```
+shared/src/main/scala/io/github/tomczik76/contrapunctus/
+├── core/
+│   ├── Note.scala         # NoteType enum (all chromatic pitches with enharmonics), Note case class (pitch + octave → MIDI)
+│   ├── Interval.scala     # Interval enum (unison through double octave), inversion, normalization
+│   ├── Scale.scala        # Scale enum (major, minor, modes), spelling-aware altered scale degree analysis
+│   └── ScaleDegree.scala  # ScaleDegree enum (I–VII), Alteration enum (𝄫 to 𝄪), AlteredScaleDegree
+├── harmony/
+│   ├── Chord.scala        # Chord case class (root + chord type), chord tone detection, fromNotes identification
+│   └── ChordType.scala    # ChordType trait hierarchy, chord groups (Triads, Sevenths, Ninths, etc.), inversion system
+├── rhythm/
+│   ├── Pulse.scala        # Recursive Pulse[A] tree (Atom/Rest/Duplet/Triplet/Quintuplet/Septuplet), flatten, timed, align
+│   ├── Rational.scala     # Exact fractional arithmetic for time positions (avoids floating-point)
+│   └── Sounding.scala     # Attack vs. Sustain enum for tied notes
+├── analysis/
+│   ├── Analysis.scala     # Harmonic analysis: chord identification, roman numerals, secondary dominants, augmented sixths
+│   ├── PartWriting.scala  # Part-writing validation: parallels, direct motion, voice crossing, spacing, doubling, resolution
+│   └── NonChordTone.scala # Non-chord tone classification (passing, neighbor, suspension, appoggiatura, etc.)
+└── notation/
+    └── StaffPrinter.scala # Text-based staff rendering (legacy, unused by frontend)
+```
+
+### Key domain concepts
+
+- **NoteType**: Enum of all chromatic pitch classes including enharmonic spellings (C, C#, Db, etc.). Equality is by pitch class value, so `C# == Db`. The `letterIndex` method gives the base letter (C=0 through B=6) for spelling-aware analysis.
+- **Interval**: Enum with `value` (semitones), `normalizedValue` (mod 12), and `invert`. The `Interval.apply(Int)` factory returns canonical intervals only (e.g., value 6 → `Tritone`, not `DiminishedFifth`).
+- **ChordType hierarchy**: `ChordType` (sealed trait) → `BaseChordType` → `InvertibleChordType` (trait with `Inversions` inner enum). Each chord group (e.g., `Triads`, `Sevenths`) defines case objects extending `InvertibleChordType`. Inversions are generated via `ChordType.invert` which rotates the interval list.
+- **Pulse[A]**: A recursive tree representing rhythmic subdivision. `Atom(NonEmptyList[A])` holds note data, `Rest` is silence, and `Duplet`/`Triplet`/etc. subdivide time. `Pulse.align` synchronizes multiple voices into `AlignedColumn`s at shared time points using `Rational` arithmetic.
+- **Scale.alteredScaleDegree**: Uses note letter names (not just pitch class) to disambiguate enharmonic spellings. E.g., Ab in C Major → bVI (letter A, degree 6, flat), while G# → #V (letter G, degree 5, sharp).
 
 ## The `staff/` Module
 

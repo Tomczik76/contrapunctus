@@ -51,6 +51,16 @@ enum NoteType(val value: Int, alteration: Alteration):
   case `A##` extends NoteType(11, DoubleSharp)
   case Cb    extends NoteType(11, Flat)
 
+  /** Index of the base letter name: C=0, D=1, E=2, F=3, G=4, A=5, B=6 */
+  def letterIndex: Int = toString.head match
+    case 'C' => 0
+    case 'D' => 1
+    case 'E' => 2
+    case 'F' => 3
+    case 'G' => 4
+    case 'A' => 5
+    case 'B' => 6
+
   def intervalAbove(that: NoteType): Interval =
     val semitones =
       if value <= that.value then that.value - value

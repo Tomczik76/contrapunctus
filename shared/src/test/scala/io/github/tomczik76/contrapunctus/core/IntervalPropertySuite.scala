@@ -104,4 +104,39 @@ class IntervalPropertySuite extends munit.ScalaCheckSuite:
     }
   }
 
+  // ── Double inversion involution ──
+
+  property("double inversion returns the original interval") {
+    forAll(genInvertible) { interval =>
+      assertEquals(
+        interval.invert.invert, interval,
+        s"${interval}.invert.invert = ${interval.invert.invert}, expected ${interval}"
+      )
+    }
+  }
+
+  // ── Inversion preserves within-octave constraint ──
+
+  property("inversion of a within-octave interval is also within octave (or unison)") {
+    forAll(genWithinOctaveInterval) { interval =>
+      assert(
+        interval.invert.value >= 0 && interval.invert.value <= 12,
+        s"${interval}.invert = ${interval.invert} (value ${interval.invert.value})"
+      )
+    }
+  }
+
+  // ── Order consistency ──
+
+  property("Order is consistent with value comparison") {
+    val genAny = Gen.oneOf(Interval.values.toList)
+    forAll(genAny, genAny) { (a, b) =>
+      val ord = summon[cats.Order[Interval]]
+      assertEquals(
+        ord.compare(a, b).sign, (a.value - b.value).sign,
+        s"Order($a, $b) inconsistent with value comparison"
+      )
+    }
+  }
+
 end IntervalPropertySuite
