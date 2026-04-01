@@ -105,6 +105,8 @@ export function computeMeasures(beats: PlacedBeat[], tsTop: number, tsBottom: nu
       used += val;
       i++;
     }
+    // If a single beat exceeds measure capacity, include it to avoid an infinite loop
+    if (i === start) i++;
     measures.push({ startIdx: start, count: i - start });
   }
   return measures;

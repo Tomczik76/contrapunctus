@@ -2,6 +2,7 @@ import { useParams, Link, Navigate } from "react-router-dom";
 import { useState, useCallback, useEffect } from "react";
 import { useAuth, API_BASE } from "../auth";
 import { NoteEditor, type LessonConfig, type LessonErrorItem, type PlacedBeat } from "./staff";
+import { useTheme } from "../useTheme";
 
 interface LessonDetail {
   id: string;
@@ -47,23 +48,8 @@ export function EducatorGradePage() {
   const [saving, setSaving] = useState(false);
   const [saveFlash, setSaveFlash] = useState(false);
 
-  const [darkMode] = useState(() => {
-    try { return localStorage.getItem("contrapunctus_dark") === "true"; } catch { return false; }
-  });
-  const dk = darkMode;
-  const theme = {
-    bg: dk ? "#1e1e22" : "#e8e4e0",
-    cardBg: dk ? "#2a2a30" : "#fff",
-    cardBorder: dk ? "#3a3a40" : "#e0dcd8",
-    text: dk ? "#e0ddd8" : "#1a1a1a",
-    textSub: dk ? "#aaa" : "#555",
-    textMuted: dk ? "#888" : "#888",
-    successText: dk ? "#6ee7a0" : "#16a34a",
-    dangerText: dk ? "#f87171" : "#dc2626",
-    inputBg: dk ? "#1e1e22" : "#fff",
-    btnBg: dk ? "#e0ddd8" : "#1a1a1a",
-    btnText: dk ? "#1a1a1e" : "#fff",
-  };
+  const theme = useTheme();
+  const dk = theme.dk;
 
   useEffect(() => {
     if (!classId || !studentId || !lessonId || !token) return;

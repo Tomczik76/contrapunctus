@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from "react";
 import { API_BASE, getAdminToken, setAdminToken, clearAdminToken, adminHeaders } from "../auth";
 import { NoteEditor, type PlacedBeat } from "./staff";
+import { TONIC_LABELS } from "../constants";
 
 interface User {
   id: string;
@@ -60,9 +61,6 @@ interface AdminLesson {
 }
 
 type Tab = "users" | "bug-reports" | "corrections" | "feature-requests" | "roadmap-votes" | "lessons";
-
-const TONIC_LABELS = ["C", "C#", "Db", "D", "Eb", "E", "F", "F#", "Gb", "G", "Ab", "A", "Bb", "B"];
-
 
 export function AdminPage() {
   const [token, setToken] = useState(getAdminToken() ?? "");

@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef, type FormEvent } from "react";
 import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import { useAuth, GOOGLE_CLIENT_ID } from "../auth";
+import { passwordStrength, isPasswordValid, reqStyle } from "../passwordValidation";
 
 declare global {
   interface Window {
@@ -150,12 +151,8 @@ export function SignupPage() {
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
 
-  const strength = {
-    length:  password.length >= 8,
-    number:  /\d/.test(password),
-    special: /[^a-zA-Z0-9]/.test(password),
-  };
-  const passwordValid = strength.length && strength.number && strength.special;
+  const strength = passwordStrength(password);
+  const passwordValid = isPasswordValid(password);
 
   async function handleSubmit(e: FormEvent) {
     e.preventDefault();
@@ -181,15 +178,6 @@ export function SignupPage() {
     if (result.error) setError(result.error);
     else navigate(redirect || (role === "educator" ? "/educator" : "/"));
   }
-
-  const reqStyle = (met: boolean): React.CSSProperties => ({
-    fontSize: 12,
-    color: met ? "#2a7d4f" : "#999",
-    display: "flex",
-    alignItems: "center",
-    gap: 4,
-    transition: "color 0.15s ease",
-  });
 
   if (role === null) {
     const cardStyle: React.CSSProperties = {

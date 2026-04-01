@@ -1,6 +1,7 @@
 import { useState, type FormEvent } from "react";
 import { Link, useSearchParams } from "react-router-dom";
 import { API_BASE } from "../auth";
+import { passwordStrength, isPasswordValid, reqStyle } from "../passwordValidation";
 
 export function ResetPasswordPage() {
   const [searchParams] = useSearchParams();
@@ -11,21 +12,8 @@ export function ResetPasswordPage() {
   const [success, setSuccess] = useState(false);
   const [submitting, setSubmitting] = useState(false);
 
-  const strength = {
-    length:  password.length >= 8,
-    number:  /\d/.test(password),
-    special: /[^a-zA-Z0-9]/.test(password),
-  };
-  const passwordValid = strength.length && strength.number && strength.special;
-
-  const reqStyle = (met: boolean): React.CSSProperties => ({
-    fontSize: 12,
-    color: met ? "#2a7d4f" : "#999",
-    display: "flex",
-    alignItems: "center",
-    gap: 4,
-    transition: "color 0.15s ease",
-  });
+  const strength = passwordStrength(password);
+  const passwordValid = isPasswordValid(password);
 
   async function handleSubmit(e: FormEvent) {
     e.preventDefault();

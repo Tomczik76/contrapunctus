@@ -15,6 +15,7 @@ import {
   FLAG_8TH_UP, FLAG_8TH_DOWN, FLAG_16TH_UP, FLAG_16TH_DOWN,
   REST_QUARTER, REST_8TH, REST_16TH,
 } from "./glyphs";
+import { lastMeasureHasNote, padToMeasures as padToMeasuresFn, soundingNotes } from "./noteEditorHelpers";
 import {
   dpToY, accidentalSymbol, middleLine, durationCategory,
   LETTERS, LETTER_SEMITONES, dpToMidi, dpToNoteName,
@@ -264,29 +265,12 @@ export function NoteEditor({ header, lessonConfig, onTrebleBeatsChanged, onBassB
     const tMeasures = computeMeasures(trebleBeats, tsTop, tsBottom);
     const bMeasures = computeMeasures(bassBeats, tsTop, tsBottom);
     let maxM = Math.max(tMeasures.length, bMeasures.length);
-    // Check if the last measure of either staff has a note
-    const lastMeasureHasNote = (beats: PlacedBeat[], measures: { startIdx: number; count: number }[]): boolean => {
-      if (measures.length === 0) return false;
-      const last = measures[measures.length - 1];
-      for (let i = last.startIdx; i < last.startIdx + last.count; i++) {
-        if (!beats[i].isRest && beats[i].notes.length > 0) return true;
-      }
-      return false;
-    };
     if (!lessonConfig && (lastMeasureHasNote(trebleBeats, tMeasures) || lastMeasureHasNote(bassBeats, bMeasures))) {
       maxM += 1;
     }
-    const padToMeasures = (beats: PlacedBeat[], mCount: number): PlacedBeat[] => {
-      if (mCount >= maxM) return beats;
-      const padding: PlacedBeat[] = [];
-      for (let i = mCount; i < maxM; i++) {
-        padding.push(...fillWithRests(measureCap));
-      }
-      return [...beats, ...padding];
-    };
     return [
-      padToMeasures(trebleBeats, tMeasures.length),
-      padToMeasures(bassBeats, bMeasures.length),
+      padToMeasuresFn(trebleBeats, tMeasures.length, maxM, fillWithRests, measureCap),
+      padToMeasuresFn(bassBeats, bMeasures.length, maxM, fillWithRests, measureCap),
     ];
   }, [trebleBeats, bassBeats, tsTop, tsBottom, lessonConfig]);
 
@@ -443,23 +427,6 @@ export function NoteEditor({ header, lessonConfig, onTrebleBeatsChanged, onBassB
     const tonic = TONIC_OPTIONS[tonicIdx];
     try {
       const measureCap = timeKey(tsTop / tsBottom);
-
-      // Helper: find which notes are sounding at time t from a staff's beats
-      function soundingNotes(beats: PlacedBeat[], times: number[], t: number): PlacedNote[] {
-        // Find the last beat that started at or before t
-        let idx = -1;
-        for (let i = 0; i < times.length; i++) {
-          if (times[i] <= t + 1e-9) idx = i;
-          else break;
-        }
-        if (idx < 0) return [];
-        const beat = beats[idx];
-        if (beat.isRest) return [];
-        // Check if the beat's duration extends past t
-        const beatEnd = times[idx] + beatValue(beat);
-        if (beatEnd > t - 1e-9) return beat.notes;
-        return [];
-      }
 
       // Group time points into measures
       const measures: { time: number; notes: PlacedNote[] }[][] = [];

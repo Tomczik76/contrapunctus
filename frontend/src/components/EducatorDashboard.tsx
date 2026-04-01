@@ -1,6 +1,7 @@
 import { useState, useEffect } from "react";
 import { Link, useLocation, Navigate } from "react-router-dom";
 import { useAuth, API_BASE } from "../auth";
+import { useTheme, type Theme } from "../useTheme";
 
 interface ClassItem {
   id: string;
@@ -21,32 +22,7 @@ interface LessonItem {
   assignedClasses: { id: string; name: string }[];
 }
 
-function useTheme() {
-  const [darkMode] = useState(() => {
-    try { return localStorage.getItem("contrapunctus_dark") === "true"; } catch { return false; }
-  });
-  const dk = darkMode;
-  return {
-    dk,
-    bg: dk ? "#1e1e22" : "#e8e4e0",
-    cardBg: dk ? "#2a2a30" : "#fff",
-    cardBorder: dk ? "#3a3a40" : "#e0dcd8",
-    cardShadow: dk ? "0 1px 3px rgba(0,0,0,0.3), 0 4px 12px rgba(0,0,0,0.2)" : "0 1px 3px rgba(0,0,0,0.08), 0 4px 12px rgba(0,0,0,0.05)",
-    text: dk ? "#e0ddd8" : "#1a1a1a",
-    textSub: dk ? "#aaa" : "#555",
-    textMuted: dk ? "#888" : "#888",
-    sidebarBg: dk ? "#222228" : "#f5f2ef",
-    sidebarBorder: dk ? "#3a3a40" : "#e0dcd8",
-    sidebarHover: dk ? "#2e2e34" : "#ece9e5",
-    sidebarActive: dk ? "#32323a" : "#e8e4e0",
-    btnBg: dk ? "#e0ddd8" : "#1a1a1a",
-    btnText: dk ? "#1a1a1e" : "#fff",
-    badgeBg: dk ? "#32323a" : "#f0eeeb",
-    successText: dk ? "#6ee7a0" : "#16a34a",
-  };
-}
-
-function Sidebar({ theme }: { theme: ReturnType<typeof useTheme> }) {
+function Sidebar({ theme }: { theme: Theme }) {
   const location = useLocation();
   const isClasses = location.pathname === "/educator" || location.pathname === "/educator/classes";
   const isLessons = location.pathname === "/educator/lessons";
@@ -90,7 +66,7 @@ function Sidebar({ theme }: { theme: ReturnType<typeof useTheme> }) {
   );
 }
 
-function ClassesSection({ theme }: { theme: ReturnType<typeof useTheme> }) {
+function ClassesSection({ theme }: { theme: Theme }) {
   const { token } = useAuth();
   const [classes, setClasses] = useState<ClassItem[]>([]);
   const [loading, setLoading] = useState(true);
@@ -341,7 +317,7 @@ function ClassesSection({ theme }: { theme: ReturnType<typeof useTheme> }) {
   );
 }
 
-function LessonsSection({ theme }: { theme: ReturnType<typeof useTheme> }) {
+function LessonsSection({ theme }: { theme: Theme }) {
   const { token } = useAuth();
   const [lessons, setLessons] = useState<LessonItem[]>([]);
   const [loading, setLoading] = useState(true);

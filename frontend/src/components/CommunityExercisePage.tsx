@@ -3,6 +3,8 @@ import { Link, useParams } from "react-router-dom";
 import { useAuth, API_BASE } from "../auth";
 import { NoteEditor } from "./staff";
 import type { LessonConfig } from "./staff/types";
+import { useTheme } from "../useTheme";
+import { TEMPLATE_LABELS, DIFFICULTY_COLORS, NOTE_NAMES } from "../constants";
 
 interface CommunityExercise {
   id: string;
@@ -45,25 +47,11 @@ interface ExerciseAttempt {
   submittedAt: string | null;
 }
 
-const TEMPLATE_LABELS: Record<string, string> = {
-  harmonize_melody: "Harmonize Melody",
-  rn_analysis: "Roman Numeral Analysis",
-};
-const NOTE_NAMES = ["C", "C#/Db", "D", "D#/Eb", "E", "F", "F#/Gb", "G", "G#/Ab", "A", "A#/Bb", "B", "Cb", "B#"];
-const DIFFICULTY_COLORS: Record<string, string> = {
-  beginner: "#16a34a",
-  intermediate: "#d97706",
-  advanced: "#dc2626",
-  unknown: "#888",
-};
-
 export function CommunityExercisePage() {
   const { id } = useParams<{ id: string }>();
   const { user, token, logout } = useAuth();
-  const [darkMode] = useState(() => {
-    try { return localStorage.getItem("contrapunctus_dark") === "true"; } catch { return false; }
-  });
-  const dk = darkMode;
+  const theme = useTheme();
+  const dk = theme.dk;
 
   const [exercise, setExercise] = useState<CommunityExercise | null>(null);
   const [attempt, setAttempt] = useState<ExerciseAttempt | null>(null);
@@ -76,34 +64,23 @@ export function CommunityExercisePage() {
   const [checked, setChecked] = useState(false);
   const [score, setScore] = useState<number | null>(null);
 
-  const theme = {
-    bg: dk ? "#1e1e22" : "#e8e4e0",
-    cardBg: dk ? "#2a2a30" : "#fff",
-    cardBorder: dk ? "#3a3a40" : "#e0dcd8",
-    cardShadow: dk ? "0 1px 3px rgba(0,0,0,0.3), 0 4px 12px rgba(0,0,0,0.2)" : "0 1px 3px rgba(0,0,0,0.08), 0 4px 12px rgba(0,0,0,0.05)",
-    text: dk ? "#e0ddd8" : "#1a1a1a",
-    textSub: dk ? "#aaa" : "#555",
-    textMuted: dk ? "#888" : "#888",
-    accent: dk ? "#7c9cff" : "#4a6fff",
-    footerBg: dk ? "#222228" : "#f0ede9",
-    footerBorder: dk ? "#3a3a40" : "#e0dcd8",
-  };
-
   const headers = { Authorization: `Bearer ${token}`, "Content-Type": "application/json" };
 
   useEffect(() => {
     if (!token || !id) return;
     setLoading(true);
+    const safeFetch = (url: string) =>
+      fetch(url, { headers }).then(r => r.ok ? r.json() : null).catch(() => null);
     Promise.all([
-      fetch(`${API_BASE}/api/community/exercises/${id}`, { headers }).then(r => r.ok ? r.json() : null),
-      fetch(`${API_BASE}/api/community/exercises/${id}/attempt`, { headers }).then(r => r.ok ? r.json() : null),
-      fetch(`${API_BASE}/api/community/exercises/${id}/vote`, { headers }).then(r => r.ok ? r.json() : null),
+      safeFetch(`${API_BASE}/api/community/exercises/${id}`),
+      safeFetch(`${API_BASE}/api/community/exercises/${id}/attempt`),
+      safeFetch(`${API_BASE}/api/community/exercises/${id}/vote`),
     ]).then(([ex, att, vote]) => {
       setExercise(ex);
       setAttempt(att);
       setUserVote(vote?.vote || null);
       setLoading(false);
-    }).catch(() => setLoading(false));
+    });
   }, [token, id]);
 
   const isOwnExercise = exercise?.creatorId === user?.id;

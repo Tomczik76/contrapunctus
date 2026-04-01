@@ -2,6 +2,8 @@ import { useState, useEffect, useCallback } from "react";
 import { useParams, useNavigate, Link } from "react-router-dom";
 import { useAuth, API_BASE } from "../auth";
 import { NoteEditor, type PlacedBeat, type LessonConfig } from "./staff";
+import { useTheme } from "../useTheme";
+import { TONIC_LABELS } from "../constants";
 
 interface EducatorLesson {
   id: string;
@@ -23,32 +25,6 @@ interface EducatorLesson {
 interface ClassItem {
   id: string;
   name: string;
-}
-
-const TONIC_LABELS = ["C", "C#", "Db", "D", "Eb", "E", "F", "F#", "Gb", "G", "Ab", "A", "Bb", "B"];
-
-function useTheme() {
-  const [darkMode] = useState(() => {
-    try { return localStorage.getItem("contrapunctus_dark") === "true"; } catch { return false; }
-  });
-  const dk = darkMode;
-  return {
-    dk,
-    bg: dk ? "#1e1e22" : "#e8e4e0",
-    cardBg: dk ? "#2a2a30" : "#fff",
-    cardBorder: dk ? "#3a3a40" : "#e0dcd8",
-    cardShadow: dk ? "0 1px 3px rgba(0,0,0,0.3), 0 4px 12px rgba(0,0,0,0.2)" : "0 1px 3px rgba(0,0,0,0.08), 0 4px 12px rgba(0,0,0,0.05)",
-    text: dk ? "#e0ddd8" : "#1a1a1a",
-    textSub: dk ? "#aaa" : "#555",
-    textMuted: dk ? "#888" : "#888",
-    sidebarBg: dk ? "#222228" : "#f5f2ef",
-    sidebarBorder: dk ? "#3a3a40" : "#e0dcd8",
-    btnBg: dk ? "#e0ddd8" : "#1a1a1a",
-    btnText: dk ? "#1a1e1e" : "#fff",
-    badgeBg: dk ? "#32323a" : "#f0eeeb",
-    successText: dk ? "#6ee7a0" : "#16a34a",
-    inputBg: dk ? "#1e1e22" : "#fff",
-  };
 }
 
 export function EducatorLessonEditor() {

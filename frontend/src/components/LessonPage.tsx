@@ -1,27 +1,11 @@
 import { useParams, Link, Navigate } from "react-router-dom";
-import { useState, useCallback, useEffect, useMemo } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { useAuth } from "../auth";
-import { NoteEditor, type LessonConfig, type LessonErrorItem, type PlacedBeat } from "./staff";
+import { NoteEditor, type LessonConfig, type PlacedBeat } from "./staff";
 import { fetchLesson, type Lesson } from "../data/lessons";
-
-/** Normalize an RN string for comparison: trim, collapse spaces, convert Unicode super/subscript digits to ASCII, normalize quality symbols. */
-function normalizeRn(rn: string): string {
-  return rn
-    .trim()
-    .replace(/\s+/g, "")
-    // Normalize quality symbols: "o" → "°", "0" (zero) → "ø"
-    .replace(/°/g, "°")  // keep degree sign as-is
-    .replace(/([iIvV])(o)(?=\d|$)/g, "$1°")  // letter-o after RN → diminished °
-    .replace(/([iIvV])(0)(?=\d|$)/g, "$1ø")  // zero after RN → half-diminished ø
-    // Unicode superscript digits → ASCII
-    .replace(/⁰/g, "0").replace(/¹/g, "1").replace(/²/g, "2").replace(/³/g, "3")
-    .replace(/⁴/g, "4").replace(/⁵/g, "5").replace(/⁶/g, "6").replace(/⁷/g, "7")
-    .replace(/⁸/g, "8").replace(/⁹/g, "9")
-    // Unicode subscript digits → ASCII
-    .replace(/₀/g, "0").replace(/₁/g, "1").replace(/₂/g, "2").replace(/₃/g, "3")
-    .replace(/₄/g, "4").replace(/₅/g, "5").replace(/₆/g, "6").replace(/₇/g, "7")
-    .replace(/₈/g, "8").replace(/₉/g, "9");
-}
+import { useTheme } from "../useTheme";
+import { normalizeRn } from "./staff/normalizeRn";
+import { useLessonCallbacks } from "../hooks/useLessonCallbacks";
 
 export function LessonPage() {
   const { id } = useParams<{ id: string }>();
@@ -37,54 +21,15 @@ export function LessonPage() {
       .finally(() => setLoadingLesson(false));
   }, [id]);
 
-  const [partWritingErrors, setPartWritingErrors] = useState<LessonErrorItem[]>([]);
-  const [computedRomans, setComputedRomans] = useState<string[][]>([]);
-  const [studentRomans, setStudentRomans] = useState<Record<number, string>>({});
-  const [trebleBeats, setTrebleBeats] = useState<PlacedBeat[]>([]);
-  const [bassBeats, setBassBeats] = useState<PlacedBeat[]>([]);
+  const {
+    partWritingErrors, computedRomans, studentRomans, trebleBeats, bassBeats,
+    onErrorsComputed, onRomansComputed, onStudentRomansChanged, onBeatsChanged,
+  } = useLessonCallbacks();
   const [checked, setChecked] = useState(false);
   const [key, setKey] = useState(0);
 
-  const [darkMode] = useState(() => {
-    try { return localStorage.getItem("contrapunctus_dark") === "true"; } catch { return false; }
-  });
-  const dk = darkMode;
-
-  const theme = {
-    bg: dk ? "#1e1e22" : "#e8e4e0",
-    cardBg: dk ? "#2a2a30" : "#fff",
-    cardBorder: dk ? "#3a3a40" : "#e0dcd8",
-    text: dk ? "#e0ddd8" : "#1a1a1a",
-    textSub: dk ? "#aaa" : "#555",
-    textMuted: dk ? "#888" : "#888",
-    footerBg: dk ? "#222228" : "#f0ede9",
-    footerBorder: dk ? "#3a3a40" : "#e0dcd8",
-    successBg: dk ? "rgba(22,163,74,0.15)" : "rgba(22,163,74,0.08)",
-    successBorder: dk ? "#22c55e" : "#16a34a",
-    successText: dk ? "#6ee7a0" : "#16a34a",
-    errorBg: dk ? "rgba(220,38,38,0.15)" : "rgba(220,38,38,0.08)",
-    errorBorder: dk ? "#f87171" : "#dc2626",
-    errorText: dk ? "#fca5a5" : "#dc2626",
-    warnBg: dk ? "rgba(234,179,8,0.15)" : "rgba(234,179,8,0.08)",
-    warnText: dk ? "#fbbf24" : "#d97706",
-  };
-
-  const onErrorsComputed = useCallback((errs: LessonErrorItem[]) => {
-    setPartWritingErrors(errs);
-  }, []);
-
-  const onRomansComputed = useCallback((romans: string[][]) => {
-    setComputedRomans(romans);
-  }, []);
-
-  const onStudentRomansChanged = useCallback((sr: Record<number, string>) => {
-    setStudentRomans(sr);
-  }, []);
-
-  const onBeatsChanged = useCallback((treble: PlacedBeat[], bass: PlacedBeat[]) => {
-    setTrebleBeats(treble);
-    setBassBeats(bass);
-  }, []);
+  const theme = useTheme();
+  const dk = theme.dk;
 
   const lessonConfig: LessonConfig | null = useMemo(() => {
     if (!lesson) return null;

@@ -1,6 +1,8 @@
 import { useState, useEffect, useCallback } from "react";
 import { Link, useParams, Navigate } from "react-router-dom";
 import { useAuth, API_BASE } from "../auth";
+import { useTheme } from "../useTheme";
+import { formatDate, formatRelative } from "../dateFormat";
 
 interface ClassDetail {
   id: string;
@@ -38,54 +40,11 @@ interface AvailableLesson {
   assignedClasses: { id: string; name: string }[];
 }
 
-function useTheme() {
-  const [darkMode] = useState(() => {
-    try { return localStorage.getItem("contrapunctus_dark") === "true"; } catch { return false; }
-  });
-  const dk = darkMode;
-  return {
-    dk,
-    bg: dk ? "#1e1e22" : "#e8e4e0",
-    cardBg: dk ? "#2a2a30" : "#fff",
-    cardBorder: dk ? "#3a3a40" : "#e0dcd8",
-    cardShadow: dk ? "0 1px 3px rgba(0,0,0,0.3), 0 4px 12px rgba(0,0,0,0.2)" : "0 1px 3px rgba(0,0,0,0.08), 0 4px 12px rgba(0,0,0,0.05)",
-    text: dk ? "#e0ddd8" : "#1a1a1a",
-    textSub: dk ? "#aaa" : "#555",
-    textMuted: dk ? "#888" : "#888",
-    sidebarBg: dk ? "#222228" : "#f5f2ef",
-    sidebarBorder: dk ? "#3a3a40" : "#e0dcd8",
-    btnBg: dk ? "#e0ddd8" : "#1a1a1a",
-    btnText: dk ? "#1a1a1e" : "#fff",
-    badgeBg: dk ? "#32323a" : "#f0eeeb",
-    successText: dk ? "#6ee7a0" : "#16a34a",
-    dangerText: dk ? "#f87171" : "#dc2626",
-    inputBg: dk ? "#1e1e22" : "#fff",
-  };
-}
-
 const templateLabels: Record<string, string> = {
   harmonize_melody: "Melody Harmonization",
   figured_bass: "Figured Bass",
 };
 
-function formatDate(iso: string): string {
-  return new Date(iso).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
-}
-
-function formatRelative(iso: string | null): string {
-  if (!iso) return "Never";
-  const d = new Date(iso);
-  const now = new Date();
-  const diffMs = now.getTime() - d.getTime();
-  const diffMins = Math.floor(diffMs / 60000);
-  if (diffMins < 1) return "Just now";
-  if (diffMins < 60) return `${diffMins}m ago`;
-  const diffHrs = Math.floor(diffMins / 60);
-  if (diffHrs < 24) return `${diffHrs}h ago`;
-  const diffDays = Math.floor(diffHrs / 24);
-  if (diffDays < 7) return `${diffDays}d ago`;
-  return formatDate(iso);
-}
 
 export function ClassDetailPage() {
   const { classId } = useParams<{ classId: string }>();

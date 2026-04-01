@@ -2,6 +2,8 @@ import { useState, useEffect, useCallback, useRef } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { useAuth, API_BASE } from "../auth";
 import { NoteEditor } from "./staff";
+import { useTheme } from "../useTheme";
+import { TEMPLATE_LABELS, DIFFICULTY_COLORS, NOTE_NAMES } from "../constants";
 
 interface CommunityExercise {
   id: string;
@@ -50,26 +52,12 @@ type Tab = "browse" | "mine" | "create" | "leaderboard";
 
 const SCALE_NAMES = ["major", "minor"];
 const TEMPLATES = ["harmonize_melody", "rn_analysis"];
-const TEMPLATE_LABELS: Record<string, string> = {
-  harmonize_melody: "Harmonize Melody",
-  rn_analysis: "Roman Numeral Analysis",
-};
-const DIFFICULTY_COLORS: Record<string, string> = {
-  beginner: "#16a34a",
-  intermediate: "#d97706",
-  advanced: "#dc2626",
-  unknown: "#888",
-};
-
-const NOTE_NAMES = ["C", "C#/Db", "D", "D#/Eb", "E", "F", "F#/Gb", "G", "G#/Ab", "A", "A#/Bb", "B", "Cb", "B#"];
 
 export function CommunityPage() {
   const { user, token, logout } = useAuth();
   const navigate = useNavigate();
-  const [darkMode] = useState(() => {
-    try { return localStorage.getItem("contrapunctus_dark") === "true"; } catch { return false; }
-  });
-  const dk = darkMode;
+  const theme = useTheme();
+  const dk = theme.dk;
 
   const [tab, setTab] = useState<Tab>("browse");
   const [exercises, setExercises] = useState<CommunityExercise[]>([]);
@@ -108,20 +96,8 @@ export function CommunityPage() {
     setEditorBeats({ ...editorBeatsRef.current, bassBeats: bass });
   }, []);
 
-  const theme = {
-    bg: dk ? "#1e1e22" : "#e8e4e0",
-    cardBg: dk ? "#2a2a30" : "#fff",
-    cardBorder: dk ? "#3a3a40" : "#e0dcd8",
-    cardShadow: dk ? "0 1px 3px rgba(0,0,0,0.3), 0 4px 12px rgba(0,0,0,0.2)" : "0 1px 3px rgba(0,0,0,0.08), 0 4px 12px rgba(0,0,0,0.05)",
-    text: dk ? "#e0ddd8" : "#1a1a1a",
-    textSub: dk ? "#aaa" : "#555",
-    textMuted: dk ? "#888" : "#888",
-    accent: dk ? "#7c9cff" : "#4a6fff",
-    footerBg: dk ? "#222228" : "#f0ede9",
-    footerBorder: dk ? "#3a3a40" : "#e0dcd8",
-    inputBg: dk ? "#1a1a1e" : "#f5f3f0",
-    inputBorder: dk ? "#444" : "#ccc",
-  };
+  const communityInputBg = dk ? "#1a1a1e" : "#f5f3f0";
+  const communityInputBorder = dk ? "#444" : "#ccc";
 
   const headers = { Authorization: `Bearer ${token}`, "Content-Type": "application/json" };
 
@@ -269,8 +245,8 @@ export function CommunityPage() {
     width: "100%",
     padding: "10px 12px",
     fontSize: 14,
-    background: theme.inputBg,
-    border: `1px solid ${theme.inputBorder}`,
+    background: communityInputBg,
+    border: `1px solid ${communityInputBorder}`,
     borderRadius: 8,
     color: theme.text,
     fontFamily: "inherit",
@@ -677,7 +653,7 @@ export function CommunityPage() {
             <textarea
               style={{
                 width: "100%", minHeight: 100, padding: "10px 12px", fontSize: 14,
-                background: theme.inputBg, border: `1px solid ${theme.inputBorder}`,
+                background: communityInputBg, border: `1px solid ${communityInputBorder}`,
                 borderRadius: 8, color: theme.text, fontFamily: "inherit",
                 boxSizing: "border-box", resize: "vertical",
               }}

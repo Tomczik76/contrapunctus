@@ -2,6 +2,7 @@ import { Link } from "react-router-dom";
 import { useAuth } from "../auth";
 import { useState, useEffect } from "react";
 import { fetchLessons, type Lesson } from "../data/lessons";
+import { useTheme } from "../useTheme";
 
 export function LessonList() {
   const { user, logout } = useAuth();
@@ -9,10 +10,8 @@ export function LessonList() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
 
-  const [darkMode] = useState(() => {
-    try { return localStorage.getItem("contrapunctus_dark") === "true"; } catch { return false; }
-  });
-  const dk = darkMode;
+  const theme = useTheme();
+  const dk = theme.dk;
 
   useEffect(() => {
     fetchLessons()
@@ -20,18 +19,6 @@ export function LessonList() {
       .catch((e) => setError(e.message))
       .finally(() => setLoading(false));
   }, []);
-
-  const theme = {
-    bg: dk ? "#1e1e22" : "#e8e4e0",
-    cardBg: dk ? "#2a2a30" : "#fff",
-    cardBorder: dk ? "#3a3a40" : "#e0dcd8",
-    cardShadow: dk ? "0 1px 3px rgba(0,0,0,0.3), 0 4px 12px rgba(0,0,0,0.2)" : "0 1px 3px rgba(0,0,0,0.08), 0 4px 12px rgba(0,0,0,0.05)",
-    text: dk ? "#e0ddd8" : "#1a1a1a",
-    textSub: dk ? "#aaa" : "#555",
-    textMuted: dk ? "#888" : "#888",
-    footerBg: dk ? "#222228" : "#f0ede9",
-    footerBorder: dk ? "#3a3a40" : "#e0dcd8",
-  };
 
   const difficultyColors: Record<string, string> = {
     beginner: dk ? "#6ee7a0" : "#16a34a",

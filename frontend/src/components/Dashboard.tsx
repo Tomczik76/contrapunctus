@@ -1,6 +1,7 @@
 import { Link } from "react-router-dom";
 import { useAuth, API_BASE } from "../auth";
-import { useState, useEffect } from "react";
+import { useEffect, useState } from "react";
+import { useTheme } from "../useTheme";
 
 interface EnrolledClass {
   id: string;
@@ -12,10 +13,8 @@ interface EnrolledClass {
 
 export function Dashboard() {
   const { user, token, logout } = useAuth();
-  const [darkMode] = useState(() => {
-    try { return localStorage.getItem("contrapunctus_dark") === "true"; } catch { return false; }
-  });
-  const dk = darkMode;
+  const theme = useTheme();
+  const dk = theme.dk;
   const [enrolledClasses, setEnrolledClasses] = useState<EnrolledClass[]>([]);
 
   useEffect(() => {
@@ -27,18 +26,6 @@ export function Dashboard() {
       .then(setEnrolledClasses)
       .catch(() => {});
   }, [token]);
-
-  const theme = {
-    bg: dk ? "#1e1e22" : "#e8e4e0",
-    cardBg: dk ? "#2a2a30" : "#fff",
-    cardBorder: dk ? "#3a3a40" : "#e0dcd8",
-    cardShadow: dk ? "0 1px 3px rgba(0,0,0,0.3), 0 4px 12px rgba(0,0,0,0.2)" : "0 1px 3px rgba(0,0,0,0.08), 0 4px 12px rgba(0,0,0,0.05)",
-    text: dk ? "#e0ddd8" : "#1a1a1a",
-    textSub: dk ? "#aaa" : "#555",
-    textMuted: dk ? "#888" : "#888",
-    footerBg: dk ? "#222228" : "#f0ede9",
-    footerBorder: dk ? "#3a3a40" : "#e0dcd8",
-  };
 
   const cardStyle: React.CSSProperties = {
     background: theme.cardBg,

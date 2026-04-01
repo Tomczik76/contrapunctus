@@ -1,6 +1,7 @@
-import { useState, useEffect } from "react";
+import { useEffect, useState } from "react";
 import { useParams, Link, Navigate } from "react-router-dom";
 import { useAuth, API_BASE } from "../auth";
+import { useTheme } from "../useTheme";
 
 interface StudentLesson {
   id: string;
@@ -11,30 +12,6 @@ interface StudentLesson {
   sortOrder: number;
   score: number | null;
   workStatus: string | null; // "draft" | "submitted" | null
-}
-
-function useTheme() {
-  const [darkMode] = useState(() => {
-    try { return localStorage.getItem("contrapunctus_dark") === "true"; } catch { return false; }
-  });
-  const dk = darkMode;
-  return {
-    dk,
-    bg: dk ? "#1e1e22" : "#e8e4e0",
-    cardBg: dk ? "#2a2a30" : "#fff",
-    cardBorder: dk ? "#3a3a40" : "#e0dcd8",
-    cardShadow: dk ? "0 1px 3px rgba(0,0,0,0.3), 0 4px 12px rgba(0,0,0,0.2)" : "0 1px 3px rgba(0,0,0,0.08), 0 4px 12px rgba(0,0,0,0.05)",
-    text: dk ? "#e0ddd8" : "#1a1a1a",
-    textSub: dk ? "#aaa" : "#555",
-    textMuted: dk ? "#888" : "#888",
-    headerBg: dk ? "#222228" : "#f5f2ef",
-    headerBorder: dk ? "#3a3a40" : "#e0dcd8",
-    badgeBg: dk ? "#32323a" : "#f0eeeb",
-    successText: dk ? "#6ee7a0" : "#16a34a",
-    successBg: dk ? "rgba(22,163,74,0.15)" : "rgba(22,163,74,0.08)",
-    warnText: dk ? "#fbbf24" : "#d97706",
-    warnBg: dk ? "rgba(234,179,8,0.15)" : "rgba(234,179,8,0.08)",
-  };
 }
 
 const templateLabels: Record<string, string> = {
