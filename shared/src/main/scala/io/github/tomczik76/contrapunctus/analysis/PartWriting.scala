@@ -112,6 +112,10 @@ object PartWriting:
         for i <- firstSorted.size until numVoices do
           lastKnown(i) = firstSorted.last
 
+      // Track which voices were active in the previous beat
+      val prevActive = Array.fill(numVoices)(false)
+      for i <- 0 until firstSorted.size do prevActive(i) = true
+
       for notes <- beats.tail do
         val sorted = notes.sortBy(-_.midi)
         val realCount = sorted.size
@@ -131,7 +135,29 @@ object PartWriting:
             used(bestIdx) = true
             lastKnown(i) = bestNote
 
-        current.zipWithIndex.foreach { (n, i) => voiceArrays(i) += n }
+        // Fix crossings among continuing voices (active in both previous
+        // and current beat). Without this, nearest-note matching can swap
+        // voices (e.g., soprano grabs an alto note) and mask resolution errors.
+        // New voices entering at a different register are left in place so
+        // they don't displace existing voice assignments.
+        var swapped = true
+        while swapped do
+          swapped = false
+          for idx <- 0 until numVoices - 1 do
+            (current(idx), current(idx + 1)) match
+              case (Some(a), Some(b))
+                  if prevActive(idx) && prevActive(idx + 1) && a.midi < b.midi =>
+                current(idx) = Some(b)
+                current(idx + 1) = Some(a)
+                lastKnown(idx) = b
+                lastKnown(idx + 1) = a
+                swapped = true
+              case _ => ()
+
+        current.zipWithIndex.foreach { (n, i) =>
+          voiceArrays(i) += n
+          prevActive(i) = n.isDefined
+        }
       end for
 
       voiceArrays.toList.map(_.result())

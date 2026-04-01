@@ -511,4 +511,17 @@ class PartWritingSuite extends munit.FunSuite:
     val analyses = flatAnalyses(result)
     assert(hasNoteError(analyses, NoteError.ParallelOctaves))
 
+  test("V7/V → V — chordal 7th moving up is flagged via inferred voices"):
+    // D3-F#3-A3-C4 → G2-G3-B3-D4.
+    // The 7th of D7 (C4, soprano) moves up to D4 instead of resolving down.
+    // Voice inference must assign soprano C4→D4 (not C4→B3 by nearest-match)
+    // so the unresolved chordal 7th is detected.
+    val beat1: Pulse[Note] = Pulse.Atom(C(4), A(3), `F#`(3), D(3))
+    val beat2: Pulse[Note] = Pulse.Atom(D(4), B(3), G(3), G(2))
+    val result = Analysis.analyzeWithPartWriting(
+      NoteType.C, Scale.Major, NonEmptyList.of(beat1, beat2)
+    )
+    val analyses = flatAnalyses(result)
+    assert(hasNoteError(analyses, NoteError.UnresolvedChordal7th))
+
 end PartWritingSuite
