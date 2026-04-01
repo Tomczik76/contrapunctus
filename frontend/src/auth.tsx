@@ -1,6 +1,7 @@
 import { createContext, useContext, useState, useEffect, type ReactNode } from "react";
 
 export const API_BASE = import.meta.env.DEV ? "http://localhost:8080" : "";
+export const GOOGLE_CLIENT_ID = "340815413443-h8odui5dslikfjr7e4h0kd9fh1rcd0jq.apps.googleusercontent.com";
 
 interface User {
   id: string;
@@ -16,6 +17,7 @@ interface AuthState {
   loading: boolean;
   signup: (email: string, displayName: string, password: string, isEducator: boolean) => Promise<string | null>;
   login: (email: string, password: string) => Promise<{ error?: string; user?: User }>;
+  googleLogin: (idToken: string, isEducator: boolean) => Promise<{ error?: string; user?: User }>;
   logout: () => void;
 }
 
@@ -68,6 +70,18 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     return { user: data.user };
   }
 
+  async function googleLogin(idToken: string, isEducator: boolean): Promise<{ error?: string; user?: User }> {
+    const res = await fetch(`${API_BASE}/api/oauth/google`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ idToken, isEducator }),
+    });
+    const data = await res.json();
+    if (!res.ok) return { error: data.error || "Google login failed" };
+    persist(data.user, data.token);
+    return { user: data.user };
+  }
+
   function logout() {
     setUser(null);
     setToken(null);
@@ -75,7 +89,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }
 
   return (
-    <AuthContext value={{ user, token, loading, signup, login, logout }}>
+    <AuthContext value={{ user, token, loading, signup, login, googleLogin, logout }}>
       {children}
     </AuthContext>
   );

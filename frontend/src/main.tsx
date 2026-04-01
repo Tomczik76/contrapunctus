@@ -3,6 +3,8 @@ import { BrowserRouter, Routes, Route, Navigate, Link, useSearchParams } from "r
 import { NoteEditor } from "./components/staff";
 import { AuthProvider, useAuth } from "./auth";
 import { SignupPage, LoginPage } from "./components/AuthPages";
+import { ForgotPasswordPage } from "./components/ForgotPasswordPage";
+import { ResetPasswordPage } from "./components/ResetPasswordPage";
 import { LandingPage } from "./components/LandingPage";
 import { AdminPage } from "./components/AdminPage";
 import { Dashboard } from "./components/Dashboard";
@@ -88,6 +90,8 @@ function App() {
           <Route path="/landing" element={<PublicOnly><LandingPage /></PublicOnly>} />
           <Route path="/signup" element={<PublicOnly><SignupPage /></PublicOnly>} />
           <Route path="/login" element={<PublicOnly><LoginPage /></PublicOnly>} />
+          <Route path="/forgot-password" element={<PublicOnly><ForgotPasswordPage /></PublicOnly>} />
+          <Route path="/reset-password" element={<PublicOnly><ResetPasswordPage /></PublicOnly>} />
           <Route path="/join/:inviteCode" element={<JoinPage />} />
           <Route path="/admin" element={<AdminPage />} />
           <Route path="/" element={

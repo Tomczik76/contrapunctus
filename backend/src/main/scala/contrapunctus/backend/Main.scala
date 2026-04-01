@@ -20,6 +20,6 @@ object Main extends IOApp:
         Migrations.migrate(cfg.dbJdbcUrl, cfg.dbUser, cfg.dbPassword) *>
         Database
           .pool(cfg.dbHost, cfg.dbPort, cfg.dbName, cfg.dbUser, cfg.dbPassword, cfg.dbSsl)
-          .use(pool => Server.run(pool, cfg.jwtSecret, cfg.adminPassword))
+          .use(pool => Server.run(pool, cfg))
           .as(ExitCode.Success)
     }

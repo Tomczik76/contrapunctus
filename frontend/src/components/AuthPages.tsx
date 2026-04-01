@@ -1,6 +1,19 @@
-import { useState, type FormEvent } from "react";
+import { useState, useEffect, useRef, type FormEvent } from "react";
 import { Link, useNavigate, useSearchParams } from "react-router-dom";
-import { useAuth } from "../auth";
+import { useAuth, GOOGLE_CLIENT_ID } from "../auth";
+
+declare global {
+  interface Window {
+    google?: {
+      accounts: {
+        id: {
+          initialize: (config: any) => void;
+          renderButton: (el: HTMLElement, config: any) => void;
+        };
+      };
+    };
+  }
+}
 
 const inputStyle: React.CSSProperties = {
   width: "100%",
@@ -72,8 +85,60 @@ function AuthShell({ title, children }: { title: string; children: React.ReactNo
   );
 }
 
+function GoogleSignInButton({ onCredential }: { onCredential: (token: string) => void }) {
+  const btnRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!GOOGLE_CLIENT_ID) return;
+
+    function renderBtn() {
+      if (!window.google || !btnRef.current) return;
+      window.google.accounts.id.initialize({
+        client_id: GOOGLE_CLIENT_ID,
+        callback: (response: any) => {
+          if (response.credential) onCredential(response.credential);
+        },
+      });
+      window.google.accounts.id.renderButton(btnRef.current, {
+        theme: "outline",
+        size: "large",
+        width: "336",
+        text: "continue_with",
+      });
+    }
+
+    if (window.google) {
+      renderBtn();
+    } else {
+      const script = document.createElement("script");
+      script.src = "https://accounts.google.com/gsi/client";
+      script.async = true;
+      script.onload = renderBtn;
+      document.head.appendChild(script);
+    }
+  }, [onCredential]);
+
+  if (!GOOGLE_CLIENT_ID) return null;
+
+  return (
+    <div style={{ display: "flex", justifyContent: "center" }}>
+      <div ref={btnRef} />
+    </div>
+  );
+}
+
+function Divider() {
+  return (
+    <div style={{ display: "flex", alignItems: "center", gap: 12, margin: "20px 0" }}>
+      <div style={{ flex: 1, height: 1, background: "#ddd" }} />
+      <span style={{ fontSize: 13, color: "#999" }}>or</span>
+      <div style={{ flex: 1, height: 1, background: "#ddd" }} />
+    </div>
+  );
+}
+
 export function SignupPage() {
-  const { signup } = useAuth();
+  const { signup, googleLogin } = useAuth();
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const redirect = searchParams.get("redirect");
@@ -107,6 +172,13 @@ export function SignupPage() {
     const err = await signup(email, displayName, password, role === "educator");
     setSubmitting(false);
     if (err) setError(err);
+    else navigate(redirect || (role === "educator" ? "/educator" : "/"));
+  }
+
+  async function handleGoogleCredential(idToken: string) {
+    setError(null);
+    const result = await googleLogin(idToken, role === "educator");
+    if (result.error) setError(result.error);
     else navigate(redirect || (role === "educator" ? "/educator" : "/"));
   }
 
@@ -232,6 +304,8 @@ export function SignupPage() {
           &larr; Change account type
         </button>
       </div>
+      <GoogleSignInButton onCredential={handleGoogleCredential} />
+      <Divider />
       <form onSubmit={handleSubmit}>
         {error && <div style={errorStyle}>{error}</div>}
         <div style={{ marginBottom: 16 }}>
@@ -294,7 +368,7 @@ export function SignupPage() {
 }
 
 export function LoginPage() {
-  const { login } = useAuth();
+  const { login, googleLogin } = useAuth();
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const redirect = searchParams.get("redirect");
@@ -313,8 +387,17 @@ export function LoginPage() {
     else navigate(redirect || (result.user?.isEducator ? "/educator" : "/"));
   }
 
+  async function handleGoogleCredential(idToken: string) {
+    setError(null);
+    const result = await googleLogin(idToken, false);
+    if (result.error) setError(result.error);
+    else navigate(redirect || (result.user?.isEducator ? "/educator" : "/"));
+  }
+
   return (
     <AuthShell title="Sign In">
+      <GoogleSignInButton onCredential={handleGoogleCredential} />
+      <Divider />
       <form onSubmit={handleSubmit}>
         {error && <div style={errorStyle}>{error}</div>}
         <div style={{ marginBottom: 16 }}>
@@ -336,6 +419,11 @@ export function LoginPage() {
             value={password}
             onChange={(e) => setPassword(e.target.value)}
           />
+          <div style={{ textAlign: "right", marginTop: 6 }}>
+            <Link to="/forgot-password" style={{ fontSize: 13, color: "#888", textDecoration: "underline", textUnderlineOffset: 2 }}>
+              Forgot password?
+            </Link>
+          </div>
         </div>
         <button style={buttonStyle} type="submit" disabled={submitting}>
           {submitting ? "Signing in..." : "Sign In"}

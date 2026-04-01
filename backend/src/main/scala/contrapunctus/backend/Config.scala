@@ -13,5 +13,9 @@ case class AppConfig(
   adminPassword:   String = "admin",
   dbSsl:           Boolean = true,
   dbAdminUser:     String = "yield",
-  dbAdminPassword: String = "yield"
+  dbAdminPassword: String = "yield",
+  googleClientId:  String = "",
+  sesRegion:       String = "us-west-2",
+  fromEmail:       String = "noreply@contrapunctus.app",
+  frontendBaseUrl: String = "https://www.contrapunctus.app"
 ) derives ConfigReader

@@ -35,8 +35,12 @@ object TestApp:
     val pointsService         = PointsService.make(pool)
     val exerciseService       = ExerciseService.make(pool, pointsService)
 
+    val emailService          = EmailService.noOp
+    val resetService          = PasswordResetService.make(pool, emailService)
+
     val apiRoutes = SignupRoutes.routes(userService)
       <+> LoginRoutes.routes(userService)
+      <+> PasswordResetRoutes.routes(resetService)
       <+> BugReportRoutes.routes(bugReportService, jwtSecret)
       <+> FeatureRequestRoutes.routes(featureRequestService, jwtSecret)
       <+> CorrectionRoutes.routes(correctionService, jwtSecret)

@@ -41,7 +41,7 @@ object UserService:
           session
             .option(Users.findByEmail)(input.email)
             .map {
-              case Some((user, hash)) if AuthService.checkPassword(input.password, hash) =>
+              case Some((user, Some(hash))) if AuthService.checkPassword(input.password, hash) =>
                 val token = AuthService.createToken(user.id, jwtSecret)
                 Right((user, token))
               case _ =>

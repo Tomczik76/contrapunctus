@@ -91,6 +91,8 @@ lazy val backend = (project in file("backend"))
       "org.mindrot"    %  "jbcrypt"              % BCryptVersion,
       "com.auth0"      %  "java-jwt"             % JwtVersion,
       "com.github.pureconfig" %% "pureconfig-core" % PureConfigVersion,
+      "org.http4s"     %% "http4s-ember-client" % Http4sVersion,
+      "software.amazon.awssdk" % "ses"           % "2.31.1",
     ),
     testFrameworks += new TestFramework("munit.Framework"),
     assembly / mainClass := Some("contrapunctus.backend.Main"),

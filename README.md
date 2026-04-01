@@ -1,6 +1,6 @@
 # Contrapunctus
 
-A music theory education platform for practicing four-part (SATB) harmonization and roman numeral analysis. Students complete lessons where they harmonize given melodies or realize figured bass, and the app checks their work for part-writing errors and correct roman numeral labels.
+A music theory education platform for practicing four-part (SATB) harmonization and roman numeral analysis. Students complete lessons where they harmonize given melodies or realize figured bass, and the app checks their work for part-writing errors and correct roman numeral labels. Educators can create classes, author custom lessons, and grade student submissions.
 
 ## Tech Stack
 
@@ -8,7 +8,9 @@ A music theory education platform for practicing four-part (SATB) harmonization 
 - **Backend**: Scala 3, http4s (HTTP server), Circe (JSON), Skunk (PostgreSQL), Flyway (migrations)
 - **Database**: PostgreSQL (via Podman/Docker Compose)
 - **Shared**: Scala.js cross-compiled core module (cats, droste)
-- **Auth**: JWT-based (jbcrypt for password hashing, java-jwt for tokens)
+- **Auth**: JWT-based (jbcrypt for password hashing, java-jwt for tokens), Google OAuth (GSI)
+- **Email**: AWS SES (password reset emails)
+- **Infra**: AWS ECS Fargate, S3 + CloudFront, RDS PostgreSQL
 
 ## Project Structure
 
@@ -17,17 +19,28 @@ contrapunctus/
 ├── frontend/                   # React SPA
 │   └── src/
 │       ├── main.tsx            # App entry, routes, ProtectedRoute/PublicOnly wrappers
-│       ├── auth.tsx            # AuthProvider context, JWT auth, API_BASE constant
+│       ├── auth.tsx            # AuthProvider context, JWT auth, Google OAuth, API_BASE constant
 │       ├── data/
 │       │   └── lessons.ts      # Lesson type definition, fetchLessons/fetchLesson API calls
 │       └── components/
 │           ├── staff/          # Music notation editor (see below)
 │           ├── AdminPage.tsx   # Lesson CRUD admin interface
-│           ├── LessonPage.tsx  # Student lesson view with checking/grading
-│           ├── LessonList.tsx  # Lesson browser
-│           ├── Dashboard.tsx   # User home page
-│           ├── LandingPage.tsx # Public landing page
-│           └── AuthPages.tsx   # Login/Signup forms
+│           ├── AuthPages.tsx   # Login/Signup forms with Google Sign-In
+│           ├── ForgotPasswordPage.tsx  # Forgot password email form
+│           ├── ResetPasswordPage.tsx   # Password reset form (token from email)
+│           ├── Dashboard.tsx           # User home page
+│           ├── LandingPage.tsx         # Public landing page
+│           ├── LessonPage.tsx          # Student lesson view with checking/grading
+│           ├── LessonList.tsx          # Lesson browser
+│           ├── CommunityPage.tsx       # Community exercises browser and creation
+│           ├── CommunityExercisePage.tsx # Solve community exercises
+│           ├── EducatorDashboard.tsx    # Educator classes and lessons management
+│           ├── EducatorLessonEditor.tsx # Educator lesson authoring
+│           ├── EducatorGradePage.tsx    # Grade student submissions
+│           ├── ClassDetailPage.tsx      # Educator class detail (students, assignments)
+│           ├── StudentClassPage.tsx     # Student view of an enrolled class
+│           ├── ClassLessonPage.tsx      # Student working on a class assignment
+│           └── JoinPage.tsx            # Join a class via invite link
 ├── backend/
 │   └── src/main/scala/contrapunctus/backend/
 │       ├── Main.scala          # Entry point
@@ -41,7 +54,10 @@ contrapunctus/
 ├── build.sbt                   # sbt build with backend + cross-compiled core
 ├── dev.sh                      # Dev script: starts Postgres, builds Scala.js, runs backend + frontend
 ├── dev.conf                    # Local dev configuration
-└── docker-compose.yml          # PostgreSQL container
+├── docker-compose.yml          # PostgreSQL container
+└── scripts/
+    ├── deploy-backend.sh       # Build Docker image, push to ECR, update ECS
+    └── deploy-frontend.sh      # Build Vite, sync to S3, invalidate CloudFront
 ```
 
 ## The `staff/` Module
@@ -112,6 +128,12 @@ Migrations live in `backend/src/main/resources/db/migration/` and are run by Fly
 - `V4` — roadmap votes
 - `V5` — lessons table (core fields + soprano_beats JSONB)
 - `V6` — adds bass_beats and figured_bass JSONB columns to lessons
+- `V7` — educator feature: is_educator flag, classes, enrollments, educator_lessons, class_lesson_assignments, student_lesson_attempts
+- `V8` — adds sort_order to class_lesson_assignments
+- `V9` — student_lesson_work (single save/submit model replacing multi-attempt)
+- `V10` — analysis_corrections and correction_votes
+- `V11` — community exercises, exercise_attempts, exercise_votes, point_events, user points/streaks/ranks
+- `V12` — OAuth support: nullable password_hash, password_reset_tokens, auth_providers
 
 ## Development
 
@@ -128,8 +150,22 @@ Requires: sbt, Node.js/npm, Podman (or Docker with compose).
 | `/landing` | LandingPage | Public only |
 | `/signup` | SignupPage | Public only |
 | `/login` | LoginPage | Public only |
+| `/forgot-password` | ForgotPasswordPage | Public only |
+| `/reset-password` | ResetPasswordPage | Public only |
 | `/` | Dashboard | Protected |
 | `/editor` | NoteEditor (sandbox) | Protected |
 | `/lessons` | LessonList | Protected |
 | `/lessons/:id` | LessonPage | Protected |
-| `/admin` | AdminPage | None (no ProtectedRoute wrapper) |
+| `/community` | CommunityPage | Protected |
+| `/community/:id` | CommunityExercisePage | Protected |
+| `/classes/:classId` | StudentClassPage | Protected |
+| `/classes/:classId/lessons/:lessonId` | ClassLessonPage | Protected |
+| `/educator` | EducatorDashboard (classes) | Protected |
+| `/educator/classes` | EducatorDashboard (classes) | Protected |
+| `/educator/classes/:classId` | ClassDetailPage | Protected |
+| `/educator/lessons` | EducatorDashboard (lessons) | Protected |
+| `/educator/lessons/new` | EducatorLessonEditor | Protected |
+| `/educator/lessons/:lessonId/edit` | EducatorLessonEditor | Protected |
+| `/educator/classes/:classId/students/:studentId/lessons/:lessonId/grade` | EducatorGradePage | Protected |
+| `/join/:inviteCode` | JoinPage | None |
+| `/admin` | AdminPage | None |
