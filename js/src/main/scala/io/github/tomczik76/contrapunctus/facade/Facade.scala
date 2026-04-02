@@ -5,7 +5,7 @@ import scala.scalajs.js.annotation.*
 import scala.scalajs.js.JSConverters.*
 import cats.data.NonEmptyList
 import io.github.tomczik76.contrapunctus.core.{Note, NoteType, Scale}
-import io.github.tomczik76.contrapunctus.analysis.{Analysis, AnalyzedNote, ChordError, NonChordToneType, NoteError}
+import io.github.tomczik76.contrapunctus.analysis.{Analysis, AnalyzedNote, ChordError, NonChordToneType, NoteError, SpeciesCounterpoint}
 import io.github.tomczik76.contrapunctus.analysis.AnalyzedChord
 import io.github.tomczik76.contrapunctus.harmony.{AddElevenths, AddNinths, AlteredChords, Elevenths, Inversion, Ninths, Sevenths, Thirteenths, Triads}
 import io.github.tomczik76.contrapunctus.rhythm.{Measure, Pulse, TimeSignature}
@@ -185,7 +185,15 @@ private object Helpers:
     case NoteError.SpacingError(_)        => "Sp"
     case NoteError.DoubledLeadingTone     => "2LT"
     case NoteError.UnresolvedLeadingTone  => "LT↑"
-    case NoteError.UnresolvedChordal7th   => "7↓"
+    case NoteError.UnresolvedChordal7th          => "7↓"
+    case NoteError.DissonantInterval              => "Diss"
+    case NoteError.ImperfectConsonanceRequired    => "!PC"
+    case NoteError.ForbiddenMelodicInterval       => "Mel"
+    case NoteError.RepeatedPitch                  => "Rep"
+    case NoteError.UnisonNotAtEndpoints           => "U!"
+    case NoteError.BadPenultimate                 => "Pen"
+    case NoteError.CfNotOnTonic                   => "CF≠1"
+    case NoteError.CpLastNotUnison                => "≠8"
 
   def chordErrorLabel(err: ChordError): String = err match
     case ChordError.RootNotDoubledInRootPosition       => "2R"
@@ -257,6 +265,7 @@ object Contrapunctus:
       case "lydian"        => Scale.Lydian
       case "mixolydian"    => Scale.Mixolydian
       case "locrian"       => Scale.Locrian
+      case "none"          => Scale.Major
       case other =>
         throw js.JavaScriptException(js.Error(s"Unknown scale: $other"))
 
@@ -337,6 +346,55 @@ object Contrapunctus:
       analysis.errors.map(chordErrorLabel)
 
     buildRenderData(measures, Some(romanNumeralOptions), Some(chordNameOptions), Some(nctPerBeat), Some(noteErrorsPerBeat), Some(chordErrorsPerBeat))
+
+  @JSExport
+  def checkSpeciesCounterpoint(
+      cfMeasures: js.Array[JsMeasure],
+      cpMeasures: js.Array[JsMeasure],
+      tonicLetter: String,
+      tonicAccidental: String,
+      scaleName: String,
+      cfIsLower: Boolean
+  ): js.Array[js.Dynamic] =
+    val tonicKey = tonicLetter + tonicAccidental
+    val tonic = noteTypeLookup.getOrElse(
+      tonicKey,
+      throw js.JavaScriptException(js.Error(s"Unknown tonic: $tonicKey"))
+    )
+    val scale = scaleName match
+      case "major"         => Scale.Major
+      case "minor"         => Scale.NaturalMinor
+      case "harmonicMinor" => Scale.HarmonicMinor
+      case "dorian"        => Scale.Dorian
+      case "phrygian"      => Scale.Phrygian
+      case "lydian"        => Scale.Lydian
+      case "mixolydian"    => Scale.Mixolydian
+      case "locrian"       => Scale.Locrian
+      case "none"          => Scale.Major // no key signature; scale value unused for species CP
+      case other =>
+        throw js.JavaScriptException(js.Error(s"Unknown scale: $other"))
+
+    val cfNotes = extractNotesFromMeasures(cfMeasures)
+    val cpNotes = extractNotesFromMeasures(cpMeasures)
+
+    val errors = SpeciesCounterpoint.check(cfNotes, cpNotes, tonic, scale, cfIsLower)
+    errors.map { case (beatIndex, note, err) =>
+      js.Dynamic.literal(
+        beatIndex = beatIndex,
+        midi = note.midi,
+        error = noteErrorLabel(err)
+      )
+    }.toJSArray
+
+  /** Extract a flat list of notes from measures (one note per beat). */
+  private def extractNotesFromMeasures(
+      jsMeasures: js.Array[JsMeasure]
+  ): List[Note] =
+    jsMeasures.toList.flatMap: jm =>
+      jm.beats.toList.flatMap: jb =>
+        val notes = jb.notes
+        if notes.isEmpty then Nil
+        else List(parseNote(notes(0)))
 
   private def parseMeasures(
       jsMeasures: js.Array[JsMeasure]
@@ -436,12 +494,15 @@ object Contrapunctus:
       val leaves = extractLeaves(m.pulses)
       val jsBeats: js.Array[JsBeatRender] = leaves.map:
         case (maybeNotes, (durNum, durDen)) =>
-          val rns = romanNumerals.flatMap(_.lift(rnIndex)).getOrElse(List.empty)
-          val cns = chordNames.flatMap(_.lift(rnIndex)).getOrElse(List.empty)
-          val beatNcts = nctData.flatMap(_.lift(rnIndex)).getOrElse(Map.empty)
-          val beatNoteErrors = noteErrorData.flatMap(_.lift(rnIndex)).getOrElse(Map.empty)
-          val beatChordErrors = chordErrorData.flatMap(_.lift(rnIndex)).getOrElse(List.empty)
-          rnIndex += 1
+          // Only consume from analysis arrays for non-rest beats, since
+          // Pulse.flatten (used to build the analysis data) drops rests.
+          val isNote = maybeNotes.isDefined
+          val rns = if isNote then romanNumerals.flatMap(_.lift(rnIndex)).getOrElse(List.empty) else List.empty
+          val cns = if isNote then chordNames.flatMap(_.lift(rnIndex)).getOrElse(List.empty) else List.empty
+          val beatNcts = if isNote then nctData.flatMap(_.lift(rnIndex)).getOrElse(Map.empty) else Map.empty
+          val beatNoteErrors = if isNote then noteErrorData.flatMap(_.lift(rnIndex)).getOrElse(Map.empty) else Map.empty
+          val beatChordErrors = if isNote then chordErrorData.flatMap(_.lift(rnIndex)).getOrElse(List.empty) else List.empty
+          if isNote then rnIndex += 1
           val (noteRenders, isRest) = maybeNotes match
             case None => (js.Array[JsNoteRender](), true)
             case Some(notes) =>

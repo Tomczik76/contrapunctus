@@ -132,7 +132,7 @@ function Divider() {
   return (
     <div style={{ display: "flex", alignItems: "center", gap: 12, margin: "20px 0" }}>
       <div style={{ flex: 1, height: 1, background: "#ddd" }} />
-      <span style={{ fontSize: 13, color: "#999" }}>or</span>
+      <span style={{ fontSize: 13, color: "#666" }}>or</span>
       <div style={{ flex: 1, height: 1, background: "#ddd" }} />
     </div>
   );
@@ -216,7 +216,7 @@ export function SignupPage() {
         }}>
           Contrapunctus
         </h1>
-        <p style={{ fontSize: 14, color: "#888", margin: "0 0 40px", textAlign: "center" }}>
+        <p style={{ fontSize: 14, color: "#666", margin: "0 0 40px", textAlign: "center" }}>
           How will you be using Contrapunctus?
         </p>
         <div style={{
@@ -282,7 +282,7 @@ export function SignupPage() {
             background: "none",
             border: "none",
             fontSize: 13,
-            color: "#888",
+            color: "#666",
             cursor: "pointer",
             fontFamily: "inherit",
             textDecoration: "underline",
@@ -408,7 +408,7 @@ export function LoginPage() {
             onChange={(e) => setPassword(e.target.value)}
           />
           <div style={{ textAlign: "right", marginTop: 6 }}>
-            <Link to="/forgot-password" style={{ fontSize: 13, color: "#888", textDecoration: "underline", textUnderlineOffset: 2 }}>
+            <Link to="/forgot-password" style={{ fontSize: 13, color: "#666", textDecoration: "underline", textUnderlineOffset: 2 }}>
               Forgot password?
             </Link>
           </div>

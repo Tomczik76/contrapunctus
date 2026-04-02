@@ -2,6 +2,7 @@ import { useState, useRef, useCallback, useMemo, useEffect } from "react";
 import type { RenderData, NoteRender, BeatRender, Staff as StaffDef, ContrapunctusApi } from "../../contrapunctus";
 import { Contrapunctus } from "contrapunctus";
 import { useAuth, API_BASE } from "../../auth";
+import { useTheme as useAppTheme } from "../../useTheme";
 import type * as ToneNs from "tone";
 
 import {
@@ -71,7 +72,7 @@ function TsDigit({ digit, x, y }: { digit: number; x: number; y: number }) {
 }
 
 
-export function NoteEditor({ header, lessonConfig, onTrebleBeatsChanged, onBassBeatsChanged, figuredBassValues, onFiguredBassChanged, trebleOnly, initialTonicIdx, initialScaleName, initialTsTop, initialTsBottom, initialTrebleBeats, initialBassBeats, readOnly }: NoteEditorProps) {
+export function NoteEditor({ header, subheader, lessonConfig, onTrebleBeatsChanged, onBassBeatsChanged, figuredBassValues, onFiguredBassChanged, trebleOnly, initialTonicIdx, initialScaleName, initialTsTop, initialTsBottom, initialTrebleBeats, initialBassBeats, readOnly }: NoteEditorProps) {
   const embedded = !!(onTrebleBeatsChanged || onBassBeatsChanged);
   const { token } = useAuth();
   // ── LocalStorage persistence ──────────────────────────────────────
@@ -94,7 +95,11 @@ export function NoteEditor({ header, lessonConfig, onTrebleBeatsChanged, onBassB
 
   const saved = useRef(lessonConfig || onTrebleBeatsChanged || onBassBeatsChanged ? null : loadSaved());
 
-  const [selectedDuration, setSelectedDuration] = useState<Duration>("quarter");
+  const [selectedDuration, setSelectedDuration] = useState<Duration>(lessonConfig?.forceDuration ?? "quarter");
+  // Keep duration in sync when forceDuration is set (e.g. after remount or config change)
+  useEffect(() => {
+    if (lessonConfig?.forceDuration) setSelectedDuration(lessonConfig.forceDuration);
+  }, [lessonConfig?.forceDuration]);
   const [selectedAccidental, setSelectedAccidental] = useState<Accidental>("");
   const [dottedMode, setDottedMode] = useState(false);
   const [deleteMode, setDeleteMode] = useState(false);
@@ -189,13 +194,16 @@ export function NoteEditor({ header, lessonConfig, onTrebleBeatsChanged, onBassB
   }, []);
   const [toolbarExpanded, setToolbarExpanded] = useState(() => typeof window !== "undefined" && window.innerWidth >= 700);
 
-  // Auto-collapse toolbar when screen is short (landscape mobile)
+  // Auto-collapse toolbar when screen is short (landscape mobile) — but not for species counterpoint
   useEffect(() => {
-    if (isShortScreen) setToolbarExpanded(false);
-  }, [isShortScreen]);
-  const [darkMode, setDarkMode] = useState(() => {
-    try { return localStorage.getItem("contrapunctus_dark") === "true"; } catch { return false; }
-  });
+    if (isShortScreen && !lessonConfig?.forceDuration) setToolbarExpanded(false);
+  }, [isShortScreen, lessonConfig?.forceDuration]);
+  // Force toolbar expanded for species counterpoint (no collapse allowed)
+  useEffect(() => {
+    if (lessonConfig?.forceDuration) setToolbarExpanded(true);
+  }, [lessonConfig?.forceDuration]);
+  const appTheme = useAppTheme();
+  const darkMode = appTheme.dk;
 
   const [hoverDp, setHoverDp] = useState<number | null>(null);
   const [hoverStaff, setHoverStaff] = useState<"treble" | "bass" | null>(null);
@@ -464,6 +472,80 @@ export function NoteEditor({ header, lessonConfig, onTrebleBeatsChanged, onBassB
         return C.measure(tsTop, tsBottom, jBeats);
       });
       if (jMeasures.length === 0) return { romanNumerals: [], chordNames: [], nctMaps: [], noteErrorMaps: [], chordErrors: [] };
+
+      // Species counterpoint: use dedicated checker instead of full harmonic analysis
+      if (lessonConfig?.template === "species_counterpoint") {
+        const cfIsLower = !!(lessonConfig.lockedBassBeats && lessonConfig.lockedBassBeats.length > 0);
+        const lockedBeats = cfIsLower ? lessonConfig.lockedBassBeats! : lessonConfig.lockedTrebleBeats;
+        // Collect locked (CF) note dps for filtering
+        const lockedDps: Set<string>[] = lockedBeats.map(b =>
+          new Set(b.notes.map(n => `${n.dp}:${n.accidental}`))
+        );
+
+        const toJsNote = (n: PlacedNote) => {
+          const lIdx = ((n.dp % 7) + 7) % 7;
+          const oct = Math.floor(n.dp / 7);
+          return C.note(LETTERS[lIdx], effectiveAccidental(n.accidental, n.dp, keySig), oct);
+        };
+
+        // Build CF and CP note lists per time point from all sounding notes
+        const cfNotes: ReturnType<typeof C.beat>[] = [];
+        const cpNotes: ReturnType<typeof C.beat>[] = [];
+        for (let i = 0; i < allTimePoints.length; i++) {
+          const t = allTimePoints[i];
+          const trebleNotes = soundingNotes(paddedTrebleBeats, trebleTimes, t);
+          const bassNotes = soundingNotes(paddedBassBeats, bassTimes, t);
+          const allNotes: PlacedNote[] = [...trebleNotes];
+          for (const bn of bassNotes) {
+            if (!allNotes.some(n => n.dp === bn.dp && n.accidental === bn.accidental)) {
+              allNotes.push(bn);
+            }
+          }
+          const locked = lockedDps[i] || new Set();
+          const cf: PlacedNote[] = [];
+          const cp: PlacedNote[] = [];
+          for (const n of allNotes) {
+            if (locked.has(`${n.dp}:${n.accidental}`)) cf.push(n);
+            else cp.push(n);
+          }
+          cfNotes.push(cf.length > 0 ? C.beat(cf.map(toJsNote)) : C.rest());
+          cpNotes.push(cp.length > 0 ? C.beat(cp.map(toJsNote)) : C.rest());
+        }
+
+        // Group into measures
+        const groupIntoMeasures = (beats: ReturnType<typeof C.beat>[]) => {
+          const meas: ReturnType<typeof C.beat>[][] = [];
+          let cur: ReturnType<typeof C.beat>[] = [];
+          for (let i = 0; i < allTimePoints.length; i++) {
+            const t = allTimePoints[i];
+            const mIdx = Math.floor(t / measureCap + 1e-9);
+            if (mIdx >= meas.length + 1 && cur.length > 0) { meas.push(cur); cur = []; }
+            cur.push(beats[i]);
+          }
+          if (cur.length > 0) meas.push(cur);
+          return meas.map(m => C.measure(tsTop, tsBottom, m));
+        };
+
+        const cfMeasures = groupIntoMeasures(cfNotes);
+        const cpMeasures = groupIntoMeasures(cpNotes);
+        if (cfMeasures.length === 0 || cpMeasures.length === 0)
+          return { romanNumerals: [], chordNames: [], nctMaps: [], noteErrorMaps: [], chordErrors: [] };
+        const speciesErrors = C.checkSpeciesCounterpoint(
+          cfMeasures, cpMeasures, tonic.letter, tonic.acc, scaleName, cfIsLower
+        );
+        // Map species errors into noteErrorMaps keyed by beat index
+        const totalBeats = allTimePoints.length;
+        const noteErrorMaps: NoteErrorMap[] = Array.from({ length: totalBeats }, () => ({}));
+        for (const err of speciesErrors) {
+          const map = noteErrorMaps[err.beatIndex];
+          if (map) {
+            if (!map[err.midi]) map[err.midi] = [];
+            if (!map[err.midi].includes(err.error)) map[err.midi].push(err.error);
+          }
+        }
+        return { romanNumerals: Array.from({ length: totalBeats }, () => []), chordNames: Array.from({ length: totalBeats }, () => []), nctMaps: Array.from({ length: totalBeats }, () => ({})), noteErrorMaps, chordErrors: Array.from({ length: totalBeats }, () => []) };
+      }
+
       const data = C.renderWithAnalysis(jMeasures, tonic.letter, tonic.acc, scaleName);
       const romanNumerals = data.measures.flatMap((m: any) => m.beats.map((b: any) => b.romanNumerals as string[]));
       const nctMaps: NctMap[] = data.measures.flatMap((m: any) =>
@@ -495,7 +577,7 @@ export function NoteEditor({ header, lessonConfig, onTrebleBeatsChanged, onBassB
       console.error("Analysis error:", e);
       return { romanNumerals: [], chordNames: [], nctMaps: [], noteErrorMaps: [], chordErrors: [] };
     }
-  }, [paddedTrebleBeats, paddedBassBeats, trebleTimes, bassTimes, allTimePoints, tonicIdx, scaleName, tsTop, tsBottom, keySig]);
+  }, [paddedTrebleBeats, paddedBassBeats, trebleTimes, bassTimes, allTimePoints, tonicIdx, scaleName, tsTop, tsBottom, keySig, lessonConfig]);
 
   const { romanNumerals, chordNames, nctMaps, noteErrorMaps, chordErrors } = analysisData;
 
@@ -536,6 +618,9 @@ export function NoteEditor({ header, lessonConfig, onTrebleBeatsChanged, onBassB
     "2LT": "Doubled Leading Tone", "LT\u2191": "Unresolved Leading Tone",
     "7\u2193": "Unresolved Chordal 7th", "2R": "Root Not Doubled",
     "2\u00D75": "Fifth Not Doubled",
+    "Diss": "Dissonant Interval", "!PC": "Imperfect Consonance (Perfect Required)",
+    "Mel": "Forbidden Melodic Interval", "Rep": "Repeated Pitch",
+    "U!": "Unison Not at Endpoints", "Pen": "Bad Penultimate Approach",
   };
   const nctTooltips: Record<string, string> = {
     "PT": "Passing Tone", "NT": "Neighbor Tone", "APP": "Appoggiatura",
@@ -646,13 +731,7 @@ export function NoteEditor({ header, lessonConfig, onTrebleBeatsChanged, onBassB
   correctionSelectionModeRef.current = correctionSelectionMode;
   const [correctionCategory, setCorrectionCategory] = useState<CorrectionCategory | null>(null);
   const [selectedCorrectionElement, setSelectedCorrectionElement] = useState<SelectedElement | null>(null);
-  const [featureRequestOpen, setFeatureRequestOpen] = useState(false);
-  const [featureRequestDesc, setFeatureRequestDesc] = useState("");
-  const [featureRequestStatus, setFeatureRequestStatus] = useState<"idle" | "sending" | "sent" | "error">("idle");
   const [legendOpen, setLegendOpen] = useState(false);
-  const [roadmapOpen, setRoadmapOpen] = useState(false);
-  const [roadmapVotes, setRoadmapVotes] = useState<Record<string, number>>({});
-  const [roadmapUserVotes, setRoadmapUserVotes] = useState<Set<string>>(new Set());
 
   // ── Playback state ──────────────────────────────────────────────────
   type InstrumentName = "piano" | "epiano" | "organ" | "strings" | "synth";
@@ -1008,63 +1087,6 @@ export function NoteEditor({ header, lessonConfig, onTrebleBeatsChanged, onBassB
     }
   };
 
-  const submitFeatureRequest = async () => {
-    if (!token || !featureRequestDesc.trim()) return;
-    setFeatureRequestStatus("sending");
-    try {
-      const res = await fetch(`${API_BASE}/api/feature-requests`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
-        body: JSON.stringify({ description: featureRequestDesc }),
-      });
-      if (res.ok) {
-        setFeatureRequestStatus("sent");
-        setTimeout(() => { setFeatureRequestOpen(false); setFeatureRequestDesc(""); setFeatureRequestStatus("idle"); }, 1500);
-      } else {
-        setFeatureRequestStatus("error");
-      }
-    } catch {
-      setFeatureRequestStatus("error");
-    }
-  };
-
-  const fetchRoadmapVotes = async () => {
-    if (!token) return;
-    try {
-      const res = await fetch(`${API_BASE}/api/roadmap-votes`, {
-        headers: { Authorization: `Bearer ${token}` },
-      });
-      if (res.ok) {
-        const data = await res.json();
-        setRoadmapVotes(data.counts ?? {});
-        setRoadmapUserVotes(new Set(data.userVotes ?? []));
-      }
-    } catch { /* ignore */ }
-  };
-
-  const toggleRoadmapVote = async (featureKey: string) => {
-    if (!token) return;
-    try {
-      const res = await fetch(`${API_BASE}/api/roadmap-votes/${encodeURIComponent(featureKey)}`, {
-        method: "POST",
-        headers: { Authorization: `Bearer ${token}` },
-      });
-      if (res.ok) {
-        const data = await res.json();
-        setRoadmapUserVotes((prev) => {
-          const next = new Set(prev);
-          if (data.voted) next.add(featureKey);
-          else next.delete(featureKey);
-          return next;
-        });
-        setRoadmapVotes((prev) => ({
-          ...prev,
-          [featureKey]: (prev[featureKey] ?? 0) + (data.voted ? 1 : -1),
-        }));
-      }
-    } catch { /* ignore */ }
-  };
-
   const activeLabels = labelMode === "chord" ? chordNames : romanNumerals;
   const hasRN = activeLabels.some((rn) => rn.length > 0);
 
@@ -1243,8 +1265,8 @@ export function NoteEditor({ header, lessonConfig, onTrebleBeatsChanged, onBassB
 
     if (restMode) {
       // In lesson mode, don't allow resting over locked beats
-      if (lessonConfig && curStaff === "treble") return;
-      if (lessonConfig && curStaff === "bass" && lessonConfig.lockedBassBeats) return;
+      if (lessonConfig && curStaff === "treble" && lessonConfig.lockedTrebleBeats.length > 0) return;
+      if (lessonConfig && curStaff === "bass" && lessonConfig.lockedBassBeats && lessonConfig.lockedBassBeats.length > 0) return;
       setter((prev) => {
         // If clicking a padded rest (beyond raw beats), expand prev to include the measure
         let working = prev;
@@ -1332,8 +1354,8 @@ export function NoteEditor({ header, lessonConfig, onTrebleBeatsChanged, onBassB
         const newNotes = beat.notes.filter((n) => !posMatch(n));
         if (newNotes.length === 0) {
           // In lesson mode, don't allow deleting all notes from a locked beat
-          if (lessonConfig && curStaff === "treble") return prev;
-          if (lessonConfig && curStaff === "bass" && lessonConfig.lockedBassBeats) return prev;
+          if (lessonConfig && curStaff === "treble" && lessonConfig.lockedTrebleBeats.length > 0) return prev;
+          if (lessonConfig && curStaff === "bass" && lessonConfig.lockedBassBeats && lessonConfig.lockedBassBeats.length > 0) return prev;
           const updated = [...prev];
           updated[curBeatIdx] = { notes: [], duration: beat.duration, isRest: true };
           return updated;
@@ -1397,8 +1419,8 @@ export function NoteEditor({ header, lessonConfig, onTrebleBeatsChanged, onBassB
           ];
         }
         // In lesson mode, don't allow duration changes on locked staves
-        if (lessonConfig && curStaff === "treble" && beat.duration !== selectedDuration) return prev;
-        if (lessonConfig && curStaff === "bass" && lessonConfig.lockedBassBeats && beat.duration !== selectedDuration) return prev;
+        if (lessonConfig && curStaff === "treble" && lessonConfig.lockedTrebleBeats.length > 0 && beat.duration !== selectedDuration) return prev;
+        if (lessonConfig && curStaff === "bass" && lessonConfig.lockedBassBeats && lessonConfig.lockedBassBeats.length > 0 && beat.duration !== selectedDuration) return prev;
         // Different duration selected → replace beat with new note at selected duration
         if (beat.duration !== selectedDuration) {
           // Treat like clicking on the rest space: remove this beat and consecutive rests after it,
@@ -1451,9 +1473,17 @@ export function NoteEditor({ header, lessonConfig, onTrebleBeatsChanged, onBassB
           updated[curBeatIdx] = { ...beat, notes: beat.notes.map((n) => posMatch(n) ? hoverNote : n) };
           return updated;
         }
-        // Add note to chord
+        // Add note to chord (or replace for single-note-per-beat templates like species counterpoint).
+        // Species counterpoint: CP can be entered on the same staff as the CF, the opposite
+        // staff, or a mix of both. On a locked staff we preserve the CF note(s) and allow
+        // exactly one CP note alongside them. On an unlocked staff we simply replace.
         const updated = [...working];
-        updated[curBeatIdx] = { ...beat, notes: [...beat.notes, hoverNote] };
+        if (lessonConfig?.template === "species_counterpoint") {
+          const lockedNotes = beat.notes.filter(n => isLockedNote(curStaff, curBeatIdx, n.dp));
+          updated[curBeatIdx] = { ...beat, notes: [...lockedNotes, hoverNote] };
+        } else {
+          updated[curBeatIdx] = { ...beat, notes: [...beat.notes, hoverNote] };
+        }
         return updated;
       }
       // Past the end — start a new measure
@@ -1517,21 +1547,21 @@ export function NoteEditor({ header, lessonConfig, onTrebleBeatsChanged, onBassB
       if (ctrl && key === "z" && e.shiftKey) { e.preventDefault(); handleRedo(); return; }
       if (ctrl && key === "z") { e.preventDefault(); handleUndo(); return; }
 
-      // Duration shortcuts: 1–5
-      if (!ctrl && key === "1") { setSelectedDuration("whole"); return; }
-      if (!ctrl && key === "2") { setSelectedDuration("half"); return; }
-      if (!ctrl && key === "3") { setSelectedDuration("quarter"); return; }
-      if (!ctrl && key === "4") { setSelectedDuration("eighth"); return; }
-      if (!ctrl && key === "5") { setSelectedDuration("sixteenth"); return; }
+      // Duration shortcuts: 1–5 (disabled when forceDuration is set)
+      if (!ctrl && !lessonConfig?.forceDuration && key === "1") { setSelectedDuration("whole"); return; }
+      if (!ctrl && !lessonConfig?.forceDuration && key === "2") { setSelectedDuration("half"); return; }
+      if (!ctrl && !lessonConfig?.forceDuration && key === "3") { setSelectedDuration("quarter"); return; }
+      if (!ctrl && !lessonConfig?.forceDuration && key === "4") { setSelectedDuration("eighth"); return; }
+      if (!ctrl && !lessonConfig?.forceDuration && key === "5") { setSelectedDuration("sixteenth"); return; }
 
       if (key === "r") { setRestMode((r) => !r); setDeleteMode(false); return; }
       if (key === "d" || key === "delete" || key === "backspace") { setDeleteMode((d) => !d); setRestMode(false); return; }
-      if (key === ".") { setDottedMode((d) => !d); return; }
+      if (key === "." && !lessonConfig?.forceDuration) { setDottedMode((d) => !d); return; }
       if (key === " ") { e.preventDefault(); isPlaying ? handlePause() : handlePlay(); return; }
     };
     window.addEventListener("keydown", handler);
     return () => window.removeEventListener("keydown", handler);
-  }, [handleUndo, handleRedo, handlePlay, handlePause, isPlaying]);
+  }, [handleUndo, handleRedo, handlePlay, handlePause, isPlaying, lessonConfig?.forceDuration]);
 
   // ── Touch event handlers for mobile ─────────────────────────────────
   const svgCoordsFromClient = useCallback((clientX: number, clientY: number) => {
@@ -2056,7 +2086,7 @@ export function NoteEditor({ header, lessonConfig, onTrebleBeatsChanged, onBassB
   }, [darkMode]);
 
   return (
-    <div>
+    <div style={{ width: "100%", minWidth: 0, overflow: "hidden" }}>
       {/* Toolbar hover styles */}
       <style>{`
         .cp-toolbar button:hover:not([disabled]):not(.cp-active):not(.cp-active-danger) { opacity: 0.8; }
@@ -2072,7 +2102,7 @@ export function NoteEditor({ header, lessonConfig, onTrebleBeatsChanged, onBassB
       {/* Fixed top bar */}
       <div ref={topBarRef} className="cp-toolbar" style={{
         position: embedded ? "sticky" : "fixed",
-        top: 0,
+        top: embedded ? 0 : 44,
         left: embedded ? undefined : 0,
         right: embedded ? undefined : 0,
         zIndex: 100,
@@ -2081,23 +2111,6 @@ export function NoteEditor({ header, lessonConfig, onTrebleBeatsChanged, onBassB
         padding: "0 16px",
         color: theme.text,
       }}>
-        {/* Title bar — hidden in embedded mode and when screen is short (landscape mobile) */}
-        {!embedded && !isShortScreen && <div style={{
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "center",
-          padding: "6px 0 4px",
-          borderBottom: `1px solid ${dk ? "#3a3a40" : "#e0dcd8"}`,
-        }}>
-          <span style={{
-            fontSize: 16,
-            fontWeight: 700,
-            letterSpacing: -0.5,
-            color: theme.text,
-          }}>
-            Contrapunctus
-          </span>
-        </div>}
         {/* Collapsed: single compact row */}
         {!readOnly && !toolbarExpanded && (
         <div style={{
@@ -2107,8 +2120,8 @@ export function NoteEditor({ header, lessonConfig, onTrebleBeatsChanged, onBassB
           padding: "6px 0",
           gap: (isMobile || isShortScreen) ? 4 : 8,
         }}>
-          {/* Expand toggle — always visible first on mobile/landscape */}
-          {(isMobile || isShortScreen) && (
+          {/* Expand toggle — always visible first on mobile/landscape (hidden when forceDuration locks toolbar open) */}
+          {(isMobile || isShortScreen) && !lessonConfig?.forceDuration && (
             <button
               onClick={() => setToolbarExpanded(true)}
               style={{ ...btnBase, width: 32, height: 32, color: "#888", flexShrink: 0 }}
@@ -2123,13 +2136,13 @@ export function NoteEditor({ header, lessonConfig, onTrebleBeatsChanged, onBassB
           {/* Note values — compact */}
           <div style={groupStyle}>
             {durations.map((key) => (
-              <button key={key} onClick={() => setSelectedDuration(key)}
-                style={btnOn(selectedDuration === key)} title={`${key} (${durationShortcuts[key]})`}>
+              <button key={key} onClick={() => { if (!lessonConfig?.forceDuration) setSelectedDuration(key); }}
+                style={{ ...btnOn(selectedDuration === key), ...(lessonConfig?.forceDuration ? { opacity: selectedDuration === key ? 1 : 0.3, cursor: "default" } : {}) }} title={`${key} (${durationShortcuts[key]})`}>
                 <NoteIcon duration={key} size={24} />
               </button>
             ))}
-            <button onClick={() => setDottedMode((d) => !d)}
-              style={{ ...btnOn(dottedMode), fontSize: 20, fontWeight: 700 }}
+            <button onClick={() => { if (!lessonConfig?.forceDuration) setDottedMode((d) => !d); }}
+              style={{ ...btnOn(dottedMode), fontSize: 20, fontWeight: 700, ...(lessonConfig?.forceDuration ? { opacity: 0.3, cursor: "default" } : {}) }}
               title="Dotted note (.)">
               .
             </button>
@@ -2186,6 +2199,48 @@ export function NoteEditor({ header, lessonConfig, onTrebleBeatsChanged, onBassB
             </button>
           </div>
 
+          {/* Species counterpoint: Errors + Legend in compact toolbar */}
+          {lessonConfig?.template === "species_counterpoint" && (
+            <div style={groupStyle}>
+              <button
+                onClick={() => setShowErrors((v) => { if (!v) setErrorPanelOpen(true); return !v; })}
+                style={textBtnStyle(showErrors)}
+                className={textBtnClass(showErrors)}
+                title="Show counterpoint errors"
+              >
+                Errors
+              </button>
+              {showErrors && (() => {
+                const count = errorSummary.length;
+                const hasIssues = count > 0;
+                const issueColor = hasIssues
+                  ? (dk ? "#fbbf24" : "#d97706")
+                  : (dk ? "#4ade80" : "#16a34a");
+                return hasIssues ? (
+                  <button
+                    onClick={() => { setErrorPanelOpen((v) => !v); setHighlightedBeat(null); }}
+                    style={{ ...textBtnStyle(errorPanelOpen), color: errorPanelOpen ? "#fff" : issueColor, fontSize: 11 }}
+                    className={textBtnClass(errorPanelOpen)}
+                    title="Toggle error summary panel"
+                  >
+                    {count} issue{count !== 1 ? "s" : ""}
+                  </button>
+                ) : (
+                  <span style={{ fontSize: 11, fontWeight: 600, color: issueColor, padding: "0 6px", fontFamily: "-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif" }}>
+                    No issues
+                  </span>
+                );
+              })()}
+              <button
+                onClick={() => setLegendOpen(true)}
+                style={textBtnStyle(false)}
+                title="Show legend for abbreviations"
+              >
+                Legend
+              </button>
+            </div>
+          )}
+
           {/* Zoom — visible on mobile/landscape in collapsed toolbar */}
           {(isMobile || isShortScreen) && (
             <div style={groupStyle}>
@@ -2209,7 +2264,7 @@ export function NoteEditor({ header, lessonConfig, onTrebleBeatsChanged, onBassB
             </span>
           )}
 
-          {/* Note indicator + expand toggle — pushed right (desktop only) */}
+          {/* Note indicator + expand toggle — pushed right (desktop only, hidden when forceDuration) */}
           {!isMobile && !isShortScreen && (
           <div style={{ marginLeft: "auto", display: "flex", alignItems: "center", gap: 8 }}>
             <span style={{ color: theme.textMuted, fontSize: 18, fontFamily: "serif", minWidth: 40, textAlign: "right" }}>
@@ -2220,6 +2275,7 @@ export function NoteEditor({ header, lessonConfig, onTrebleBeatsChanged, onBassB
                 return `${LETTERS[letterIdx]}${acc}${octave}`;
               })() : "\u00A0"}
             </span>
+            {!lessonConfig?.forceDuration && (
             <button
               onClick={() => setToolbarExpanded(true)}
               style={{ ...btnBase, width: 28, height: 28, color: "#888" }}
@@ -2229,6 +2285,7 @@ export function NoteEditor({ header, lessonConfig, onTrebleBeatsChanged, onBassB
                 <path d="M3 5.5 L7 9.5 L11 5.5" />
               </svg>
             </button>
+            )}
           </div>
           )}
         </div>
@@ -2248,13 +2305,13 @@ export function NoteEditor({ header, lessonConfig, onTrebleBeatsChanged, onBassB
           <div style={groupStyle}>
             <span className="cp-group-label" style={groupLabel}>Note</span>
             {durations.map((key) => (
-              <button key={key} onClick={() => setSelectedDuration(key)}
-                style={btnOn(selectedDuration === key)} title={`${key} (${durationShortcuts[key]})`}>
+              <button key={key} onClick={() => { if (!lessonConfig?.forceDuration) setSelectedDuration(key); }}
+                style={{ ...btnOn(selectedDuration === key), ...(lessonConfig?.forceDuration ? { opacity: selectedDuration === key ? 1 : 0.3, cursor: "default" } : {}) }} title={`${key} (${durationShortcuts[key]})`}>
                 <NoteIcon duration={key} size={24} />
               </button>
             ))}
-            <button onClick={() => setDottedMode((d) => !d)}
-              style={{ ...btnOn(dottedMode), fontSize: 20, fontWeight: 700 }}
+            <button onClick={() => { if (!lessonConfig?.forceDuration) setDottedMode((d) => !d); }}
+              style={{ ...btnOn(dottedMode), fontSize: 20, fontWeight: 700, ...(lessonConfig?.forceDuration ? { opacity: 0.3, cursor: "default" } : {}) }}
               title="Dotted note (.)">
               .
             </button>
@@ -2296,9 +2353,10 @@ export function NoteEditor({ header, lessonConfig, onTrebleBeatsChanged, onBassB
             {!lessonConfig && <button onClick={handleClear} style={textBtnStyle(false)} title="Clear all">Clear</button>}
           </div>
 
-          {/* Analysis toggles — hidden in lesson mode */}
-          {!lessonConfig && (<div style={groupStyle}>
+          {/* Analysis toggles — hidden in lesson mode (except species counterpoint) */}
+          {(!lessonConfig || lessonConfig.template === "species_counterpoint") && (<div style={groupStyle}>
             <span className="cp-group-label" style={groupLabel}>Analysis</span>
+            {!lessonConfig && <>
             <button
               onClick={() => setLabelMode((m) => m === "roman" ? "chord" : "roman")}
               style={textBtnStyle(labelMode === "chord")}
@@ -2315,6 +2373,7 @@ export function NoteEditor({ header, lessonConfig, onTrebleBeatsChanged, onBassB
             >
               NCT
             </button>
+            </>}
             <button
               onClick={() => setShowErrors((v) => { if (!v) setErrorPanelOpen(true); return !v; })}
               style={textBtnStyle(showErrors)}
@@ -2361,20 +2420,6 @@ export function NoteEditor({ header, lessonConfig, onTrebleBeatsChanged, onBassB
               title="Report a bug or incorrect analysis"
             >
               Bug
-            </button>
-            <button
-              onClick={() => { setFeatureRequestOpen(true); setFeatureRequestStatus("idle"); }}
-              style={textBtnStyle(false)}
-              title="Request a feature"
-            >
-              Request
-            </button>
-            <button
-              onClick={() => { setRoadmapOpen(true); fetchRoadmapVotes(); }}
-              style={textBtnStyle(false)}
-              title="View roadmap"
-            >
-              Roadmap
             </button>
           </div>
 
@@ -2450,7 +2495,8 @@ export function NoteEditor({ header, lessonConfig, onTrebleBeatsChanged, onBassB
             </select>
           </div>
 
-          {/* Time signature */}
+          {/* Time signature — hidden in embedded mode (controlled by form) */}
+          {!embedded && (
           <div style={groupStyle}>
             <span className="cp-group-label" style={groupLabel}>Time</span>
             <select value={tsTop} onChange={(e) => setTsTop(Number(e.target.value))} style={selectStyle} disabled={!!lessonConfig}>
@@ -2465,8 +2511,10 @@ export function NoteEditor({ header, lessonConfig, onTrebleBeatsChanged, onBassB
               ))}
             </select>
           </div>
+          )}
 
-          {/* Key */}
+          {/* Key — hidden in embedded mode (controlled by form) */}
+          {!embedded && (
           <div style={groupStyle}>
             <span className="cp-group-label" style={groupLabel}>Key</span>
             <select value={tonicIdx} onChange={(e) => {
@@ -2481,6 +2529,7 @@ export function NoteEditor({ header, lessonConfig, onTrebleBeatsChanged, onBassB
                 <option key={t.label} value={i}>{t.label}</option>
               ))}
             </select>
+            {lessonConfig?.template !== "species_counterpoint" && (
             <select value={scaleName} onChange={(e) => {
               const newScale = e.target.value;
               const oldKS = keySig;
@@ -2493,7 +2542,9 @@ export function NoteEditor({ header, lessonConfig, onTrebleBeatsChanged, onBassB
                 <option key={s.value} value={s.value}>{s.label}</option>
               ))}
             </select>
+            )}
           </div>
+          )}
 
           {/* Zoom */}
           <div style={groupStyle}>
@@ -2505,19 +2556,8 @@ export function NoteEditor({ header, lessonConfig, onTrebleBeatsChanged, onBassB
               style={{ ...btnBase, width: 28, height: 28 }} title="Zoom in">+</button>
           </div>
 
-          {/* Dark mode */}
-          <div style={groupStyle}>
-            <button
-              onClick={() => { const v = !darkMode; setDarkMode(v); localStorage.setItem("contrapunctus_dark", String(v)); }}
-              style={{ ...btnBase, width: 28, height: 28 }}
-              className={textBtnClass(darkMode)}
-              title={darkMode ? "Switch to light mode" : "Switch to dark mode"}
-            >
-              {darkMode ? "☀" : "☾"}
-            </button>
-          </div>
-
-          {/* Collapse toggle — pushed right */}
+          {/* Collapse toggle — pushed right (hidden when forceDuration locks toolbar open) */}
+          {!lessonConfig?.forceDuration && (
           <button
             onClick={() => setToolbarExpanded(false)}
             style={{ ...btnBase, width: 28, height: 28, color: "#888", marginLeft: "auto" }}
@@ -2527,6 +2567,7 @@ export function NoteEditor({ header, lessonConfig, onTrebleBeatsChanged, onBassB
               <path d="M3 9.5 L7 5.5 L11 9.5" />
             </svg>
           </button>
+          )}
         </div>
         </>)}
 
@@ -2544,139 +2585,6 @@ export function NoteEditor({ header, lessonConfig, onTrebleBeatsChanged, onBassB
         selectionMode={correctionSelectionMode}
       />
       {/* Feature request modal */}
-      {featureRequestOpen && (
-        <div style={{
-          position: "fixed", top: 0, left: 0, right: 0, bottom: 0,
-          background: "rgba(0,0,0,0.3)", display: "flex", alignItems: "center",
-          justifyContent: "center", zIndex: 1000,
-        }} onClick={() => { if (featureRequestStatus !== "sending") { setFeatureRequestOpen(false); setFeatureRequestStatus("idle"); } }}>
-          <div style={{
-            background: "#fff", borderRadius: 8, padding: 24, width: 400,
-            maxWidth: "90vw", boxShadow: "0 4px 20px rgba(0,0,0,0.15)",
-          }} onClick={(e) => e.stopPropagation()}>
-            <h3 style={{ margin: "0 0 12px", fontSize: 16, fontFamily: "inherit" }}>Request a Feature</h3>
-            <p style={{ margin: "0 0 12px", fontSize: 13, color: "#666" }}>
-              Describe the feature you'd like to see in Contrapunctus.
-            </p>
-            <textarea
-              value={featureRequestDesc}
-              onChange={(e) => setFeatureRequestDesc(e.target.value)}
-              placeholder="Describe the feature..."
-              rows={4}
-              style={{
-                width: "100%", boxSizing: "border-box", padding: 8, fontSize: 13,
-                fontFamily: "inherit", border: "1px solid #ccc", borderRadius: 4,
-                resize: "vertical",
-              }}
-            />
-            <div style={{ display: "flex", gap: 8, marginTop: 12, justifyContent: "flex-end" }}>
-              <button
-                onClick={() => { setFeatureRequestOpen(false); setFeatureRequestStatus("idle"); }}
-                disabled={featureRequestStatus === "sending"}
-                style={{ padding: "6px 16px", fontSize: 13, fontFamily: "inherit", cursor: "pointer", border: "1px solid #ccc", borderRadius: 4, background: "none" }}
-              >
-                Cancel
-              </button>
-              <button
-                onClick={submitFeatureRequest}
-                disabled={featureRequestStatus === "sending" || !featureRequestDesc.trim()}
-                style={{
-                  padding: "6px 16px", fontSize: 13, fontFamily: "inherit", cursor: "pointer",
-                  border: "1px solid #333", borderRadius: 4,
-                  background: featureRequestStatus === "sent" ? "#27ae60" : featureRequestStatus === "error" ? "#c0392b" : "#333",
-                  color: "#fff",
-                }}
-              >
-                {featureRequestStatus === "sending" ? "Sending..." : featureRequestStatus === "sent" ? "Sent!" : featureRequestStatus === "error" ? "Failed - Retry" : "Submit"}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Roadmap modal */}
-      {roadmapOpen && (
-        <div style={{
-          position: "fixed", top: 0, left: 0, right: 0, bottom: 0,
-          background: "rgba(0,0,0,0.3)", display: "flex", alignItems: "center",
-          justifyContent: "center", zIndex: 1000,
-        }} onClick={() => setRoadmapOpen(false)}>
-          <div style={{
-            background: "#fff", borderRadius: 8, padding: 28, width: 680,
-            maxWidth: "90vw", maxHeight: "80vh", overflow: "auto",
-            boxShadow: "0 4px 20px rgba(0,0,0,0.15)",
-          }} onClick={(e) => e.stopPropagation()}>
-            <h3 style={{ margin: "0 0 16px", fontSize: 18, fontFamily: "inherit" }}>Roadmap</h3>
-            {[
-              {
-                key: "lessons",
-                title: "Interactive Lessons",
-                desc: "Guided exercises in harmony and part writing. Analyze chords yourself instead of auto-detection, find part-writing errors in a given score, harmonize a melody or bass line without breaking voice-leading rules, and more.",
-              },
-              {
-                key: "new-project",
-                title: "New Project & Auto Save",
-                desc: "Create, name, and manage multiple projects. Work is automatically saved to the cloud as you compose, with full version history so you never lose progress.",
-              },
-              {
-                key: "export-midi",
-                title: "MIDI Export",
-                desc: "Export your composition as a standard MIDI file for playback in any DAW, notation software, or synthesizer. Supports multi-voice export preserving your exact voicings.",
-              },
-              {
-                key: "counterpoint-analysis",
-                title: "Counterpoint Analysis",
-                desc: "Species counterpoint validation and analysis. Check adherence to first through fifth species rules, identify dissonance treatment patterns, and get feedback on melodic contour and intervallic motion.",
-              },
-              {
-                key: "chord-dictionary",
-                title: "Chord Dictionary & Suggestions",
-                desc: "Browse a comprehensive dictionary of chord types with audio playback. Get context-aware chord suggestions based on the current key, preceding harmony, and common progressions to help guide composition.",
-              },
-              {
-                key: "mode-transforms",
-                title: "Mode Transforms",
-                desc: "Transform your composition between parallel and relative modes — switch from major to minor, Dorian, Mixolydian, and other modes while intelligently adapting chord qualities and melodic intervals.",
-              },
-              {
-                key: "ai-assistant",
-                title: "AI Assistant",
-                desc: "An integrated AI assistant that can analyze your harmonic choices, suggest continuations, explain theoretical concepts in context, and help you explore compositional possibilities.",
-              },
-            ].map((item) => (
-              <div key={item.key} style={{ marginBottom: 16, display: "flex", gap: 12, alignItems: "flex-start" }}>
-                <button
-                  onClick={() => toggleRoadmapVote(item.key)}
-                  disabled={!token}
-                  title={!token ? "Sign in to vote" : roadmapUserVotes.has(item.key) ? "Remove vote" : "Vote for this feature"}
-                  style={{
-                    flexShrink: 0, width: 48, padding: "4px 0", fontSize: 13, fontFamily: "inherit",
-                    cursor: token ? "pointer" : "default", border: "1px solid #ccc", borderRadius: 4,
-                    background: roadmapUserVotes.has(item.key) ? "#333" : "#fff",
-                    color: roadmapUserVotes.has(item.key) ? "#fff" : "#333",
-                    display: "flex", flexDirection: "column", alignItems: "center", lineHeight: 1.2,
-                  }}
-                >
-                  <span style={{ fontSize: 14 }}>{roadmapUserVotes.has(item.key) ? "\u2764\uFE0F" : "\u2661"}</span>
-                  <span>{roadmapVotes[item.key] ?? 0}</span>
-                </button>
-                <div style={{ flex: 1 }}>
-                  <h4 style={{ margin: "0 0 4px", fontSize: 14, fontWeight: 600, color: "#1a1a1a" }}>{item.title}</h4>
-                  <p style={{ margin: 0, fontSize: 13, color: "#555", lineHeight: 1.5 }}>{item.desc}</p>
-                </div>
-              </div>
-            ))}
-            <div style={{ display: "flex", justifyContent: "flex-end", marginTop: 8 }}>
-              <button
-                onClick={() => setRoadmapOpen(false)}
-                style={{ padding: "6px 16px", fontSize: 13, fontFamily: "inherit", cursor: "pointer", border: "1px solid #ccc", borderRadius: 4, background: "none" }}
-              >
-                Close
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
 
       {/* Legend modal */}
       {legendOpen && (
@@ -2707,6 +2615,26 @@ export function NoteEditor({ header, lessonConfig, onTrebleBeatsChanged, onBassB
                   ["7\u2193", "Unresolved Chordal 7th", "The 7th of a chord does not resolve down by step."],
                   ["2R", "Root Not Doubled", "In a root-position chord with doublings, the root is not the doubled note."],
                   ["2\u00D75", "Fifth Not Doubled", "In a second-inversion chord with doublings, the fifth (bass note) is not doubled."],
+                ].map(([code, name, desc]) => (
+                  <tr key={code} style={{ borderBottom: "1px solid #eee" }}>
+                    <td style={{ padding: "4px 12px 4px 0", fontWeight: 700, color: "#e74c3c", whiteSpace: "nowrap", verticalAlign: "top" }}>{code}</td>
+                    <td style={{ padding: "4px 12px 4px 0", fontWeight: 600, color: "#1a1a1a", whiteSpace: "nowrap", verticalAlign: "top" }}>{name}</td>
+                    <td style={{ padding: "4px 0", color: "#555" }}>{desc}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+
+            <h4 style={{ margin: "0 0 8px", fontSize: 14, fontWeight: 600, color: "#1a1a1a" }}>Species Counterpoint</h4>
+            <table style={{ width: "100%", fontSize: 13, lineHeight: 1.6, marginBottom: 20, borderCollapse: "collapse" }}>
+              <tbody>
+                {[
+                  ["Diss", "Dissonant Interval", "The vertical interval between voices is not consonant (must be unison, 3rd, 5th, 6th, or octave)."],
+                  ["!PC", "Imperfect Consonance", "The first or last beat must be a perfect consonance (unison, perfect 5th, or octave)."],
+                  ["Pen", "Bad Penultimate Approach", "The penultimate beat must approach the final correctly (M6\u2192P8 if CF is lower, m3\u2192P1 if CF is upper)."],
+                  ["Rep", "Repeated Pitch", "The same pitch occurs on consecutive beats in the counterpoint voice."],
+                  ["U!", "Unison Not at Endpoints", "Unison between voices is only allowed on the first and last beats."],
+                  ["Mel", "Forbidden Melodic Interval", "The counterpoint voice uses a tritone, augmented 2nd, or a leap larger than an octave."],
                 ].map(([code, name, desc]) => (
                   <tr key={code} style={{ borderBottom: "1px solid #eee" }}>
                     <td style={{ padding: "4px 12px 4px 0", fontWeight: 700, color: "#e74c3c", whiteSpace: "nowrap", verticalAlign: "top" }}>{code}</td>
@@ -2752,10 +2680,75 @@ export function NoteEditor({ header, lessonConfig, onTrebleBeatsChanged, onBassB
         </div>
       )}
 
+      {/* Read-only playback bar (e.g. after submission) */}
+      {readOnly && (
+        <div style={{
+          display: "flex",
+          alignItems: "center",
+          flexWrap: "wrap",
+          padding: "6px 0",
+          gap: 8,
+        }}>
+          <div style={groupStyle}>
+            <span className="cp-group-label" style={groupLabel}>Play</span>
+            <button
+              onClick={isPlaying ? handlePause : handlePlay}
+              style={textBtnStyle(isPlaying)}
+              className={textBtnClass(isPlaying)}
+              title={isPlaying ? "Pause (Space)" : isPaused ? "Resume (Space)" : "Play (Space)"}
+            >
+              {isPlaying ? "\u23F8" : "\u25B6"}
+            </button>
+            <button
+              onClick={handleStop}
+              style={{ ...textBtnStyle(false), opacity: (!isPlaying && !isPaused) ? 0.4 : 1 }}
+              title="Stop"
+              disabled={!isPlaying && !isPaused}
+            >
+              {"\u23F9"}
+            </button>
+            <label style={{ display: "flex", alignItems: "center", gap: 3, fontSize: 13, color: "#5a5a5a" }}>
+              <span style={{ fontSize: 14 }}>{"\u2669"}</span>
+              <span>=</span>
+              <input
+                type="number"
+                min={40}
+                max={240}
+                value={tempo}
+                onChange={(e) => setTempo(Math.max(40, Math.min(240, Number(e.target.value))))}
+                style={{
+                  width: 52,
+                  fontSize: 13,
+                  fontFamily: "inherit",
+                  border: "1px solid #d0ccc8",
+                  borderRadius: 4,
+                  padding: "4px 6px",
+                  textAlign: "center",
+                  background: dk ? "#1e1e24" : "#faf9f7",
+                  color: theme.text,
+                }}
+              />
+            </label>
+            <select
+              value={instrument}
+              onChange={(e) => setInstrument(e.target.value as InstrumentName)}
+              style={selectStyle}
+              title="Instrument"
+            >
+              {INSTRUMENTS.map((inst) => (
+                <option key={inst.value} value={inst.value}>{inst.label}</option>
+              ))}
+            </select>
+          </div>
+        </div>
+      )}
+
       </div>{/* end fixed top bar */}
 
       {/* Spacer for fixed top bar (not needed in embedded/sticky mode) */}
       {!embedded && <div ref={topBarSpacerRef} />}
+
+      {subheader}
 
       {/* Main content: score + optional error panel */}
       <div style={{
@@ -2764,15 +2757,15 @@ export function NoteEditor({ header, lessonConfig, onTrebleBeatsChanged, onBassB
         justifyContent: "center",
         gap: 16,
         padding: isShortScreen ? "4px 4px" : isMobile ? "12px 4px" : "24px 16px",
-        paddingBottom: header ? (isMobile ? 100 : 80) : undefined,
+        paddingBottom: header ? (isMobile ? 40 : 20) : undefined,
         alignItems: "flex-start",
       }}>
 
       {/* Page card */}
       <div style={{
-        maxWidth: 960,
+        maxWidth: embedded ? undefined : 960,
         width: "100%",
-        minWidth: (isMobile || isShortScreen) ? undefined : 960,
+        minWidth: (isMobile || isShortScreen || embedded) ? undefined : 960,
         flex: showErrors && errorPanelOpen ? "1 1 0" : undefined,
         padding: isShortScreen ? "8px 8px 12px" : isMobile ? "16px 8px 24px" : "36px 40px 48px",
         borderRadius: 8,
@@ -3107,7 +3100,7 @@ export function NoteEditor({ header, lessonConfig, onTrebleBeatsChanged, onBassB
               })}
 
               {/* Lesson mode: student RN input fields (hidden when checked — computed labels shown instead) */}
-              {lessonConfig && !lessonConfig.checked && allTimePoints.map((t, i) => {
+              {lessonConfig && !lessonConfig.checked && lessonConfig.template !== "species_counterpoint" && allTimePoints.map((t, i) => {
                 const pos = timeToPos.get(t);
                 if (!pos || pos.systemIdx !== sysIdx) return null;
                 const rx = pos.x;
@@ -3358,8 +3351,8 @@ export function NoteEditor({ header, lessonConfig, onTrebleBeatsChanged, onBassB
         left: isShortScreen ? undefined : 0, right: isShortScreen ? undefined : 0, zIndex: 100,
         background: dk ? "#222228" : "#f0ede9", borderTop: `1px solid ${theme.footerBorder}`, color: theme.text,
       }}>
-        {lessonConfig && !lessonConfig.checked && <RnLegend dark={dk} />}
-        <div style={{ padding: lessonConfig ? "0 24px" : "16px 24px" }}>{header}</div>
+        {lessonConfig && !lessonConfig.checked && lessonConfig.template !== "species_counterpoint" && <RnLegend dark={dk} />}
+        <div style={{ padding: "16px 24px" }}>{header}</div>
       </div>}
     </div>
   );

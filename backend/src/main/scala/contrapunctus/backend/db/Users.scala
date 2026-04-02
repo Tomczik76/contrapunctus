@@ -8,47 +8,50 @@ import contrapunctus.backend.domain.User
 import java.util.UUID
 
 object Users:
+  private val userCols = "id, email, display_name, is_educator, created_at, country, city"
+  private val userCodec = uuid *: text *: text *: bool *: timestamptz *: text.opt *: text.opt
+  private def toUser(t: (UUID, String, String, Boolean, java.time.OffsetDateTime, Option[String], Option[String])) =
+    User(t._1, t._2, t._3, t._4, t._5, t._6, t._7)
+
   val insert: Query[(String, String, String, Boolean), User] =
     sql"""
       INSERT INTO users (email, display_name, password_hash, is_educator)
       VALUES ($text, $text, $text, $bool)
-      RETURNING id, email, display_name, is_educator, created_at
-    """.query(uuid *: text *: text *: bool *: timestamptz)
-      .map { case (id, email, displayName, isEducator, createdAt) =>
-        User(id, email, displayName, isEducator, createdAt)
-      }
+      RETURNING #$userCols
+    """.query(userCodec).map(toUser)
 
   val insertOAuth: Query[(String, String, Boolean), User] =
     sql"""
       INSERT INTO users (email, display_name, password_hash, is_educator)
       VALUES ($text, $text, NULL, $bool)
-      RETURNING id, email, display_name, is_educator, created_at
-    """.query(uuid *: text *: text *: bool *: timestamptz)
-      .map { case (id, email, displayName, isEducator, createdAt) =>
-        User(id, email, displayName, isEducator, createdAt)
-      }
+      RETURNING #$userCols
+    """.query(userCodec).map(toUser)
 
   val findByEmail: Query[String, (User, Option[String])] =
     sql"""
-      SELECT id, email, display_name, is_educator, created_at, password_hash
+      SELECT #$userCols, password_hash
       FROM users
       WHERE email = $text
-    """.query(uuid *: text *: text *: bool *: timestamptz *: text.opt)
-      .map { case (id, email, displayName, isEducator, createdAt, hash) =>
-        (User(id, email, displayName, isEducator, createdAt), hash)
+    """.query(uuid *: text *: text *: bool *: timestamptz *: text.opt *: text.opt *: text.opt)
+      .map { case (id, email, displayName, isEducator, createdAt, country, city, hash) =>
+        (User(id, email, displayName, isEducator, createdAt, country, city), hash)
       }
 
   val findById: Query[UUID, User] =
     sql"""
-      SELECT id, email, display_name, is_educator, created_at
+      SELECT #$userCols
       FROM users
       WHERE id = $uuid
-    """.query(uuid *: text *: text *: bool *: timestamptz)
-      .map { case (id, email, displayName, isEducator, createdAt) =>
-        User(id, email, displayName, isEducator, createdAt)
-      }
+    """.query(userCodec).map(toUser)
 
   val updatePasswordHash: Command[(String, UUID)] =
     sql"""
       UPDATE users SET password_hash = $text WHERE id = $uuid
     """.command
+
+  val updateProfile: Query[(String, Option[String], Option[String], UUID), User] =
+    sql"""
+      UPDATE users SET display_name = $text, country = ${text.opt}, city = ${text.opt}
+      WHERE id = $uuid
+      RETURNING #$userCols
+    """.query(userCodec).map(toUser)

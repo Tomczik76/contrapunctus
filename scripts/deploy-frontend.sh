@@ -4,10 +4,29 @@ set -euo pipefail
 AWS_PROFILE="${AWS_PROFILE:-yield}"
 INFRA_DIR="${INFRA_DIR:-$(cd "$(dirname "$0")/../../aws-applications-infra/contrapunctus" && pwd)}"
 
+SKIP_TESTS=false
+for arg in "$@"; do
+  case "$arg" in
+    --skipTests) SKIP_TESTS=true ;;
+  esac
+done
+
 cd "$(dirname "$0")/.."
+
+if [ "$SKIP_TESTS" = false ]; then
+  echo "==> Running Scala.js tests (shared module)..."
+  sbt coreJS/test
+fi
 
 echo "==> Building Scala.js (fullLinkJS)..."
 sbt coreJS/fullLinkJS
+
+if [ "$SKIP_TESTS" = false ]; then
+  echo "==> Running frontend tests..."
+  npm run test --prefix frontend
+else
+  echo "==> Skipping tests (--skipTests)"
+fi
 
 echo "==> Building Vite frontend..."
 npm run build --prefix frontend

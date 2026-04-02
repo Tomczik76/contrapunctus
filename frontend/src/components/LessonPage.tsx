@@ -1,6 +1,5 @@
 import { useParams, Link, Navigate } from "react-router-dom";
 import { useState, useEffect, useMemo } from "react";
-import { useAuth } from "../auth";
 import { NoteEditor, type LessonConfig, type PlacedBeat } from "./staff";
 import { fetchLesson, type Lesson } from "../data/lessons";
 import { useTheme } from "../useTheme";
@@ -9,7 +8,6 @@ import { useLessonCallbacks } from "../hooks/useLessonCallbacks";
 
 export function LessonPage() {
   const { id } = useParams<{ id: string }>();
-  const { user, logout } = useAuth();
   const [lesson, setLesson] = useState<Lesson | null>(null);
   const [loadingLesson, setLoadingLesson] = useState(true);
 
@@ -49,7 +47,7 @@ export function LessonPage() {
     };
   }, [lesson, onErrorsComputed, onRomansComputed, onStudentRomansChanged, onBeatsChanged, checked]);
 
-  if (loadingLesson) return <div style={{ minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center", color: "#888", fontSize: 14 }}>Loading lesson...</div>;
+  if (loadingLesson) return <div style={{ minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center", color: "#666", fontSize: 14 }}>Loading lesson...</div>;
   if (!lesson || !lessonConfig) return <Navigate to="/lessons" replace />;
 
   // Check completeness
@@ -221,7 +219,6 @@ export function LessonPage() {
               display: "grid",
               gridTemplateColumns: "1fr auto 1fr",
               alignItems: "center",
-              padding: "12px 0",
             }}>
               <div style={{ display: "flex", alignItems: "center" }}>
                 <Link to="/lessons" style={{
@@ -283,19 +280,6 @@ export function LessonPage() {
                     )}
                   </>
                 )}
-                <span style={{ fontSize: 13, opacity: 0.6 }}>{user?.displayName}</span>
-                <button
-                  onClick={logout}
-                  style={{
-                    padding: 0, fontSize: 12, background: "none", border: "none",
-                    opacity: 0.6, color: "inherit", cursor: "pointer", fontFamily: btnFont,
-                    textDecoration: "underline", textUnderlineOffset: 2,
-                  }}
-                  onMouseEnter={e => (e.currentTarget.style.opacity = "0.85")}
-                  onMouseLeave={e => (e.currentTarget.style.opacity = "0.6")}
-                >
-                  Sign out
-                </button>
               </div>
             </div>
           </>

@@ -513,7 +513,15 @@ object StaffPrinter:
       case NoteError.SpacingError(_)    => "Sp"
       case NoteError.DoubledLeadingTone    => "2LT"
       case NoteError.UnresolvedLeadingTone => "LT↑"
-      case NoteError.UnresolvedChordal7th  => "7↓"
+      case NoteError.UnresolvedChordal7th          => "7↓"
+      case NoteError.DissonantInterval              => "Diss"
+      case NoteError.ImperfectConsonanceRequired    => "!PC"
+      case NoteError.ForbiddenMelodicInterval       => "Mel"
+      case NoteError.RepeatedPitch                  => "Rep"
+      case NoteError.UnisonNotAtEndpoints           => "U!"
+      case NoteError.BadPenultimate                 => "Pen"
+      case NoteError.CfNotOnTonic                   => "CF≠1"
+      case NoteError.CpLastNotUnison                => "≠8"
 
   private def chordErrAbbrev(err: ChordError): String =
     err match

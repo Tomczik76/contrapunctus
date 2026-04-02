@@ -11,7 +11,7 @@ import org.http4s.headers.Authorization
 import org.http4s.Credentials
 import contrapunctus.backend.db.PointEvents
 import contrapunctus.backend.domain.{CommunityExercise, ExerciseAttempt, PointEvent, Rank}
-import contrapunctus.backend.services.{AuthService, ExerciseService, PointsService}
+import contrapunctus.backend.services.{AuthService, ExerciseScoring, ExerciseService, PointsService}
 
 import java.util.UUID
 
@@ -37,7 +37,7 @@ case class SaveAttemptRequest(trebleBeats: Json, bassBeats: Json, studentRomans:
 object SaveAttemptRequest:
   given Decoder[SaveAttemptRequest] = deriveDecoder
 
-case class SubmitAttemptRequest(score: BigDecimal, completed: Boolean)
+case class SubmitAttemptRequest(score: Option[BigDecimal], completed: Option[Boolean])
 object SubmitAttemptRequest:
   given Decoder[SubmitAttemptRequest] = deriveDecoder
 
@@ -56,6 +56,18 @@ object CommunityRoutes:
     )
   }
 
+  /** Validate that the cantus firmus starts and ends on the tonic. */
+  private def cfNotOnTonic(body: CreateExerciseRequest): Boolean =
+    if body.template != "species_counterpoint" then false
+    else
+      val cfJson = if body.bassBeats.exists(_.asArray.exists(_.nonEmpty)) then body.bassBeats.get
+                   else body.sopranoBeats
+      val notes = ExerciseScoring.parseBeatsFlat(cfJson)
+      if notes.size < 2 then true // too short is an error
+      else
+        val tonicValue = ExerciseScoring.tonicPitchClass(body.tonicIdx)
+        notes.head.noteType.value != tonicValue || notes.last.noteType.value != tonicValue
+
   def routes(exerciseService: ExerciseService, pointsService: PointsService, jwtSecret: String): HttpRoutes[IO] =
     HttpRoutes.of[IO] {
 
@@ -69,7 +81,7 @@ object CommunityRoutes:
               body.title.isBlank                       -> "title is required",
               tooLong(body.title, MaxShortText)          -> s"title must be at most $MaxShortText characters",
               tooLong(body.description, MaxTextLength)   -> s"description must be at most $MaxTextLength characters",
-              notIn(body.template, Set("harmonize_melody", "rn_analysis")) -> "template must be harmonize_melody or rn_analysis",
+              notIn(body.template, Set("harmonize_melody", "rn_analysis", "species_counterpoint")) -> "template must be harmonize_melody, rn_analysis, or species_counterpoint",
               outOfRange(body.tonicIdx, 0, 13)         -> "tonicIdx must be between 0 and 13",
               notIn(body.scaleName, ScaleNames)         -> s"scaleName must be one of: ${ScaleNames.mkString(", ")}",
               outOfRange(body.tsTop, 1, 12)            -> "tsTop must be between 1 and 12",
@@ -78,6 +90,7 @@ object CommunityRoutes:
               body.bassBeats.exists(jsonTooBig(_))      -> "bassBeats too large",
               body.referenceSolution.exists(jsonTooBig(_)) -> "referenceSolution too large",
               body.rnAnswerKey.exists(jsonTooBig(_))     -> "rnAnswerKey too large",
+              cfNotOnTonic(body)                         -> "cantus firmus must start and end on the tonic",
             ) {
               exerciseService.create(userId, body.title.trim, body.description.trim, body.template,
                 body.tonicIdx, body.scaleName, body.tsTop, body.tsBottom,
@@ -110,7 +123,8 @@ object CommunityRoutes:
               body.title.isBlank                       -> "title is required",
               tooLong(body.title, MaxShortText)          -> s"title must be at most $MaxShortText characters",
               tooLong(body.description, MaxTextLength)   -> s"description must be at most $MaxTextLength characters",
-              notIn(body.template, Set("harmonize_melody", "rn_analysis")) -> "template must be harmonize_melody or rn_analysis",
+              notIn(body.template, Set("harmonize_melody", "rn_analysis", "species_counterpoint")) -> "template must be harmonize_melody, rn_analysis, or species_counterpoint",
+              cfNotOnTonic(body)                         -> "cantus firmus must start and end on the tonic",
             ) {
               exerciseService.update(id, userId, body.title.trim, body.description.trim, body.template,
                 body.tonicIdx, body.scaleName, body.tsTop, body.tsBottom,
@@ -129,6 +143,14 @@ object CommunityRoutes:
           exerciseService.publish(id, userId).flatMap {
             case Some(ex) => Ok(ex.asJson)
             case None     => NotFound(Json.obj("error" -> Json.fromString("not found or already published")))
+          }
+        }
+
+      case req @ POST -> Root / "community" / "exercises" / UUIDVar(id) / "unpublish" =>
+        withAuth(req, jwtSecret) { userId =>
+          exerciseService.unpublish(id, userId).flatMap {
+            case Some(ex) => Ok(ex.asJson)
+            case None     => NotFound(Json.obj("error" -> Json.fromString("not found or not published")))
           }
         }
 
@@ -184,9 +206,8 @@ object CommunityRoutes:
           req.as[SubmitAttemptRequest].flatMap { body =>
             import Validation._
             validate(
-              (body.score < 0 || body.score > 100) -> "score must be between 0 and 100"
+              body.score.exists(s => s < 0 || s > 100) -> "score must be between 0 and 100"
             ) {
-              // Increment attempt count on the exercise
               exerciseService.submitAttempt(userId, id, body.score, body.completed).flatMap {
                 case Some(a) => Ok(a.asJson)
                 case None    => Conflict(Json.obj("error" -> Json.fromString("no draft to submit or already submitted")))

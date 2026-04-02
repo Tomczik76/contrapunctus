@@ -25,8 +25,8 @@ object Validation:
   val CorrectionStatuses   = Set("pending", "confirmed", "rejected", "fixed")
   val ClassStatuses         = Set("active", "archived")
   val Difficulties          = Set("beginner", "intermediate", "advanced")
-  val Templates             = Set("harmonize_melody", "figured_bass", "roman_numeral_analysis")
-  val ScaleNames            = Set("major", "minor")
+  val Templates             = Set("harmonize_melody", "figured_bass", "roman_numeral_analysis", "species_counterpoint")
+  val ScaleNames            = Set("major", "minor", "none")
   val VoteValues             = Set("up", "down")
 
   def tooLong(s: String, max: Int): Boolean = s.length > max

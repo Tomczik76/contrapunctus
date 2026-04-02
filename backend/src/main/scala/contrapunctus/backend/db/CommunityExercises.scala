@@ -18,6 +18,8 @@ object CommunityExercises:
     circeJsonb *: circeJsonb.opt *: circeJsonb.opt *: circeJsonb.opt *: circeJsonb.opt *:
     textList *: text *: int4 *: int4 *: numeric *: text *: int4 *: int4 *: timestamptz *: timestamptz
 
+  private val exerciseWithNameCodec = exerciseCodec *: text
+
   private def toExercise(t: (UUID, UUID, String, String, String, Int, String, Int, Int,
     Json, Option[Json], Option[Json], Option[Json], Option[Json],
     List[String], String, Int, Int, BigDecimal, String, Int, Int, java.time.OffsetDateTime, java.time.OffsetDateTime)) =
@@ -27,6 +29,12 @@ object CommunityExercises:
             tags, status, attempts, completions, rate, diff, up, down, created, updated) =>
         CommunityExercise(id, creatorId, title, desc, tmpl, tonic, scale, tsT, tsB,
           soprano, bass, fb, refSol, rnKey, tags, status, attempts, completions, rate, diff, up, down, created, updated)
+
+  private def toExerciseWithName(t: ((UUID, UUID, String, String, String, Int, String, Int, Int,
+    Json, Option[Json], Option[Json], Option[Json], Option[Json],
+    List[String], String, Int, Int, BigDecimal, String, Int, Int, java.time.OffsetDateTime, java.time.OffsetDateTime), String)) =
+    val (base, displayName) = t
+    toExercise(base).copy(creatorDisplayName = displayName)
 
   private val returnCols = "id, creator_id, title, description, template, tonic_idx, scale_name, ts_top, ts_bottom, soprano_beats, bass_beats, figured_bass, reference_solution, rn_answer_key, tags, status, attempt_count, completion_count, completion_rate, inferred_difficulty, upvotes, downvotes, created_at, updated_at"
 
@@ -39,24 +47,33 @@ object CommunityExercises:
       RETURNING #$returnCols
     """.query(exerciseCodec).map(toExercise)
 
+  private val qualifiedReturnCols = "ce.id, ce.creator_id, ce.title, ce.description, ce.template, ce.tonic_idx, ce.scale_name, ce.ts_top, ce.ts_bottom, ce.soprano_beats, ce.bass_beats, ce.figured_bass, ce.reference_solution, ce.rn_answer_key, ce.tags, ce.status, ce.attempt_count, ce.completion_count, ce.completion_rate, ce.inferred_difficulty, ce.upvotes, ce.downvotes, ce.created_at, ce.updated_at"
+
   val selectById: Query[UUID, CommunityExercise] =
     sql"""
-      SELECT #$returnCols FROM community_exercises WHERE id = $uuid
-    """.query(exerciseCodec).map(toExercise)
+      SELECT #$qualifiedReturnCols, u.display_name
+      FROM community_exercises ce
+      JOIN users u ON u.id = ce.creator_id
+      WHERE ce.id = $uuid
+    """.query(exerciseWithNameCodec).map(toExerciseWithName)
 
   val selectPublished: Query[skunk.Void, CommunityExercise] =
     sql"""
-      SELECT #$returnCols FROM community_exercises
-      WHERE status = 'published'
-      ORDER BY created_at DESC
-    """.query(exerciseCodec).map(toExercise)
+      SELECT #$qualifiedReturnCols, u.display_name
+      FROM community_exercises ce
+      JOIN users u ON u.id = ce.creator_id
+      WHERE ce.status = 'published'
+      ORDER BY ce.created_at DESC
+    """.query(exerciseWithNameCodec).map(toExerciseWithName)
 
   val selectByCreator: Query[UUID, CommunityExercise] =
     sql"""
-      SELECT #$returnCols FROM community_exercises
-      WHERE creator_id = $uuid AND status != 'removed'
-      ORDER BY created_at DESC
-    """.query(exerciseCodec).map(toExercise)
+      SELECT #$qualifiedReturnCols, u.display_name
+      FROM community_exercises ce
+      JOIN users u ON u.id = ce.creator_id
+      WHERE ce.creator_id = $uuid AND ce.status != 'removed'
+      ORDER BY ce.created_at DESC
+    """.query(exerciseWithNameCodec).map(toExerciseWithName)
 
   val update: Query[(String, String, String, Int, String, Int, Int, Json, Option[Json], Option[Json], Option[Json], Option[Json], List[String], UUID, UUID), CommunityExercise] =
     sql"""
@@ -74,6 +91,13 @@ object CommunityExercises:
     sql"""
       UPDATE community_exercises SET status = 'published', updated_at = NOW()
       WHERE id = $uuid AND creator_id = $uuid AND status = 'draft'
+      RETURNING #$returnCols
+    """.query(exerciseCodec).map(toExercise)
+
+  val unpublish: Query[(UUID, UUID), CommunityExercise] =
+    sql"""
+      UPDATE community_exercises SET status = 'draft', updated_at = NOW()
+      WHERE id = $uuid AND creator_id = $uuid AND status = 'published'
       RETURNING #$returnCols
     """.query(exerciseCodec).map(toExercise)
 
@@ -109,17 +133,17 @@ object CommunityExercises:
       WHERE id = $uuid
     """.command
 
-  val incrementAttemptCount: Command[UUID] =
-    sql"""
-      UPDATE community_exercises SET attempt_count = attempt_count + 1, updated_at = NOW()
-      WHERE id = $uuid
-    """.command
-
-  val incrementCompletionCount: Command[UUID] =
+  val refreshStats: Command[UUID] =
     sql"""
       UPDATE community_exercises SET
-        completion_count = completion_count + 1,
-        completion_rate = CASE WHEN attempt_count > 0 THEN (completion_count + 1)::numeric / attempt_count ELSE 0 END,
+        attempt_count    = (SELECT count(*) FROM exercise_attempts ea WHERE ea.exercise_id = community_exercises.id AND ea.status = 'submitted'),
+        completion_count = (SELECT count(*) FROM exercise_attempts ea WHERE ea.exercise_id = community_exercises.id AND ea.completed = true),
+        completion_rate  = CASE
+          WHEN (SELECT count(*) FROM exercise_attempts ea WHERE ea.exercise_id = community_exercises.id AND ea.status = 'submitted') > 0
+          THEN (SELECT count(*) FROM exercise_attempts ea WHERE ea.exercise_id = community_exercises.id AND ea.completed = true)::numeric
+             / (SELECT count(*) FROM exercise_attempts ea WHERE ea.exercise_id = community_exercises.id AND ea.status = 'submitted')
+          ELSE 0
+        END,
         updated_at = NOW()
       WHERE id = $uuid
     """.command

@@ -23,6 +23,14 @@ enum NoteError:
   case DoubledLeadingTone
   case UnresolvedLeadingTone
   case UnresolvedChordal7th
+  case DissonantInterval
+  case ImperfectConsonanceRequired
+  case ForbiddenMelodicInterval
+  case RepeatedPitch
+  case UnisonNotAtEndpoints
+  case BadPenultimate
+  case CfNotOnTonic
+  case CpLastNotUnison
 
 /** Chord-level part-writing errors, embedded on Analysis (per-beat). */
 enum ChordError:
@@ -195,10 +203,10 @@ object PartWriting:
   ): List[List[Note]] =
     columns.map(_.values.flatten.flatMap(_.toList).sortBy(-_.midi).toList)
 
-  private def intervalClass(a: Note, b: Note): Int =
+  private[analysis] def intervalClass(a: Note, b: Note): Int =
     Math.abs(a.midi - b.midi) % 12
 
-  private def checkParallels(
+  private[analysis] def checkParallels(
       voices: List[List[Option[Note]]]
   ): List[(Int, Note, NoteError)] =
     val numVoices = voices.size
@@ -231,7 +239,7 @@ object PartWriting:
     end for
   end checkParallels
 
-  private def checkDirectMotion(
+  private[analysis] def checkDirectMotion(
       voices: List[List[Option[Note]]]
   ): List[(Int, Note, NoteError)] =
     if voices.size < 2 then Nil
@@ -266,7 +274,7 @@ object PartWriting:
       yield err
       end for
 
-  private def checkVoiceCrossing(
+  private[analysis] def checkVoiceCrossing(
       voices: List[List[Option[Note]]]
   ): List[(Int, Note, NoteError)] =
     val numVoices = voices.size

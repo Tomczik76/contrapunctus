@@ -11,7 +11,9 @@ case class User(
   email: String,
   displayName: String,
   isEducator: Boolean,
-  createdAt: OffsetDateTime
+  createdAt: OffsetDateTime,
+  country: Option[String] = None,
+  city: Option[String] = None
 )
 
 object User:

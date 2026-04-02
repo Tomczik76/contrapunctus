@@ -288,6 +288,7 @@ export const MODE_MAJOR_OFFSET: Record<string, number> = {
 };
 
 export function getKeySig(tonicIdx: number, scaleName: string): { count: number; type: "sharp" | "flat" | "none" } {
+  if (scaleName === "none") return { count: 0, type: "none" };
   const modeOffset = MODE_MAJOR_OFFSET[scaleName];
   if (modeOffset !== undefined) {
     // Find the relative major tonic and pick the enharmonic with fewest accidentals

@@ -30,7 +30,7 @@ interface ClassItem {
 export function EducatorLessonEditor() {
   const { lessonId } = useParams<{ lessonId: string }>();
   const navigate = useNavigate();
-  const { user, token } = useAuth();
+  const { token } = useAuth();
   const theme = useTheme();
   const isEdit = !!lessonId;
 
@@ -254,7 +254,6 @@ export function EducatorLessonEditor() {
                 display: "grid",
                 gridTemplateColumns: "1fr auto 1fr",
                 alignItems: "center",
-                padding: "12px 0",
               }}>
                 <div style={{ display: "flex", alignItems: "center" }}>
                   <button
@@ -330,7 +329,6 @@ export function EducatorLessonEditor() {
           >
             Preview as Student
           </button>
-          <span style={{ fontSize: 13, opacity: 0.6 }}>{user?.displayName}</span>
         </div>
       </header>
 

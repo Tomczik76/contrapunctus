@@ -80,6 +80,14 @@ export interface ContrapunctusApi {
     tonicAccidental: string,
     scaleName: string
   ): RenderData;
+  checkSpeciesCounterpoint(
+    cfMeasures: JsMeasure[],
+    cpMeasures: JsMeasure[],
+    tonicLetter: string,
+    tonicAccidental: string,
+    scaleName: string,
+    cfIsLower: boolean
+  ): Array<{ beatIndex: number; midi: number; error: string }>;
 }
 
 declare const Contrapunctus: ContrapunctusApi;

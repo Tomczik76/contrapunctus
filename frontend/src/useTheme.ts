@@ -1,12 +1,11 @@
-import { useState } from "react";
+import { createContext, useContext, useState, useCallback, useEffect } from "react";
+import type { ReactNode } from "react";
+import React from "react";
 
-export function useTheme() {
-  const [dk] = useState(() => {
-    try { return localStorage.getItem("contrapunctus_dark") === "true"; } catch { return false; }
-  });
-
+function buildTheme(dk: boolean, toggleDark: () => void) {
   return {
     dk,
+    toggleDark,
     // Base
     bg: dk ? "#1e1e22" : "#e8e4e0",
     cardBg: dk ? "#2a2a30" : "#fff",
@@ -14,7 +13,7 @@ export function useTheme() {
     cardShadow: dk ? "0 1px 3px rgba(0,0,0,0.3), 0 4px 12px rgba(0,0,0,0.2)" : "0 1px 3px rgba(0,0,0,0.08), 0 4px 12px rgba(0,0,0,0.05)",
     text: dk ? "#e0ddd8" : "#1a1a1a",
     textSub: dk ? "#aaa" : "#555",
-    textMuted: dk ? "#888" : "#888",
+    textMuted: dk ? "#9a9a9a" : "#666",
     // Layout
     footerBg: dk ? "#222228" : "#f0ede9",
     footerBorder: dk ? "#3a3a40" : "#e0dcd8",
@@ -44,4 +43,35 @@ export function useTheme() {
   };
 }
 
-export type Theme = ReturnType<typeof useTheme>;
+const noop = () => {};
+const defaultTheme = buildTheme(false, noop);
+const ThemeContext = createContext<Theme>(defaultTheme);
+
+export function ThemeProvider({ children }: { children: ReactNode }) {
+  const [dk, setDk] = useState(() => {
+    try { return localStorage.getItem("contrapunctus_dark") === "true"; } catch { return false; }
+  });
+
+  const toggleDark = useCallback(() => {
+    setDk((prev) => {
+      const next = !prev;
+      try { localStorage.setItem("contrapunctus_dark", String(next)); } catch {}
+      return next;
+    });
+  }, []);
+
+  const theme = buildTheme(dk, toggleDark);
+
+  useEffect(() => {
+    document.documentElement.style.background = theme.bg;
+    document.body.style.background = theme.bg;
+  }, [theme.bg]);
+
+  return React.createElement(ThemeContext.Provider, { value: theme }, children);
+}
+
+export function useTheme(): Theme {
+  return useContext(ThemeContext);
+}
+
+export type Theme = ReturnType<typeof buildTheme>;

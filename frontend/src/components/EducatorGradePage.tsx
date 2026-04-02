@@ -38,7 +38,7 @@ export function EducatorGradePage() {
     studentId: string;
     lessonId: string;
   }>();
-  const { user, token, logout } = useAuth();
+  const { token } = useAuth();
 
   const [lesson, setLesson] = useState<LessonDetail | null>(null);
   const [work, setWork] = useState<StudentWork | null>(null);
@@ -109,7 +109,7 @@ export function EducatorGradePage() {
 
   if (loading) {
     return (
-      <div style={{ minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center", color: "#888", fontSize: 14 }}>
+      <div style={{ minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center", color: "#666", fontSize: 14 }}>
         Loading...
       </div>
     );
@@ -158,7 +158,6 @@ export function EducatorGradePage() {
               display: "grid",
               gridTemplateColumns: "1fr auto 1fr",
               alignItems: "center",
-              padding: "12px 0",
             }}>
               <div style={{ display: "flex", alignItems: "center" }}>
                 <Link to={backUrl} style={{
@@ -215,19 +214,6 @@ export function EducatorGradePage() {
                     {saveFlash ? "Saved!" : saving ? "Saving..." : "Save Grade"}
                   </button>
                 </div>
-                <span style={{ fontSize: 13, opacity: 0.6 }}>{user?.displayName}</span>
-                <button
-                  onClick={logout}
-                  style={{
-                    padding: 0, fontSize: 12, background: "none", border: "none",
-                    opacity: 0.6, color: "inherit", cursor: "pointer", fontFamily: btnFont,
-                    textDecoration: "underline", textUnderlineOffset: 2,
-                  }}
-                  onMouseEnter={e => (e.currentTarget.style.opacity = "0.85")}
-                  onMouseLeave={e => (e.currentTarget.style.opacity = "0.6")}
-                >
-                  Sign out
-                </button>
               </div>
             </div>
           </>

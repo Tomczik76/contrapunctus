@@ -31,7 +31,8 @@ case class CommunityExercise(
   upvotes: Int,
   downvotes: Int,
   createdAt: OffsetDateTime,
-  updatedAt: OffsetDateTime
+  updatedAt: OffsetDateTime,
+  creatorDisplayName: String = ""
 )
 
 object CommunityExercise:

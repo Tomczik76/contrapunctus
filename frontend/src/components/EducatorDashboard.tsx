@@ -419,7 +419,7 @@ function LessonsSection({ theme }: { theme: Theme }) {
 }
 
 export function EducatorDashboard({ section }: { section: "classes" | "lessons" }) {
-  const { user, logout } = useAuth();
+  const { user } = useAuth();
   const theme = useTheme();
 
   if (!user?.isEducator) {
@@ -453,22 +453,6 @@ export function EducatorDashboard({ section }: { section: "classes" | "lessons" 
           <span style={{ fontSize: 18, fontWeight: 700, letterSpacing: -0.3 }}>
             Educator Dashboard
           </span>
-        </div>
-        <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-          <span style={{ fontSize: 13, opacity: 0.6 }}>{user?.displayName}</span>
-          <button
-            onClick={logout}
-            style={{
-              padding: 0, fontSize: 12, background: "none", border: "none",
-              opacity: 0.6, color: "inherit", cursor: "pointer",
-              fontFamily: "-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif",
-              textDecoration: "underline", textUnderlineOffset: 2,
-            }}
-            onMouseEnter={e => (e.currentTarget.style.opacity = "0.85")}
-            onMouseLeave={e => (e.currentTarget.style.opacity = "0.6")}
-          >
-            Sign out
-          </button>
         </div>
       </header>
 

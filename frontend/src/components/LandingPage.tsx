@@ -84,14 +84,6 @@ const LANDING_CSS = `
   .personas-grid {
     grid-template-columns: 1fr !important;
   }
-  .roadmap-row {
-    flex-direction: column !important;
-    align-items: center !important;
-    gap: 28px !important;
-  }
-  .roadmap-line {
-    display: none !important;
-  }
   .landing-nav {
     padding: 12px 16px !important;
     flex-wrap: wrap !important;
@@ -282,31 +274,34 @@ const features = [
 const personas: { title: string; desc: string; qualifier?: string; link?: { text: string; to: string } }[] = [
   {
     title: "Students",
-    desc: "Join your instructor's class with a link, work through assigned exercises, save drafts, and submit when ready. Join the community to practice beyond your coursework with exercises created by fellow students and theory enthusiasts.",
+    desc: "Join your instructor's class with a single link and start working through exercises. Save drafts, submit when ready, and practice beyond coursework with community challenges.",
   },
   {
     title: "Educators",
-    desc: "Create classes, author custom exercises, and assign them in any order. Review student submissions, assign grades, and track completion from a single gradebook view.",
+    desc: "Author custom exercises and assign them to your class. Review submissions, assign grades, and track completion from one gradebook.",
     link: { text: "Sign up as an educator \u2192", to: "/signup" },
   },
   {
     title: "Theory Enthusiasts",
-    desc: "Challenge yourself with community-created exercises, create your own for others to solve, and climb the ranks from Motif to Opus. Whether you're studying for an AP exam, brushing up on fundamentals, or just love theory puzzles, there's always a new challenge waiting.",
+    desc: "Solve community exercises, create your own, and climb the ranks from Motif to Opus. There's always a new challenge waiting.",
     link: { text: "Browse exercises \u2192", to: "/community" },
   },
   {
     title: "Composers",
-    desc: "Sketch ideas with real-time harmonic awareness. Export MIDI when you're ready.",
-    qualifier: "MIDI export coming soon",
+    desc: "Sketch ideas with real-time harmonic awareness. See roman numerals, part-writing errors, and non-chord tones as you write.",
   },
 ];
 
-const roadmap = [
-  { title: "Counterpoint analysis", desc: "Species counterpoint rules and Fux-style exercises" },
-  { title: "Interval & chord exercises", desc: "Identification, spelling, and ear training drills" },
-  { title: "MIDI export", desc: "Export your compositions to any DAW" },
-  { title: "LMS Integration", desc: "Connect with Canvas, Blackboard, and Moodle for seamless classroom use" },
-  { title: "Exercise Collections", desc: "Curate and share playlists of community exercises" },
+const roadmapSoon = [
+  { title: "Projects & Auto Save", desc: "Create and manage multiple compositions with automatic cloud saving." },
+  { title: "Solution Gallery", desc: "After completing an exercise, see how others solved the same problem." },
+  { title: "Share Compositions", desc: "Generate a public read-only link to share your work with anyone." },
+  { title: "MIDI Export", desc: "Export to any DAW or notation software with full voice preservation." },
+];
+const roadmapHorizon = [
+  { title: "Counterpoint Analysis", desc: "Species counterpoint validation extending the analysis engine." },
+  { title: "Mode Transforms", desc: "Transform between parallel and relative modes with intelligent adaptation." },
+  { title: "AI Assistant", desc: "Harmonic analysis, suggestions, and compositional exploration." },
 ];
 
 // ── Component ───────────────────────────────────────────────────────
@@ -778,63 +773,82 @@ export function LandingPage() {
         </RevealSection>
 
         <RevealSection delay={100}>
-          <div className="roadmap-row" style={{
-            display: "flex",
-            alignItems: "flex-start",
-            justifyContent: "center",
-            gap: 0,
-            position: "relative",
-          }}>
-            {roadmap.map((item, i) => (
-              <div key={item.title} style={{
-                flex: "1 1 0",
-                display: "flex",
-                flexDirection: "column",
-                alignItems: "center",
-                textAlign: "center",
-                position: "relative",
-                padding: "0 16px",
-                maxWidth: 260,
-              }}>
-                {/* Connector line */}
-                {i < roadmap.length - 1 && (
-                  <div className="roadmap-line" style={{
-                    position: "absolute",
-                    top: 9,
-                    left: "calc(50% + 12px)",
-                    right: "calc(-50% + 12px)",
-                    height: 2,
-                    background: dk ? "#3a3a40" : "#d5d0cb",
-                  }} />
-                )}
-                {/* Dot */}
+          <div style={{ maxWidth: 720, margin: "0 auto", display: "flex", flexDirection: "column", gap: 32 }}>
+            {/* Coming Soon */}
+            <div>
+              <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 14 }}>
+                <div style={{ width: 12, height: 12, borderRadius: "50%", background: dk ? "#7c9cff" : "#4a6fff", flexShrink: 0 }} />
                 <div style={{
-                  width: 20,
-                  height: 20,
-                  borderRadius: "50%",
-                  border: `2px solid ${dk ? "#888" : "#999"}`,
-                  background: dk ? "#2a2a30" : "#fff",
-                  position: "relative",
-                  zIndex: 1,
-                  flexShrink: 0,
-                }} />
-                <h3 style={{
-                  fontSize: 14,
-                  fontWeight: 700,
-                  color: t.text,
-                  margin: "12px 0 4px",
-                }}>{item.title}</h3>
-                <p style={{
-                  fontSize: 13,
-                  lineHeight: 1.5,
-                  color: t.textSub,
-                  margin: 0,
-                }}>{item.desc}</p>
+                  fontSize: 11, fontWeight: 700, textTransform: "uppercase" as const, letterSpacing: 1,
+                  color: dk ? "#7c9cff" : "#4a6fff",
+                }}>
+                  Coming Soon
+                </div>
               </div>
-            ))}
+              <div style={{ display: "flex", flexDirection: "column", gap: 12, marginLeft: 5, paddingLeft: 19, borderLeft: `2px solid ${dk ? "#3a3a40" : "#d5d0cb"}` }}>
+                {roadmapSoon.map(item => (
+                  <div key={item.title}>
+                    <h3 style={{ fontSize: 14, fontWeight: 700, color: t.text, margin: "0 0 2px" }}>{item.title}</h3>
+                    <p style={{ fontSize: 13, lineHeight: 1.5, color: t.textSub, margin: 0 }}>{item.desc}</p>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            {/* On the Horizon */}
+            <div>
+              <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 14 }}>
+                <div style={{ width: 10, height: 10, borderRadius: "50%", background: dk ? "#3a3a40" : "#d5d0cb", flexShrink: 0, marginLeft: 1 }} />
+                <div style={{
+                  fontSize: 11, fontWeight: 700, textTransform: "uppercase" as const, letterSpacing: 1,
+                  color: t.textMuted,
+                }}>
+                  On the Horizon
+                </div>
+              </div>
+              <div style={{ display: "flex", flexDirection: "column", gap: 12, marginLeft: 5, paddingLeft: 19, borderLeft: `2px solid ${dk ? "#3a3a40" : "#d5d0cb"}`, opacity: 0.85 }}>
+                {roadmapHorizon.map(item => (
+                  <div key={item.title}>
+                    <h3 style={{ fontSize: 14, fontWeight: 700, color: t.text, margin: "0 0 2px" }}>{item.title}</h3>
+                    <p style={{ fontSize: 13, lineHeight: 1.5, color: t.textSub, margin: 0 }}>{item.desc}</p>
+                  </div>
+                ))}
+              </div>
+            </div>
           </div>
         </RevealSection>
       </section>
+
+      {/* Footer CTA */}
+      <RevealSection>
+        <section style={{
+          padding: "48px 24px 56px",
+          textAlign: "center",
+          maxWidth: 600,
+          margin: "0 auto",
+          width: "100%",
+        }}>
+          <h2 style={{ fontSize: 24, fontWeight: 700, color: t.text, marginBottom: 10 }}>
+            Ready to start?
+          </h2>
+          <p style={{ fontSize: 15, color: t.textSub, marginBottom: 24, lineHeight: 1.6 }}>
+            Free during beta. No credit card required.
+          </p>
+          <Link to="/signup" className="landing-cta" style={{
+            display: "inline-block",
+            padding: "14px 36px",
+            fontSize: 16,
+            fontWeight: 700,
+            fontFamily: "inherit",
+            color: t.btnText,
+            background: t.btnBg,
+            textDecoration: "none",
+            borderRadius: 6,
+          }}>
+            Create Free Account
+          </Link>
+        </section>
+      </RevealSection>
 
       {/* Footer */}
       <footer style={{
@@ -855,11 +869,15 @@ export function LandingPage() {
             <span style={{ fontSize: 16, fontWeight: 700, color: t.text, display: "block", marginBottom: 4 }}>
               Contrapunctus
             </span>
-            <span style={{ fontSize: 13, color: t.textMuted, display: "block" }}>
-              Purpose-built for the music theory community.
+            <span style={{ fontSize: 13, color: t.textMuted, display: "block", marginBottom: 6 }}>
+              Built by a music theory nerd and software engineer in Minneapolis.
             </span>
+            <a href="mailto:info@contrapunctus.app" style={{ fontSize: 13, color: t.textMuted, textDecoration: "none", opacity: 0.8 }}>
+              info@contrapunctus.app
+            </a>
           </div>
-          <div style={{ display: "flex", gap: 24, flexWrap: "wrap" }}>
+          <div style={{ display: "flex", gap: 24, flexWrap: "wrap", alignItems: "center" }}>
+            <a href="https://discord.gg/zSTuZ65m" target="_blank" rel="noopener noreferrer" className="landing-footer-link" style={{ fontSize: 13 }}>Discord</a>
             <Link to="/login" className="landing-footer-link" style={{ fontSize: 13 }}>Sign In</Link>
             <Link to="/signup" className="landing-footer-link" style={{ fontSize: 13 }}>Get Started</Link>
           </div>
@@ -880,7 +898,7 @@ export function LandingPage() {
           <div style={{ display: "flex", gap: 20, flexWrap: "wrap" }}>
             <a href="#" className="landing-footer-link" style={{ fontSize: 12 }}>Privacy</a>
             <a href="#" className="landing-footer-link" style={{ fontSize: 12 }}>Terms</a>
-            <a href="#" className="landing-footer-link" style={{ fontSize: 12 }}>Contact</a>
+            <a href="mailto:info@contrapunctus.app" className="landing-footer-link" style={{ fontSize: 12 }}>Contact</a>
           </div>
         </div>
       </footer>

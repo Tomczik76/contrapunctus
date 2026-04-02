@@ -424,7 +424,119 @@ class CommunityE2ESuite extends CatsEffectSuite with TestContainerForAll:
         yield
           assertEquals(subResp.status, Status.Ok)
           assertEquals(subBody.hcursor.get[String]("status"), Right("submitted"))
-          assertEquals(subBody.hcursor.get[Boolean]("completed"), Right(true))
+          // Server-side scoring: empty beats → score 0 → completed = false
+          assertEquals(subBody.hcursor.get[Boolean]("completed"), Right(false))
+      }
+    }
+  }
+
+  test("submit attempt updates exercise stats") {
+    withContainers { case c: PostgreSQLContainer =>
+      TestApp.withApp(c) { app =>
+        for
+          (creatorToken, _) <- TestApp.signup(app, "stats_creator@test.com", "StatsCreator")
+          (user1Token, _)   <- TestApp.signup(app, "stats_user1@test.com", "StatsUser1")
+          (user2Token, _)   <- TestApp.signup(app, "stats_user2@test.com", "StatsUser2")
+
+          // Creator creates and publishes exercise
+          createResp <- app.run(
+            Request[IO](Method.POST, uri"/api/community/exercises")
+              .putHeaders(authHeader(creatorToken))
+              .withEntity(sampleExercise)
+          )
+          createBody <- createResp.as[Json]
+          exId = createBody.hcursor.get[String]("id").toOption.get
+          _ <- app.run(
+            Request[IO](Method.POST, Uri.unsafeFromString(s"/api/community/exercises/$exId/publish"))
+              .putHeaders(authHeader(creatorToken))
+          )
+
+          // User 1 saves and submits
+          _ <- app.run(
+            Request[IO](Method.PUT, Uri.unsafeFromString(s"/api/community/exercises/$exId/attempt"))
+              .putHeaders(authHeader(user1Token))
+              .withEntity(Json.obj("trebleBeats" -> Json.arr(), "bassBeats" -> Json.arr(), "studentRomans" -> Json.obj()))
+          )
+          _ <- app.run(
+            Request[IO](Method.POST, Uri.unsafeFromString(s"/api/community/exercises/$exId/submit"))
+              .putHeaders(authHeader(user1Token))
+              .withEntity(Json.obj())
+          )
+
+          // Check stats after first submission
+          ex1Resp <- app.run(Request[IO](Method.GET, Uri.unsafeFromString(s"/api/community/exercises/$exId")))
+          ex1Body <- ex1Resp.as[Json]
+          _ = assertEquals(ex1Body.hcursor.get[Int]("attemptCount"), Right(1))
+
+          // User 2 saves and submits
+          _ <- app.run(
+            Request[IO](Method.PUT, Uri.unsafeFromString(s"/api/community/exercises/$exId/attempt"))
+              .putHeaders(authHeader(user2Token))
+              .withEntity(Json.obj("trebleBeats" -> Json.arr(), "bassBeats" -> Json.arr(), "studentRomans" -> Json.obj()))
+          )
+          _ <- app.run(
+            Request[IO](Method.POST, Uri.unsafeFromString(s"/api/community/exercises/$exId/submit"))
+              .putHeaders(authHeader(user2Token))
+              .withEntity(Json.obj())
+          )
+
+          // Check stats after second submission
+          ex2Resp <- app.run(Request[IO](Method.GET, Uri.unsafeFromString(s"/api/community/exercises/$exId")))
+          ex2Body <- ex2Resp.as[Json]
+        yield
+          assertEquals(ex2Body.hcursor.get[Int]("attemptCount"), Right(2))
+      }
+    }
+  }
+
+  test("resubmission does not double-count attempt") {
+    withContainers { case c: PostgreSQLContainer =>
+      TestApp.withApp(c) { app =>
+        for
+          (creatorToken, _) <- TestApp.signup(app, "resub_creator@test.com", "ResubCreator")
+          (userToken, _)    <- TestApp.signup(app, "resubber@test.com", "Resubber")
+
+          createResp <- app.run(
+            Request[IO](Method.POST, uri"/api/community/exercises")
+              .putHeaders(authHeader(creatorToken))
+              .withEntity(sampleExercise)
+          )
+          createBody <- createResp.as[Json]
+          exId = createBody.hcursor.get[String]("id").toOption.get
+          _ <- app.run(
+            Request[IO](Method.POST, Uri.unsafeFromString(s"/api/community/exercises/$exId/publish"))
+              .putHeaders(authHeader(creatorToken))
+          )
+
+          // Save, submit, save again (revise), resubmit
+          _ <- app.run(
+            Request[IO](Method.PUT, Uri.unsafeFromString(s"/api/community/exercises/$exId/attempt"))
+              .putHeaders(authHeader(userToken))
+              .withEntity(Json.obj("trebleBeats" -> Json.arr(), "bassBeats" -> Json.arr(), "studentRomans" -> Json.obj()))
+          )
+          _ <- app.run(
+            Request[IO](Method.POST, Uri.unsafeFromString(s"/api/community/exercises/$exId/submit"))
+              .putHeaders(authHeader(userToken))
+              .withEntity(Json.obj())
+          )
+          // Revise (save resets status to draft)
+          _ <- app.run(
+            Request[IO](Method.PUT, Uri.unsafeFromString(s"/api/community/exercises/$exId/attempt"))
+              .putHeaders(authHeader(userToken))
+              .withEntity(Json.obj("trebleBeats" -> Json.arr(), "bassBeats" -> Json.arr(), "studentRomans" -> Json.obj()))
+          )
+          // Resubmit
+          _ <- app.run(
+            Request[IO](Method.POST, Uri.unsafeFromString(s"/api/community/exercises/$exId/submit"))
+              .putHeaders(authHeader(userToken))
+              .withEntity(Json.obj())
+          )
+
+          exResp <- app.run(Request[IO](Method.GET, Uri.unsafeFromString(s"/api/community/exercises/$exId")))
+          exBody <- exResp.as[Json]
+        yield
+          // Still 1 attempt — same user resubmitting shouldn't double-count
+          assertEquals(exBody.hcursor.get[Int]("attemptCount"), Right(1))
       }
     }
   }

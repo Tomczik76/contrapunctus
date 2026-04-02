@@ -12,7 +12,7 @@ interface EnrolledClass {
 }
 
 export function Dashboard() {
-  const { user, token, logout } = useAuth();
+  const { user, token } = useAuth();
   const theme = useTheme();
   const dk = theme.dk;
   const [enrolledClasses, setEnrolledClasses] = useState<EnrolledClass[]>([]);
@@ -178,37 +178,6 @@ export function Dashboard() {
         </div>
       )}
 
-      {/* Footer */}
-      <div style={{ marginTop: "auto" }} />
-      <div style={{
-        position: "fixed", bottom: 0, left: 0, right: 0, zIndex: 100,
-        background: theme.footerBg,
-        borderTop: `1px solid ${theme.footerBorder}`,
-        padding: "16px 24px", color: theme.text,
-      }}>
-        <div style={{
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "space-between",
-          maxWidth: 700,
-          margin: "0 auto",
-        }}>
-          <span style={{ fontSize: 13, opacity: 0.6 }}>{user?.displayName}</span>
-          <button
-            onClick={logout}
-            style={{
-              padding: 0, fontSize: 12, background: "none", border: "none",
-              opacity: 0.6, color: "inherit", cursor: "pointer",
-              fontFamily: "-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif",
-              textDecoration: "underline", textUnderlineOffset: 2,
-            }}
-            onMouseEnter={e => (e.currentTarget.style.opacity = "0.85")}
-            onMouseLeave={e => (e.currentTarget.style.opacity = "0.6")}
-          >
-            Sign out
-          </button>
-        </div>
-      </div>
     </div>
   );
 }

@@ -7,7 +7,24 @@ CLUSTER="contrapunctus"
 SERVICE="backend"
 FAMILY="contrapunctus-backend"
 
+SKIP_TESTS=false
+for arg in "$@"; do
+  case "$arg" in
+    --skipTests) SKIP_TESTS=true ;;
+  esac
+done
+
 cd "$(dirname "$0")/.."
+
+if [ "$SKIP_TESTS" = false ]; then
+  echo "==> Running Scala.js tests (shared module)..."
+  sbt coreJVM/test
+
+  echo "==> Running backend tests..."
+  sbt backend/test
+else
+  echo "==> Skipping tests (--skipTests)"
+fi
 
 DOCKER=$(command -v docker || command -v podman)
 echo "==> Using container runtime: $DOCKER"

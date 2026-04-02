@@ -11,11 +11,14 @@ WORKDIR /build
 # Cache dependency resolution separately from source compilation
 COPY project/ project/
 COPY build.sbt .
-RUN sbt update
+RUN SBT_OPTS="-Xmx1g -Xss4m" sbt update
+
+# Copy shared (core) module sources — backend depends on core.jvm
+COPY shared/ shared/
 
 # Compile and assemble fat JAR
 COPY backend/ backend/
-RUN sbt backend/assembly
+RUN SBT_OPTS="-Xmx1g -Xss4m" sbt backend/assembly
 
 # ── Stage 2: Runtime ─────────────────────────────────────────────────────────
 FROM --platform=linux/arm64 eclipse-temurin:21-jre-alpine

@@ -53,7 +53,7 @@ export function ForgotPasswordPage() {
           </div>
         ) : (
           <>
-            <p style={{ fontSize: 14, color: "#888", textAlign: "center", margin: "0 0 24px" }}>
+            <p style={{ fontSize: 14, color: "#666", textAlign: "center", margin: "0 0 24px" }}>
               Enter your email and we'll send you a reset link.
             </p>
             <form onSubmit={handleSubmit}>

@@ -7,6 +7,7 @@ interface User {
   id: string;
   email: string;
   displayName: string;
+  isEducator: boolean;
   createdAt: string;
 }
 
@@ -249,6 +250,7 @@ function UsersTab({ users }: { users: User[] }) {
         <tr style={{ borderBottom: "2px solid #eee", textAlign: "left" }}>
           <th style={{ padding: "10px 12px" }}>Email</th>
           <th style={{ padding: "10px 12px" }}>Display Name</th>
+          <th style={{ padding: "10px 12px" }}>Role</th>
           <th style={{ padding: "10px 12px" }}>Created</th>
         </tr>
       </thead>
@@ -257,11 +259,18 @@ function UsersTab({ users }: { users: User[] }) {
           <tr key={u.id} style={{ borderBottom: "1px solid #f0f0f0" }}>
             <td style={{ padding: "8px 12px" }}>{u.email}</td>
             <td style={{ padding: "8px 12px" }}>{u.displayName}</td>
+            <td style={{ padding: "8px 12px" }}>
+              {u.isEducator ? (
+                <span style={{ fontSize: 11, fontWeight: 600, padding: "2px 8px", borderRadius: 10, background: "#eef", color: "#44c" }}>Educator</span>
+              ) : (
+                <span style={{ fontSize: 11, color: "#999" }}>Student</span>
+              )}
+            </td>
             <td style={{ padding: "8px 12px" }}>{new Date(u.createdAt).toLocaleString()}</td>
           </tr>
         ))}
         {users.length === 0 && (
-          <tr><td colSpan={3} style={{ padding: 24, textAlign: "center", color: "#999" }}>No users yet</td></tr>
+          <tr><td colSpan={4} style={{ padding: 24, textAlign: "center", color: "#666" }}>No users yet</td></tr>
         )}
       </tbody>
     </table>
@@ -329,7 +338,7 @@ function BugReportsTab({
           </tr>
         ))}
         {reports.length === 0 && (
-          <tr><td colSpan={3} style={{ padding: 24, textAlign: "center", color: "#999" }}>No bug reports yet</td></tr>
+          <tr><td colSpan={3} style={{ padding: 24, textAlign: "center", color: "#666" }}>No bug reports yet</td></tr>
         )}
       </tbody>
     </table>
@@ -479,7 +488,7 @@ function CorrectionsTab({
           );
         })}
         {corrections.length === 0 && (
-          <tr><td colSpan={6} style={{ padding: 24, textAlign: "center", color: "#999" }}>No correction reports yet</td></tr>
+          <tr><td colSpan={6} style={{ padding: 24, textAlign: "center", color: "#666" }}>No correction reports yet</td></tr>
         )}
       </tbody>
     </table>
@@ -511,7 +520,7 @@ function FeatureRequestsTab({
           </tr>
         ))}
         {requests.length === 0 && (
-          <tr><td colSpan={3} style={{ padding: 24, textAlign: "center", color: "#999" }}>No feature requests yet</td></tr>
+          <tr><td colSpan={3} style={{ padding: 24, textAlign: "center", color: "#666" }}>No feature requests yet</td></tr>
         )}
       </tbody>
     </table>
@@ -536,7 +545,7 @@ function RoadmapVotesTab({ votes }: { votes: Record<string, number> }) {
           </tr>
         ))}
         {sorted.length === 0 && (
-          <tr><td colSpan={2} style={{ padding: 24, textAlign: "center", color: "#999" }}>No votes yet</td></tr>
+          <tr><td colSpan={2} style={{ padding: 24, textAlign: "center", color: "#666" }}>No votes yet</td></tr>
         )}
       </tbody>
     </table>
@@ -612,7 +621,7 @@ function LessonsTab({ lessons, onRefresh }: { lessons: AdminLesson[]; onRefresh:
             </tr>
           ))}
           {lessons.length === 0 && (
-            <tr><td colSpan={6} style={{ padding: 24, textAlign: "center", color: "#999" }}>No lessons yet</td></tr>
+            <tr><td colSpan={6} style={{ padding: 24, textAlign: "center", color: "#666" }}>No lessons yet</td></tr>
           )}
         </tbody>
       </table>
@@ -820,7 +829,7 @@ function LessonForm({
         {!isFiguredBass && !isRomanNumeral && (
           <div>
             <label style={labelStyle}>Soprano Melody</label>
-            <div style={{ fontSize: 12, color: "#888", marginBottom: 8 }}>
+            <div style={{ fontSize: 12, color: "#666", marginBottom: 8 }}>
               Write the soprano melody on the treble staff below. Only treble notes will be used.
               {sopranoBeats.filter((b) => !b.isRest && b.notes.length > 0).length > 0 && (
                 <span style={{ marginLeft: 8, color: "#333", fontWeight: 600 }}>
@@ -845,7 +854,7 @@ function LessonForm({
             <div style={{ marginTop: 8 }}>
               <button
                 onClick={() => setShowJson(!showJson)}
-                style={{ padding: "3px 8px", fontSize: 11, background: "none", border: "1px solid #ddd", borderRadius: 3, cursor: "pointer", color: "#888" }}
+                style={{ padding: "3px 8px", fontSize: 11, background: "none", border: "1px solid #ddd", borderRadius: 3, cursor: "pointer", color: "#666" }}
               >
                 {showJson ? "Hide" : "Show"} JSON
               </button>
@@ -866,7 +875,7 @@ function LessonForm({
         {isFiguredBass && (
           <div>
             <label style={labelStyle}>Bass Line</label>
-            <div style={{ fontSize: 12, color: "#888", marginBottom: 8, lineHeight: 1.6 }}>
+            <div style={{ fontSize: 12, color: "#666", marginBottom: 8, lineHeight: 1.6 }}>
               Write the bass line on the bass staff below. An input box appears under each note for figured bass numbers.
               Enter numbers separated by commas (e.g. <strong>6,4</strong> for <sup>6</sup><sub>4</sub>).
               Leave empty for root position.
@@ -892,7 +901,7 @@ function LessonForm({
             <div style={{ marginTop: 8 }}>
               <button
                 onClick={() => setShowJson(!showJson)}
-                style={{ padding: "3px 8px", fontSize: 11, background: "none", border: "1px solid #ddd", borderRadius: 3, cursor: "pointer", color: "#888" }}
+                style={{ padding: "3px 8px", fontSize: 11, background: "none", border: "1px solid #ddd", borderRadius: 3, cursor: "pointer", color: "#666" }}
               >
                 {showJson ? "Hide" : "Show"} JSON
               </button>
@@ -913,7 +922,7 @@ function LessonForm({
         {isRomanNumeral && (
           <div>
             <label style={labelStyle}>Complete SATB Music</label>
-            <div style={{ fontSize: 12, color: "#888", marginBottom: 8, lineHeight: 1.6 }}>
+            <div style={{ fontSize: 12, color: "#666", marginBottom: 8, lineHeight: 1.6 }}>
               Write soprano + alto on the treble staff, tenor + bass on the bass staff.
               Students will see all music locked and must enter roman numeral analysis only.
             </div>
@@ -936,7 +945,7 @@ function LessonForm({
             <div style={{ marginTop: 8 }}>
               <button
                 onClick={() => setShowJson(!showJson)}
-                style={{ padding: "3px 8px", fontSize: 11, background: "none", border: "1px solid #ddd", borderRadius: 3, cursor: "pointer", color: "#888" }}
+                style={{ padding: "3px 8px", fontSize: 11, background: "none", border: "1px solid #ddd", borderRadius: 3, cursor: "pointer", color: "#666" }}
               >
                 {showJson ? "Hide" : "Show"} JSON
               </button>

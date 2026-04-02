@@ -2,13 +2,14 @@ import { useState, useEffect, useCallback, useMemo } from "react";
 import { Link, useParams } from "react-router-dom";
 import { useAuth, API_BASE } from "../auth";
 import { NoteEditor } from "./staff";
-import type { LessonConfig } from "./staff/types";
+import type { LessonConfig, LessonErrorItem } from "./staff/types";
 import { useTheme } from "../useTheme";
 import { TEMPLATE_LABELS, DIFFICULTY_COLORS, NOTE_NAMES } from "../constants";
 
 interface CommunityExercise {
   id: string;
   creatorId: string;
+  creatorDisplayName: string;
   title: string;
   description: string;
   template: string;
@@ -59,7 +60,7 @@ export function CommunityExercisePage() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [submitting, setSubmitting] = useState(false);
-  const [errors, setErrors] = useState<any>(null);
+  const [errors, setErrors] = useState<LessonErrorItem[] | null>(null);
   const [studentRomans, setStudentRomans] = useState<any>(null);
   const [checked, setChecked] = useState(false);
   const [score, setScore] = useState<number | null>(null);
@@ -85,6 +86,15 @@ export function CommunityExercisePage() {
 
   const isOwnExercise = exercise?.creatorId === user?.id;
   const isSubmitted = attempt?.status === "submitted";
+  const [revising, setRevising] = useState(false);
+  const [feedbackOpen, setFeedbackOpen] = useState(true);
+
+  // Auto-enable checking when viewing a submitted exercise so errors are computed
+  useEffect(() => {
+    if (isSubmitted && !revising) {
+      setChecked(true);
+    }
+  }, [isSubmitted, revising]);
 
   const handleVote = async (vote: string) => {
     const res = await fetch(`${API_BASE}/api/community/exercises/${id}/vote`, {
@@ -120,7 +130,7 @@ export function CommunityExercisePage() {
     setLatestBeats({ treble, bass });
   }, []);
 
-  const handleErrorsComputed = useCallback((errs: any) => {
+  const handleErrorsComputed = useCallback((errs: LessonErrorItem[]) => {
     setErrors(errs);
   }, []);
 
@@ -164,18 +174,17 @@ export function CommunityExercisePage() {
     await handleSave();
     setSubmitting(true);
     try {
-      // Calculate score from errors
-      const computedScore = errors ? Math.max(0, 100 - (errors.length || 0) * 5) : 100;
-      const completed = computedScore >= 70;
+      // Score is computed server-side for all templates
       const res = await fetch(`${API_BASE}/api/community/exercises/${id}/submit`, {
         method: "POST",
         headers,
-        body: JSON.stringify({ score: computedScore, completed }),
+        body: JSON.stringify({}),
       });
       if (res.ok) {
         const att = await res.json();
         setAttempt(att);
-        setScore(computedScore);
+        setScore(att.score ?? null);
+        setRevising(false);
       }
     } finally {
       setSubmitting(false);
@@ -184,6 +193,26 @@ export function CommunityExercisePage() {
 
   const lessonConfig: LessonConfig | null = useMemo(() => {
     if (!exercise) return null;
+
+    if (exercise.template === "species_counterpoint") {
+      // Detect CF voice: if sopranoBeats populated and bassBeats empty/null → CF is soprano
+      const cfIsSoprano = exercise.sopranoBeats && exercise.sopranoBeats.length > 0
+        && (!exercise.bassBeats || exercise.bassBeats.length === 0);
+      return {
+        lockedTrebleBeats: cfIsSoprano ? exercise.sopranoBeats : [],
+        lockedBassBeats: cfIsSoprano ? undefined : (exercise.bassBeats || undefined),
+        tonicIdx: exercise.tonicIdx,
+        scaleName: "none",
+        tsTop: exercise.tsTop,
+        tsBottom: exercise.tsBottom,
+        onErrorsComputed: handleErrorsComputed,
+        onBeatsChanged: handleBeatsChanged,
+        checked,
+        forceDuration: "whole" as const,
+        template: "species_counterpoint",
+      };
+    }
+
     return {
       lockedTrebleBeats: exercise.template === "harmonize_melody" ? exercise.sopranoBeats : [],
       lockedBassBeats: exercise.bassBeats || undefined,
@@ -232,26 +261,77 @@ export function CommunityExercisePage() {
   return (
     <div style={{ minHeight: "100vh", display: "flex", flexDirection: "column" }}>
       <NoteEditor
+        key={attempt?.id ?? "no-attempt"}
         lessonConfig={lessonConfig}
-        readOnly={isSubmitted}
+        readOnly={isSubmitted && !revising}
+        initialTrebleBeats={attempt?.trebleBeats || undefined}
+        initialBassBeats={attempt?.bassBeats || undefined}
+        subheader={exercise.description ? (
+          <div style={{ maxWidth: 960, margin: "0 auto", padding: "12px 24px 0", fontSize: 14, color: theme.textSub, lineHeight: 1.5 }}>
+            {exercise.description}
+          </div>
+        ) : undefined}
         header={
-          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "12px 0" }}>
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
             <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
               <Link to="/community" style={{ fontSize: 13, color: theme.textMuted, textDecoration: "none" }}>
                 &larr;
               </Link>
               <span style={{ fontSize: 14, fontWeight: 600 }}>{exercise.title}</span>
             </div>
-            <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-              {isSubmitted && attempt && (
-                <span style={{ fontSize: 12, fontWeight: 600, color: attempt.completed ? "#16a34a" : "#d97706", marginRight: 4 }}>
-                  {attempt.completed ? "Completed" : "Submitted"}{attempt.score !== null && ` ${attempt.score}%`}
-                </span>
+            <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+              {!isOwnExercise && (
+                <div style={{
+                  display: "flex", flexDirection: "column", alignItems: "center",
+                  border: `1px solid ${theme.cardBorder}`, borderRadius: 8,
+                  padding: "2px 4px", minWidth: 32,
+                }}>
+                  <button
+                    onClick={() => handleVote("up")}
+                    style={{
+                      padding: 0, fontSize: 11, lineHeight: 1, background: "none", border: "none",
+                      cursor: "pointer",
+                      color: userVote === "up" ? "#16a34a" : theme.textMuted,
+                    }}
+                    title="Upvote"
+                  >&#9650;</button>
+                  <span style={{
+                    fontSize: 12, fontWeight: 700, lineHeight: 1.2,
+                    color: userVote === "up" ? "#16a34a" : userVote === "down" ? "#d97706" : "inherit",
+                  }}>
+                    {(exercise.upvotes || 0) - (exercise.downvotes || 0)}
+                  </span>
+                  <button
+                    onClick={() => handleVote("down")}
+                    style={{
+                      padding: 0, fontSize: 11, lineHeight: 1, background: "none", border: "none",
+                      cursor: "pointer",
+                      color: userVote === "down" ? "#d97706" : theme.textMuted,
+                    }}
+                    title="Downvote"
+                  >&#9660;</button>
+                </div>
+              )}
+              {isSubmitted && !revising && attempt && (
+                <>
+                  <span style={{ fontSize: 12, fontWeight: 600, color: attempt.completed ? "#16a34a" : "#d97706" }}>
+                    {attempt.completed ? "Completed" : "Submitted"}{attempt.score !== null && ` ${attempt.score}%`}
+                  </span>
+                  {!isOwnExercise && (
+                    <button onClick={() => setRevising(true)} style={{
+                      ...btnStyle, padding: "4px 12px", fontSize: 12,
+                      background: "transparent", color: theme.accent,
+                      border: `1px solid ${theme.accent}`,
+                    }}>
+                      Revise
+                    </button>
+                  )}
+                </>
               )}
               {isOwnExercise && (
-                <span style={{ fontSize: 12, color: theme.textSub, marginRight: 4 }}>Your exercise</span>
+                <span style={{ fontSize: 12, color: theme.textSub }}>Your exercise</span>
               )}
-              {!isSubmitted && !isOwnExercise && (
+              {(!isSubmitted || revising) && !isOwnExercise && (
                 <>
                   <button onClick={handleSave} disabled={saving} style={{
                     ...btnStyle, padding: "4px 12px", fontSize: 12,
@@ -272,7 +352,7 @@ export function CommunityExercisePage() {
                     ...btnStyle, padding: "4px 12px", fontSize: 12,
                     opacity: submitting ? 0.6 : 1,
                   }}>
-                    {submitting ? "Submitting..." : "Submit"}
+                    {submitting ? "Resubmit" : "Submit"}
                   </button>
                 </>
               )}
@@ -280,6 +360,92 @@ export function CommunityExercisePage() {
           </div>
         }
       />
+      {isSubmitted && !revising && errors !== null && exercise.template === "species_counterpoint" && (() => {
+        const grouped = new Map<string, { fullName: string; count: number }>();
+        for (const e of errors) {
+          const existing = grouped.get(e.label);
+          if (existing) existing.count++;
+          else grouped.set(e.label, { fullName: e.fullName, count: 1 });
+        }
+        const allRuleLabels: Record<string, string> = {
+          "\u22255": "Parallel Fifths", "\u22258": "Parallel Octaves",
+          "\u2225 5": "Parallel Fifths", "\u2225 8": "Parallel Octaves",
+          "\u21925": "Direct Fifths", "\u21928": "Direct Octaves",
+          "\u2192 5": "Direct Fifths", "\u2192 8": "Direct Octaves",
+          "VX": "Voice Crossing", "Sp": "Spacing Error",
+          "2LT": "Doubled Leading Tone", "LT\u2191": "Unresolved Leading Tone",
+          "7\u2193": "Unresolved Chordal 7th", "2R": "Root Not Doubled",
+          "Diss": "Dissonant Interval", "!PC": "Imperfect Consonance (Perfect Required)",
+          "Mel": "Forbidden Melodic Interval", "Rep": "Repeated Pitch",
+          "U!": "Unison Not at Endpoints", "Pen": "Bad Penultimate Approach",
+        };
+        const isSpecies = exercise.template === "species_counterpoint";
+        const relevantRules = isSpecies
+          ? ["Diss", "!PC", "Mel", "Rep", "U!", "Pen", "\u22255", "\u22258", "VX"]
+          : ["\u22255", "\u22258", "\u21925", "\u21928", "VX", "Sp", "2LT", "LT\u2191", "7\u2193", "2R"];
+        const violated = Array.from(grouped.entries());
+        const satisfiedRules = relevantRules.filter(r => !grouped.has(r));
+        const hasErrors = errors.length > 0;
+        return (
+          <div style={{ maxWidth: 960, margin: "0 auto", padding: "0 24px 24px", width: "100%" }}>
+            <button
+              onClick={() => setFeedbackOpen(!feedbackOpen)}
+              style={{
+                background: dk ? "rgba(255,255,255,0.05)" : "rgba(0,0,0,0.03)",
+                border: `1px solid ${theme.cardBorder}`,
+                borderRadius: feedbackOpen ? "8px 8px 0 0" : 8,
+                padding: "8px 14px",
+                width: "100%",
+                cursor: "pointer",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "space-between",
+                fontFamily: "inherit",
+                color: theme.text,
+              }}
+            >
+              <span style={{ fontSize: 13, fontWeight: 600 }}>
+                {hasErrors
+                  ? `${errors.length} issue${errors.length !== 1 ? "s" : ""} found`
+                  : "No issues found"}
+              </span>
+              <span style={{ fontSize: 11, color: theme.textMuted }}>
+                {feedbackOpen ? "\u25B2" : "\u25BC"}
+              </span>
+            </button>
+            {feedbackOpen && (
+              <div style={{
+                background: dk ? "rgba(255,255,255,0.03)" : "rgba(0,0,0,0.02)",
+                border: `1px solid ${theme.cardBorder}`,
+                borderTop: "none",
+                borderRadius: "0 0 8px 8px",
+                padding: "10px 14px",
+                fontSize: 13,
+                lineHeight: 1.6,
+              }}>
+                {violated.length > 0 && (
+                  <div style={{ marginBottom: satisfiedRules.length > 0 ? 8 : 0 }}>
+                    {violated.map(([label, { fullName, count }]) => (
+                      <div key={label} style={{ color: dk ? "#fbbf24" : "#d97706" }}>
+                        {"\u2717"} {fullName}{count > 1 ? ` (\u00D7${count})` : ""}
+                      </div>
+                    ))}
+                  </div>
+                )}
+                {satisfiedRules.length > 0 && (
+                  <div>
+                    {satisfiedRules.map(r => (
+                      <div key={r} style={{ color: dk ? "#4ade80" : "#16a34a" }}>
+                        {"\u2713"} {allRuleLabels[r] || r}
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+        );
+      })()}
     </div>
   );
 }

@@ -66,6 +66,7 @@ lazy val crawler = (project in file("crawler"))
   )
 
 lazy val backend = (project in file("backend"))
+  .dependsOn(core.jvm)
   .settings(
     name         := "contrapunctus-backend",
     version      := "0.0.1-SNAPSHOT",

@@ -86,7 +86,7 @@ export function JoinPage() {
   if (loading) {
     return (
       <div style={{ minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center", padding: "32px 16px" }}>
-        <p style={{ color: "#888", fontSize: 14 }}>Loading...</p>
+        <p style={{ color: "#666", fontSize: 14 }}>Loading...</p>
       </div>
     );
   }
@@ -133,7 +133,7 @@ export function JoinPage() {
     return (
       <div style={{ minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center", padding: "32px 16px" }}>
         <div style={cardStyle}>
-          <p style={{ fontSize: 13, color: "#888", marginBottom: 4, textTransform: "uppercase", letterSpacing: 0.5, fontWeight: 600 }}>
+          <p style={{ fontSize: 13, color: "#666", marginBottom: 4, textTransform: "uppercase", letterSpacing: 0.5, fontWeight: 600 }}>
             You've been invited to join
           </p>
           <h1 style={{ fontSize: 24, fontWeight: 700, marginBottom: 8, color: "#1a1a1a" }}>
@@ -228,7 +228,7 @@ export function JoinPage() {
   return (
     <div style={{ minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center", padding: "32px 16px" }}>
       <div style={cardStyle}>
-        <p style={{ fontSize: 13, color: "#888", marginBottom: 4, textTransform: "uppercase", letterSpacing: 0.5, fontWeight: 600 }}>
+        <p style={{ fontSize: 13, color: "#666", marginBottom: 4, textTransform: "uppercase", letterSpacing: 0.5, fontWeight: 600 }}>
           You've been invited to join
         </p>
         <h1 style={{ fontSize: 24, fontWeight: 700, marginBottom: 8, color: "#1a1a1a" }}>

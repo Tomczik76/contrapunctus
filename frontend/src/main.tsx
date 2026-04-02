@@ -1,7 +1,10 @@
 import { createRoot } from "react-dom/client";
-import { BrowserRouter, Routes, Route, Navigate, Link, useSearchParams } from "react-router-dom";
+import { BrowserRouter, Routes, Route, Navigate, useSearchParams } from "react-router-dom";
 import { NoteEditor } from "./components/staff";
 import { AuthProvider, useAuth } from "./auth";
+import { ThemeProvider } from "./useTheme";
+import { TopNav } from "./components/TopNav";
+import { BugReportButton } from "./components/BugReportButton";
 import { SignupPage, LoginPage } from "./components/AuthPages";
 import { ForgotPasswordPage } from "./components/ForgotPasswordPage";
 import { ResetPasswordPage } from "./components/ResetPasswordPage";
@@ -19,12 +22,13 @@ import { ClassLessonPage } from "./components/ClassLessonPage";
 import { EducatorGradePage } from "./components/EducatorGradePage";
 import { CommunityPage } from "./components/CommunityPage";
 import { CommunityExercisePage } from "./components/CommunityExercisePage";
+import { SettingsPage } from "./components/SettingsPage";
 
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
   const { user, loading } = useAuth();
   if (loading) return null;
   if (!user) return <Navigate to="/landing" replace />;
-  return <>{children}</>;
+  return <div style={{ paddingTop: 44 }}>{children}</div>;
 }
 
 function PublicOnly({ children }: { children: React.ReactNode }) {
@@ -37,55 +41,20 @@ function PublicOnly({ children }: { children: React.ReactNode }) {
 }
 
 function EditorPage() {
-  const { user, logout } = useAuth();
   return (
     <div style={{ minHeight: "100vh", display: "flex", flexDirection: "column" }}>
-      <NoteEditor
-        header={
-          <div style={{
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "space-between",
-          }}>
-            <Link to="/" style={{
-              fontSize: 13, color: "#888", textDecoration: "none",
-              display: "inline-flex", alignItems: "center", gap: 4,
-            }}>
-              <span style={{ fontSize: 16 }}>&larr;</span> Home
-            </Link>
-            <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-              <span style={{ fontSize: 13, opacity: 0.6 }}>{user?.displayName}</span>
-              <button
-                onClick={logout}
-                style={{
-                  padding: 0,
-                  fontSize: 12,
-                  background: "none",
-                  border: "none",
-                  opacity: 0.6,
-                  color: "inherit",
-                  cursor: "pointer",
-                  fontFamily: "-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif",
-                  textDecoration: "underline",
-                  textUnderlineOffset: 2,
-                }}
-                onMouseEnter={e => (e.currentTarget.style.opacity = "0.85")}
-                onMouseLeave={e => (e.currentTarget.style.opacity = "0.6")}
-              >
-                Sign out
-              </button>
-            </div>
-          </div>
-        }
-      />
+      <NoteEditor />
     </div>
   );
 }
 
 function App() {
   return (
+    <ThemeProvider>
     <AuthProvider>
       <BrowserRouter>
+        <TopNav />
+        <BugReportButton />
         <Routes>
           <Route path="/landing" element={<PublicOnly><LandingPage /></PublicOnly>} />
           <Route path="/signup" element={<PublicOnly><SignupPage /></PublicOnly>} />
@@ -122,6 +91,11 @@ function App() {
           <Route path="/classes/:classId/lessons/:lessonId" element={
             <ProtectedRoute>
               <ClassLessonPage />
+            </ProtectedRoute>
+          } />
+          <Route path="/settings" element={
+            <ProtectedRoute>
+              <SettingsPage />
             </ProtectedRoute>
           } />
           <Route path="/community" element={
@@ -172,6 +146,7 @@ function App() {
         </Routes>
       </BrowserRouter>
     </AuthProvider>
+    </ThemeProvider>
   );
 }
 

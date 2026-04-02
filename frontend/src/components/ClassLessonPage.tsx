@@ -31,7 +31,7 @@ interface SavedWork {
 
 export function ClassLessonPage() {
   const { classId, lessonId } = useParams<{ classId: string; lessonId: string }>();
-  const { user, token, logout } = useAuth();
+  const { token } = useAuth();
   const [lesson, setLesson] = useState<ClassLesson | null>(null);
   const [savedWork, setSavedWork] = useState<SavedWork | null>(null);
   const [loadingLesson, setLoadingLesson] = useState(true);
@@ -137,7 +137,7 @@ export function ClassLessonPage() {
 
   // Early returns — after all hooks
   const loading = loadingLesson || loadingWork;
-  if (loading) return <div style={{ minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center", color: "#888", fontSize: 14 }}>Loading lesson...</div>;
+  if (loading) return <div style={{ minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center", color: "#666", fontSize: 14 }}>Loading lesson...</div>;
   if (!lesson) return <Navigate to={`/classes/${classId}`} replace />;
 
   const lessonConfig: LessonConfig = {
@@ -337,7 +337,6 @@ export function ClassLessonPage() {
               display: "grid",
               gridTemplateColumns: "1fr auto 1fr",
               alignItems: "center",
-              padding: "12px 0",
             }}>
               <div style={{ display: "flex", alignItems: "center" }}>
                 <Link to={backUrl} style={{
@@ -388,19 +387,6 @@ export function ClassLessonPage() {
                     Back to Class
                   </Link>
                 )}
-                <span style={{ fontSize: 13, opacity: 0.6 }}>{user?.displayName}</span>
-                <button
-                  onClick={logout}
-                  style={{
-                    padding: 0, fontSize: 12, background: "none", border: "none",
-                    opacity: 0.6, color: "inherit", cursor: "pointer", fontFamily: btnFont,
-                    textDecoration: "underline", textUnderlineOffset: 2,
-                  }}
-                  onMouseEnter={e => (e.currentTarget.style.opacity = "0.85")}
-                  onMouseLeave={e => (e.currentTarget.style.opacity = "0.6")}
-                >
-                  Sign out
-                </button>
               </div>
             </div>
           </>

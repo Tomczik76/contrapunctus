@@ -48,7 +48,7 @@ const templateLabels: Record<string, string> = {
 
 export function ClassDetailPage() {
   const { classId } = useParams<{ classId: string }>();
-  const { user, token, logout } = useAuth();
+  const { user, token } = useAuth();
   const theme = useTheme();
   const [cls, setCls] = useState<ClassDetail | null>(null);
   const [loading, setLoading] = useState(true);
@@ -310,22 +310,6 @@ export function ClassDetailPage() {
           }}>
             {cls.status}
           </span>
-        </div>
-        <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-          <span style={{ fontSize: 13, opacity: 0.6 }}>{user?.displayName}</span>
-          <button
-            onClick={logout}
-            style={{
-              padding: 0, fontSize: 12, background: "none", border: "none",
-              opacity: 0.6, color: "inherit", cursor: "pointer",
-              fontFamily: "-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif",
-              textDecoration: "underline", textUnderlineOffset: 2,
-            }}
-            onMouseEnter={e => (e.currentTarget.style.opacity = "0.85")}
-            onMouseLeave={e => (e.currentTarget.style.opacity = "0.6")}
-          >
-            Sign out
-          </button>
         </div>
       </header>
 

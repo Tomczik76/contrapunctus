@@ -21,11 +21,12 @@ trait ExerciseService:
     sopranoBeats: Json, bassBeats: Option[Json], figuredBass: Option[Json],
     referenceSolution: Option[Json], rnAnswerKey: Option[Json], tags: List[String]): IO[Option[CommunityExercise]]
   def publish(id: UUID, creatorId: UUID): IO[Option[CommunityExercise]]
+  def unpublish(id: UUID, creatorId: UUID): IO[Option[CommunityExercise]]
   def delete(id: UUID, creatorId: UUID): IO[Unit]
   def vote(exerciseId: UUID, userId: UUID, vote: String): IO[Unit]
   def getUserVote(exerciseId: UUID, userId: UUID): IO[Option[String]]
   def saveAttempt(userId: UUID, exerciseId: UUID, trebleBeats: Json, bassBeats: Json, studentRomans: Json): IO[Option[ExerciseAttempt]]
-  def submitAttempt(userId: UUID, exerciseId: UUID, score: BigDecimal, completed: Boolean): IO[Option[ExerciseAttempt]]
+  def submitAttempt(userId: UUID, exerciseId: UUID, clientScore: Option[BigDecimal], clientCompleted: Option[Boolean]): IO[Option[ExerciseAttempt]]
   def getAttempt(userId: UUID, exerciseId: UUID): IO[Option[ExerciseAttempt]]
 
 object ExerciseService:
@@ -71,6 +72,9 @@ object ExerciseService:
           case None => IO.pure(None)
         }
 
+      def unpublish(id: UUID, creatorId: UUID): IO[Option[CommunityExercise]] =
+        pool.use(_.option(CommunityExercises.unpublish)((id, creatorId)))
+
       def delete(id: UUID, creatorId: UUID): IO[Unit] =
         pool.use(_.execute(CommunityExercises.softDelete)((id, creatorId))).void
 
@@ -107,38 +111,46 @@ object ExerciseService:
           session.option(ExerciseAttempts.upsert)((userId, exerciseId, trebleBeats, bassBeats, studentRomans))
         }
 
-      def submitAttempt(userId: UUID, exerciseId: UUID, score: BigDecimal, completed: Boolean): IO[Option[ExerciseAttempt]] =
-        pool.use { session =>
-          session.option(ExerciseAttempts.submit)((score, completed, userId, exerciseId))
-        }.flatMap {
+      def submitAttempt(userId: UUID, exerciseId: UUID, clientScore: Option[BigDecimal], clientCompleted: Option[Boolean]): IO[Option[ExerciseAttempt]] =
+        // Compute score server-side
+        val scoreIO: IO[(BigDecimal, Boolean)] = for
+          exerciseOpt <- get(exerciseId)
+          attemptOpt  <- getAttempt(userId, exerciseId)
+        yield (exerciseOpt, attemptOpt) match
+          case (Some(ex), Some(att)) =>
+            ExerciseScoring.score(ex, att)
+          case _ =>
+            (clientScore.getOrElse(BigDecimal(0)), clientCompleted.getOrElse(false))
+
+        scoreIO.flatMap { case (score, wasCompleted) =>
+          pool.use { session =>
+            session.option(ExerciseAttempts.submit)((score, wasCompleted, userId, exerciseId))
+          }.flatMap {
           case Some(attempt) =>
-            val awardCompletion =
-              if completed then
-                for
-                  alreadyAwarded <- pointsService.hasCompletionEvent(userId, exerciseId)
-                  _ <- if alreadyAwarded then IO.unit
-                       else
-                         pool.use { session =>
-                           session.option(CommunityExercises.selectById)(exerciseId)
-                         }.flatMap {
-                           case Some(ex) if ex.creatorId != userId =>
+            // Refresh stats (attempt_count, completion_count, completion_rate) from actual data
+            val updateStats =
+              pool.use(_.execute(CommunityExercises.refreshStats)(exerciseId)).void *>
+              (if wasCompleted then
+                pool.use(_.option(CommunityExercises.selectById)(exerciseId)).flatMap {
+                  case Some(ex) if ex.creatorId != userId =>
+                    for
+                      alreadyAwarded <- pointsService.hasCompletionEvent(userId, exerciseId)
+                      _ <- if alreadyAwarded then IO.unit
+                           else
                              val pts = Rank.difficultyPoints(ex.inferredDifficulty)
                              pointsService.awardPoints(userId, "exercise_completed", pts, Some(exerciseId)) *>
                              pointsService.updateStreak(userId) *>
-                             pool.use { session =>
-                               session.execute(CommunityExercises.incrementCompletionCount)(exerciseId) *>
-                               (if (ex.attemptCount + 1) >= 5 then
-                                  val newRate = BigDecimal(ex.completionCount + 1) / BigDecimal(ex.attemptCount + 1)
-                                  val newDiff = Rank.inferDifficulty(newRate, ex.attemptCount + 1)
-                                  session.execute(CommunityExercises.updateDifficulty)((newDiff, exerciseId))
-                                else IO.pure(skunk.data.Completion.Update(0)))
-                             }.void
-                           case _ => IO.unit
-                         }
-                yield ()
-              else IO.unit
-            awardCompletion *> IO.pure(Some(attempt))
+                             (if ex.attemptCount >= 5 then
+                                val newDiff = Rank.inferDifficulty(ex.completionRate, ex.attemptCount)
+                                pool.use(_.execute(CommunityExercises.updateDifficulty)((newDiff, exerciseId))).void
+                              else IO.unit)
+                    yield ()
+                  case _ => IO.unit
+                }
+              else IO.unit)
+            updateStats *> IO.pure(Some(attempt))
           case None => IO.pure(None)
+          }
         }
 
       def getAttempt(userId: UUID, exerciseId: UUID): IO[Option[ExerciseAttempt]] =

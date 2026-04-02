@@ -29,8 +29,8 @@ object ExerciseAttempts:
         treble_beats = EXCLUDED.treble_beats,
         bass_beats = EXCLUDED.bass_beats,
         student_romans = EXCLUDED.student_romans,
+        status = 'draft',
         saved_at = NOW()
-      WHERE exercise_attempts.status = 'draft'
       RETURNING #$returnCols
     """.query(attemptCodec).map(toAttempt)
 
@@ -44,7 +44,7 @@ object ExerciseAttempts:
     sql"""
       UPDATE exercise_attempts SET
         score = $numeric, completed = $bool, status = 'submitted', submitted_at = NOW()
-      WHERE user_id = $uuid AND exercise_id = $uuid AND status = 'draft'
+      WHERE user_id = $uuid AND exercise_id = $uuid
       RETURNING #$returnCols
     """.query(attemptCodec).map(toAttempt)
 

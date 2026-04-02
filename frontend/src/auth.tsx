@@ -9,6 +9,8 @@ interface User {
   displayName: string;
   isEducator: boolean;
   createdAt: string;
+  country?: string;
+  city?: string;
 }
 
 interface AuthState {
@@ -18,6 +20,7 @@ interface AuthState {
   signup: (email: string, displayName: string, password: string, isEducator: boolean) => Promise<string | null>;
   login: (email: string, password: string) => Promise<{ error?: string; user?: User }>;
   googleLogin: (idToken: string, isEducator: boolean) => Promise<{ error?: string; user?: User }>;
+  updateUser: (user: User) => void;
   logout: () => void;
 }
 
@@ -82,6 +85,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     return { user: data.user };
   }
 
+  function updateUser(updatedUser: User) {
+    setUser(updatedUser);
+    if (token) localStorage.setItem("auth", JSON.stringify({ user: updatedUser, token }));
+  }
+
   function logout() {
     setUser(null);
     setToken(null);
@@ -89,7 +97,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }
 
   return (
-    <AuthContext value={{ user, token, loading, signup, login, googleLogin, logout }}>
+    <AuthContext value={{ user, token, loading, signup, login, googleLogin, updateUser, logout }}>
       {children}
     </AuthContext>
   );

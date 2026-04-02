@@ -55,6 +55,10 @@ export interface LessonConfig {
   initialStudentRomans?: Record<number, string>;
   /** When true (with checked), show student-submitted RN labels instead of computed ones. */
   showStudentRomans?: boolean;
+  /** Lock duration picker to this value. */
+  forceDuration?: Duration;
+  /** Template name for analysis branching (e.g. "species_counterpoint"). */
+  template?: string;
 }
 
 export interface NoteEditorProps {
@@ -84,4 +88,6 @@ export interface NoteEditorProps {
   initialBassBeats?: PlacedBeat[];
   /** If true, disable all editing interactions (note placement, toolbar, RN inputs). */
   readOnly?: boolean;
+  /** Content to display between the toolbar and the score. */
+  subheader?: React.ReactNode;
 }
