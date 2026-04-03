@@ -5,17 +5,30 @@ import skunk._
 import skunk.codec.all._
 import skunk.circe.codec.all.{jsonb => circeJsonb}
 import skunk.implicits._
-import contrapunctus.backend.domain.{AnalysisCorrection, BugReport, FeatureRequest, User}
+import contrapunctus.backend.domain.{AdminUser, AnalysisCorrection, BugReport, FeatureRequest, User}
 
 object Admin:
-  val allUsers: Query[skunk.Void, User] =
+  val allUsers: Query[skunk.Void, AdminUser] =
     sql"""
-      SELECT id, email, display_name, is_educator, created_at
-      FROM users
-      ORDER BY created_at DESC
-    """.query(uuid *: text *: text *: bool *: timestamptz)
-      .map { case (id, email, displayName, isEducator, createdAt) =>
-        User(id, email, displayName, isEducator, createdAt)
+      SELECT
+        u.id, u.email, u.display_name, u.is_educator, u.created_at, u.last_seen_at,
+        COALESCE(p.cnt, 0)::int4,
+        COALESCE(ea.cnt, 0)::int4,
+        COALESCE(ce.cnt, 0)::int4,
+        COALESCE(ce.up, 0)::int4,
+        COALESCE(ce.down, 0)::int4,
+        COALESCE(ev.cnt, 0)::int4,
+        COALESCE(enr.cnt, 0)::int4
+      FROM users u
+      LEFT JOIN (SELECT user_id, COUNT(*) AS cnt FROM projects GROUP BY user_id) p ON p.user_id = u.id
+      LEFT JOIN (SELECT user_id, COUNT(*) AS cnt FROM exercise_attempts GROUP BY user_id) ea ON ea.user_id = u.id
+      LEFT JOIN (SELECT creator_id, COUNT(*) AS cnt, SUM(upvotes) AS up, SUM(downvotes) AS down FROM community_exercises GROUP BY creator_id) ce ON ce.creator_id = u.id
+      LEFT JOIN (SELECT user_id, COUNT(*) AS cnt FROM exercise_votes GROUP BY user_id) ev ON ev.user_id = u.id
+      LEFT JOIN (SELECT student_id, COUNT(*) AS cnt FROM class_enrollments GROUP BY student_id) enr ON enr.student_id = u.id
+      ORDER BY u.created_at DESC
+    """.query(uuid *: text *: text *: bool *: timestamptz *: timestamptz.opt *: int4 *: int4 *: int4 *: int4 *: int4 *: int4 *: int4)
+      .map { case (id, email, displayName, isEducator, createdAt, lastSeenAt, projects, exercisesAttempted, exercisesCreated, upvotes, downvotes, votesCast, classesEnrolled) =>
+        AdminUser(id, email, displayName, isEducator, createdAt, lastSeenAt, projects, exercisesAttempted, exercisesCreated, upvotes, downvotes, votesCast, classesEnrolled)
       }
 
   val allBugReports: Query[skunk.Void, BugReport] =

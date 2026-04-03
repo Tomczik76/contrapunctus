@@ -9,6 +9,14 @@ interface User {
   displayName: string;
   isEducator: boolean;
   createdAt: string;
+  lastSeenAt: string | null;
+  projects: number;
+  exercisesAttempted: number;
+  exercisesCreated: number;
+  upvotesReceived: number;
+  downvotesReceived: number;
+  votesCast: number;
+  classesEnrolled: number;
 }
 
 interface BugReport {
@@ -243,37 +251,144 @@ export function AdminPage() {
   );
 }
 
-function UsersTab({ users }: { users: User[] }) {
+function UserStats({ users }: { users: User[] }) {
+  const now = Date.now();
+  const day = 24 * 60 * 60 * 1000;
+  const week = 7 * day;
+
+  const last24h = users.filter((u) => now - new Date(u.createdAt).getTime() < day);
+  const lastWeek = users.filter((u) => now - new Date(u.createdAt).getTime() < week);
+
+  const educators = users.filter((u) => u.isEducator);
+  const educatorsWeek = lastWeek.filter((u) => u.isEducator);
+  const educators24h = last24h.filter((u) => u.isEducator);
+
+  const stat = (label: string, total: number, edu: number) => (
+    <div style={{ background: "#fff", border: "1px solid #e0e0e0", borderRadius: 8, padding: "16px 20px", minWidth: 150 }}>
+      <div style={{ fontSize: 11, color: "#888", textTransform: "uppercase", letterSpacing: 0.5, marginBottom: 8 }}>{label}</div>
+      <div style={{ fontSize: 28, fontWeight: 700, marginBottom: 4 }}>{total}</div>
+      <div style={{ fontSize: 12, color: "#666" }}>
+        <span style={{ color: "#44c", fontWeight: 600 }}>{edu}</span> educator{edu !== 1 ? "s" : ""}
+        {" / "}
+        <span>{total - edu}</span> student{total - edu !== 1 ? "s" : ""}
+      </div>
+    </div>
+  );
+
   return (
+    <div style={{ display: "flex", gap: 16, marginBottom: 20 }}>
+      {stat("All Time", users.length, educators.length)}
+      {stat("Last 7 Days", lastWeek.length, educatorsWeek.length)}
+      {stat("Last 24 Hours", last24h.length, educators24h.length)}
+    </div>
+  );
+}
+
+function timeAgo(dateStr: string | null): string {
+  if (!dateStr) return "Never";
+  const diff = Date.now() - new Date(dateStr).getTime();
+  const mins = Math.floor(diff / 60000);
+  if (mins < 1) return "Just now";
+  if (mins < 60) return `${mins}m ago`;
+  const hrs = Math.floor(mins / 60);
+  if (hrs < 24) return `${hrs}h ago`;
+  const days = Math.floor(hrs / 24);
+  if (days < 30) return `${days}d ago`;
+  const months = Math.floor(days / 30);
+  return `${months}mo ago`;
+}
+
+type SortField = "email" | "created" | "lastSeen" | "projects" | "attempted" | "created_ex" | "upvotes" | "downvotes" | "votes" | "classes";
+
+function UsersTab({ users }: { users: User[] }) {
+  const [sortField, setSortField] = useState<SortField>("created");
+  const [sortAsc, setSortAsc] = useState(false);
+
+  function handleSort(field: SortField) {
+    if (sortField === field) setSortAsc(!sortAsc);
+    else { setSortField(field); setSortAsc(false); }
+  }
+
+  const sorted = [...users].sort((a, b) => {
+    const dir = sortAsc ? 1 : -1;
+    switch (sortField) {
+      case "email": return dir * a.email.localeCompare(b.email);
+      case "created": return dir * (new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime());
+      case "lastSeen": {
+        const aT = a.lastSeenAt ? new Date(a.lastSeenAt).getTime() : 0;
+        const bT = b.lastSeenAt ? new Date(b.lastSeenAt).getTime() : 0;
+        return dir * (aT - bT);
+      }
+      case "projects": return dir * (a.projects - b.projects);
+      case "attempted": return dir * (a.exercisesAttempted - b.exercisesAttempted);
+      case "created_ex": return dir * (a.exercisesCreated - b.exercisesCreated);
+      case "upvotes": return dir * (a.upvotesReceived - b.upvotesReceived);
+      case "downvotes": return dir * (a.downvotesReceived - b.downvotesReceived);
+      case "votes": return dir * (a.votesCast - b.votesCast);
+      case "classes": return dir * (a.classesEnrolled - b.classesEnrolled);
+      default: return 0;
+    }
+  });
+
+  const arrow = (field: SortField) => sortField === field ? (sortAsc ? " \u25B2" : " \u25BC") : "";
+  const thStyle = (field: SortField): React.CSSProperties => ({
+    padding: "10px 12px", cursor: "pointer", userSelect: "none", whiteSpace: "nowrap",
+    background: sortField === field ? "#f8f8f8" : undefined,
+  });
+
+  return (
+    <>
+    <UserStats users={users} />
+    <div style={{ overflowX: "auto" }}>
     <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
       <thead>
         <tr style={{ borderBottom: "2px solid #eee", textAlign: "left" }}>
-          <th style={{ padding: "10px 12px" }}>Email</th>
-          <th style={{ padding: "10px 12px" }}>Display Name</th>
+          <th style={thStyle("email")} onClick={() => handleSort("email")}>Email{arrow("email")}</th>
+          <th style={{ padding: "10px 12px" }}>Name</th>
           <th style={{ padding: "10px 12px" }}>Role</th>
-          <th style={{ padding: "10px 12px" }}>Created</th>
+          <th style={thStyle("classes")} onClick={() => handleSort("classes")}>Classes{arrow("classes")}</th>
+          <th style={thStyle("projects")} onClick={() => handleSort("projects")}>Projects{arrow("projects")}</th>
+          <th style={thStyle("attempted")} onClick={() => handleSort("attempted")}>Ex. Attempted{arrow("attempted")}</th>
+          <th style={thStyle("created_ex")} onClick={() => handleSort("created_ex")}>Ex. Created{arrow("created_ex")}</th>
+          <th style={thStyle("upvotes")} onClick={() => handleSort("upvotes")}>Upvotes{arrow("upvotes")}</th>
+          <th style={thStyle("downvotes")} onClick={() => handleSort("downvotes")}>Downvotes{arrow("downvotes")}</th>
+          <th style={thStyle("votes")} onClick={() => handleSort("votes")}>Votes Cast{arrow("votes")}</th>
+          <th style={thStyle("lastSeen")} onClick={() => handleSort("lastSeen")}>Last Seen{arrow("lastSeen")}</th>
+          <th style={thStyle("created")} onClick={() => handleSort("created")}>Created{arrow("created")}</th>
         </tr>
       </thead>
       <tbody>
-        {users.map((u) => (
+        {sorted.map((u) => (
           <tr key={u.id} style={{ borderBottom: "1px solid #f0f0f0" }}>
             <td style={{ padding: "8px 12px" }}>{u.email}</td>
             <td style={{ padding: "8px 12px" }}>{u.displayName}</td>
             <td style={{ padding: "8px 12px" }}>
               {u.isEducator ? (
                 <span style={{ fontSize: 11, fontWeight: 600, padding: "2px 8px", borderRadius: 10, background: "#eef", color: "#44c" }}>Educator</span>
+              ) : u.classesEnrolled > 0 ? (
+                <span style={{ fontSize: 11, fontWeight: 600, padding: "2px 8px", borderRadius: 10, background: "#efe", color: "#2a2" }}>Student</span>
               ) : (
-                <span style={{ fontSize: 11, color: "#999" }}>Student</span>
+                <span style={{ fontSize: 11, color: "#999" }}>Individual</span>
               )}
             </td>
-            <td style={{ padding: "8px 12px" }}>{new Date(u.createdAt).toLocaleString()}</td>
+            <td style={{ padding: "8px 12px", textAlign: "center" }}>{u.classesEnrolled}</td>
+            <td style={{ padding: "8px 12px", textAlign: "center" }}>{u.projects}</td>
+            <td style={{ padding: "8px 12px", textAlign: "center" }}>{u.exercisesAttempted}</td>
+            <td style={{ padding: "8px 12px", textAlign: "center" }}>{u.exercisesCreated}</td>
+            <td style={{ padding: "8px 12px", textAlign: "center" }}>{u.upvotesReceived}</td>
+            <td style={{ padding: "8px 12px", textAlign: "center" }}>{u.downvotesReceived}</td>
+            <td style={{ padding: "8px 12px", textAlign: "center" }}>{u.votesCast}</td>
+            <td style={{ padding: "8px 12px", whiteSpace: "nowrap" }}>{timeAgo(u.lastSeenAt)}</td>
+            <td style={{ padding: "8px 12px", whiteSpace: "nowrap" }}>{new Date(u.createdAt).toLocaleDateString()}</td>
           </tr>
         ))}
         {users.length === 0 && (
-          <tr><td colSpan={4} style={{ padding: 24, textAlign: "center", color: "#666" }}>No users yet</td></tr>
+          <tr><td colSpan={12} style={{ padding: 24, textAlign: "center", color: "#666" }}>No users yet</td></tr>
         )}
       </tbody>
     </table>
+    </div>
+    </>
   );
 }
 

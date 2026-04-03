@@ -55,3 +55,8 @@ object Users:
       WHERE id = $uuid
       RETURNING #$userCols
     """.query(userCodec).map(toUser)
+
+  val updateLastSeenAt: Command[UUID] =
+    sql"""
+      UPDATE users SET last_seen_at = NOW() WHERE id = $uuid
+    """.command

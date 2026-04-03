@@ -9,7 +9,7 @@ import org.http4s.circe.CirceEntityCodec._
 import org.http4s.dsl.io._
 import skunk.Session
 import contrapunctus.backend.db.{Admin, RoadmapVotes}
-import contrapunctus.backend.domain.{AnalysisCorrection, BugReport, FeatureRequest, User}
+import contrapunctus.backend.domain.{AdminUser, AnalysisCorrection, BugReport, FeatureRequest, User}
 
 case class StatusUpdate(status: String)
 

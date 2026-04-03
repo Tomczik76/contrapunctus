@@ -13,6 +13,7 @@ import org.http4s.server.middleware.{CORS, Logger}
 import org.http4s.ember.server.EmberServerBuilder
 import org.http4s.ember.client.EmberClientBuilder
 import skunk.Session
+import contrapunctus.backend.middleware.LastSeenMiddleware
 import contrapunctus.backend.routes.{AdminRoutes, BugReportRoutes, CommunityRoutes, CorrectionRoutes, EducatorRoutes, FeatureRequestRoutes, JoinRoutes, LessonRoutes, LoginRoutes, OAuthRoutes, PasswordResetRoutes, ProfileRoutes, ProjectRoutes, RoadmapRoutes, ShareRoutes, SignupRoutes, StudentRoutes}
 import contrapunctus.backend.services.{BugReportService, CorrectionService, EducatorService, EmailService, ExerciseService, FeatureRequestService, LessonService, OAuthService, PasswordResetService, PointsService, ProjectService, ShareService, UserService}
 
@@ -60,7 +61,8 @@ object Server:
                      <+> AdminRoutes.routes(pool, config.adminPassword)
 
       val sharePublicRoutes = ShareRoutes.publicRoutes(shareService, config.backendBaseUrl, config.frontendBaseUrl)
-      val loggedApiRoutes   = Logger.httpRoutes(logHeaders = false, logBody = false)(apiRoutes)
+      val trackedApiRoutes  = LastSeenMiddleware(pool, config.jwtSecret)(apiRoutes)
+      val loggedApiRoutes   = Logger.httpRoutes(logHeaders = false, logBody = false)(trackedApiRoutes)
       val routes            = Router("/" -> (healthRoutes <+> sharePublicRoutes), "/api" -> loggedApiRoutes)
       val corsRoutes        = CORS.policy.withAllowOriginAll(routes.orNotFound)
 
