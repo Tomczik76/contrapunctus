@@ -6,6 +6,7 @@ import type { LessonConfig, LessonErrorItem } from "./staff/types";
 import { useTheme } from "../useTheme";
 import { TEMPLATE_LABELS, DIFFICULTY_COLORS, NOTE_NAMES } from "../constants";
 import { VoteWidget } from "./VoteWidget";
+import { ShareButton } from "./ShareButton";
 
 interface CommunityExercise {
   id: string;
@@ -90,6 +91,7 @@ export function CommunityExercisePage() {
   const [solutionsLoading, setSolutionsLoading] = useState(false);
   const [shareOnSubmit, setShareOnSubmit] = useState(true);
   const [expandedSolution, setExpandedSolution] = useState<string | null>(null);
+  const [svgEl, setSvgEl] = useState<SVGSVGElement | null>(null);
 
   const headers = { Authorization: `Bearer ${token}`, "Content-Type": "application/json" };
 
@@ -435,6 +437,7 @@ export function CommunityExercisePage() {
                 maxWidth={1200}
                 initialTrebleBeats={attempt?.trebleBeats || undefined}
                 initialBassBeats={attempt?.bassBeats || undefined}
+                onSvgRef={setSvgEl}
                 subheader={exercise.description ? (
                   <div style={{ maxWidth: 960, margin: "0 auto", padding: "12px 24px 0", fontSize: 14, color: theme.textSub, lineHeight: 1.5 }}>
                     {exercise.description}
@@ -465,6 +468,20 @@ export function CommunityExercisePage() {
                           background: "transparent", color: theme.accent,
                           border: `1px solid ${theme.accent}`,
                         }}>Revise</button>
+                      )}
+                      {id && (
+                        <ShareButton
+                          svgElement={svgEl}
+                          sourceType="exercise"
+                          sourceId={id}
+                          title={exercise.title}
+                          description={exercise.description}
+                          style={{
+                            ...btnStyle, padding: "4px 12px", fontSize: 12,
+                            background: "transparent", color: theme.accent,
+                            border: `1px solid ${theme.accent}`,
+                          }}
+                        />
                       )}
                     </div>
                   </div>

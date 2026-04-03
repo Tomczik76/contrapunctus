@@ -13,8 +13,8 @@ import org.http4s.server.middleware.{CORS, Logger}
 import org.http4s.ember.server.EmberServerBuilder
 import org.http4s.ember.client.EmberClientBuilder
 import skunk.Session
-import contrapunctus.backend.routes.{AdminRoutes, BugReportRoutes, CommunityRoutes, CorrectionRoutes, EducatorRoutes, FeatureRequestRoutes, JoinRoutes, LessonRoutes, LoginRoutes, OAuthRoutes, PasswordResetRoutes, ProfileRoutes, ProjectRoutes, RoadmapRoutes, SignupRoutes, StudentRoutes}
-import contrapunctus.backend.services.{BugReportService, CorrectionService, EducatorService, EmailService, ExerciseService, FeatureRequestService, LessonService, OAuthService, PasswordResetService, PointsService, ProjectService, UserService}
+import contrapunctus.backend.routes.{AdminRoutes, BugReportRoutes, CommunityRoutes, CorrectionRoutes, EducatorRoutes, FeatureRequestRoutes, JoinRoutes, LessonRoutes, LoginRoutes, OAuthRoutes, PasswordResetRoutes, ProfileRoutes, ProjectRoutes, RoadmapRoutes, ShareRoutes, SignupRoutes, StudentRoutes}
+import contrapunctus.backend.services.{BugReportService, CorrectionService, EducatorService, EmailService, ExerciseService, FeatureRequestService, LessonService, OAuthService, PasswordResetService, PointsService, ProjectService, ShareService, UserService}
 
 object Server:
   def run(pool: Resource[IO, Session[IO]], config: AppConfig): IO[Nothing] =
@@ -35,6 +35,7 @@ object Server:
       val exerciseService       = ExerciseService.make(pool, pointsService)
       val resetService          = PasswordResetService.make(pool, emailService)
       val projectService        = ProjectService.make(pool)
+      val shareService          = ShareService.make(pool, config.sharesBucket, config.sharesRegion, projectService)
       val oAuthService          = OAuthService.make(pool, httpClient, config.jwtSecret, config.googleClientId, emailService)
 
       val healthRoutes = HttpRoutes.of[IO] { case GET -> Root / "health" => Ok("ok") }
@@ -52,13 +53,16 @@ object Server:
                      <+> LessonRoutes.publicRoutes(lessonService)
                      <+> LessonRoutes.adminRoutes(lessonService, config.adminPassword)
                      <+> CommunityRoutes.routes(exerciseService, pointsService, config.jwtSecret)
+                     <+> ProjectRoutes.publicRoutes(projectService)
                      <+> ProjectRoutes.routes(projectService, config.jwtSecret)
+                     <+> ShareRoutes.apiRoutes(shareService, config.backendBaseUrl, config.jwtSecret)
                      <+> ProfileRoutes.routes(pool, config.jwtSecret)
                      <+> AdminRoutes.routes(pool, config.adminPassword)
 
-      val loggedApiRoutes = Logger.httpRoutes(logHeaders = false, logBody = false)(apiRoutes)
-      val routes          = Router("/" -> healthRoutes, "/api" -> loggedApiRoutes)
-      val corsRoutes      = CORS.policy.withAllowOriginAll(routes.orNotFound)
+      val sharePublicRoutes = ShareRoutes.publicRoutes(shareService, config.backendBaseUrl, config.frontendBaseUrl)
+      val loggedApiRoutes   = Logger.httpRoutes(logHeaders = false, logBody = false)(apiRoutes)
+      val routes            = Router("/" -> (healthRoutes <+> sharePublicRoutes), "/api" -> loggedApiRoutes)
+      val corsRoutes        = CORS.policy.withAllowOriginAll(routes.orNotFound)
 
       EmberServerBuilder
         .default[IO]

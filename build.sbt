@@ -94,6 +94,7 @@ lazy val backend = (project in file("backend"))
       "com.github.pureconfig" %% "pureconfig-core" % PureConfigVersion,
       "org.http4s"     %% "http4s-ember-client" % Http4sVersion,
       "software.amazon.awssdk" % "ses"           % "2.31.1",
+      "software.amazon.awssdk" % "s3"            % "2.31.1",
     ),
     testFrameworks += new TestFramework("munit.Framework"),
     assembly / mainClass := Some("contrapunctus.backend.Main"),

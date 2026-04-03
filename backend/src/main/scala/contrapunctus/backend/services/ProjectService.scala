@@ -14,6 +14,8 @@ trait ProjectService:
   def update(id: UUID, userId: UUID, name: String, trebleBeats: Json, bassBeats: Json,
     tsTop: Int, tsBottom: Int, tonicIdx: Int, scaleName: String): IO[Option[Project]]
   def get(id: UUID, userId: UUID): IO[Option[Project]]
+  def getShared(id: UUID): IO[Option[Project]]
+  def markShared(id: UUID, userId: UUID): IO[Option[Project]]
   def listByUser(userId: UUID): IO[List[Project]]
   def delete(id: UUID, userId: UUID): IO[Unit]
 
@@ -30,6 +32,12 @@ object ProjectService:
 
       def get(id: UUID, userId: UUID): IO[Option[Project]] =
         pool.use(_.option(Projects.selectById)((id, userId)))
+
+      def getShared(id: UUID): IO[Option[Project]] =
+        pool.use(_.option(Projects.selectSharedById)(id))
+
+      def markShared(id: UUID, userId: UUID): IO[Option[Project]] =
+        pool.use(_.option(Projects.markShared)((id, userId)))
 
       def listByUser(userId: UUID): IO[List[Project]] =
         pool.use(_.execute(Projects.listByUser)(userId))

@@ -17,5 +17,8 @@ case class AppConfig(
   googleClientId:  String = "",
   sesRegion:       String = "us-west-2",
   fromEmail:       String = "noreply@contrapunctus.app",
-  frontendBaseUrl: String = "https://www.contrapunctus.app"
+  frontendBaseUrl: String = "https://www.contrapunctus.app",
+  backendBaseUrl:  String = "https://api.contrapunctus.app",
+  sharesBucket:    String = "contrapunctus-shares",
+  sharesRegion:    String = "us-west-2"
 ) derives ConfigReader

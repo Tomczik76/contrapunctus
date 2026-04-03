@@ -16,6 +16,7 @@ case class Project(
   tsBottom: Int,
   tonicIdx: Int,
   scaleName: String,
+  shared: Boolean,
   createdAt: OffsetDateTime,
   updatedAt: OffsetDateTime
 )

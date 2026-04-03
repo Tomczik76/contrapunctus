@@ -12,13 +12,13 @@ import java.util.UUID
 object Projects:
 
   private val projectCodec =
-    uuid *: uuid *: varchar(200) *: circeJsonb *: circeJsonb *: int4 *: int4 *: int4 *: varchar(50) *: timestamptz *: timestamptz
+    uuid *: uuid *: varchar(200) *: circeJsonb *: circeJsonb *: int4 *: int4 *: int4 *: varchar(50) *: bool *: timestamptz *: timestamptz
 
-  private def toProject(t: (UUID, UUID, String, Json, Json, Int, Int, Int, String,
+  private def toProject(t: (UUID, UUID, String, Json, Json, Int, Int, Int, String, Boolean,
     java.time.OffsetDateTime, java.time.OffsetDateTime)) =
-    Project(t._1, t._2, t._3, t._4, t._5, t._6, t._7, t._8, t._9, t._10, t._11)
+    Project(t._1, t._2, t._3, t._4, t._5, t._6, t._7, t._8, t._9, t._10, t._11, t._12)
 
-  private val returnCols = "id, user_id, name, treble_beats, bass_beats, ts_top, ts_bottom, tonic_idx, scale_name, created_at, updated_at"
+  private val returnCols = "id, user_id, name, treble_beats, bass_beats, ts_top, ts_bottom, tonic_idx, scale_name, shared, created_at, updated_at"
 
   val insert: Query[(UUID, String, Json, Json, Int, Int, Int, String), Project] =
     sql"""
@@ -41,6 +41,19 @@ object Projects:
     sql"""
       SELECT #$returnCols FROM projects
       WHERE id = $uuid AND user_id = $uuid
+    """.query(projectCodec).map(toProject)
+
+  val selectSharedById: Query[UUID, Project] =
+    sql"""
+      SELECT #$returnCols FROM projects
+      WHERE id = $uuid AND shared = TRUE
+    """.query(projectCodec).map(toProject)
+
+  val markShared: Query[(UUID, UUID), Project] =
+    sql"""
+      UPDATE projects SET shared = TRUE, updated_at = NOW()
+      WHERE id = $uuid AND user_id = $uuid
+      RETURNING #$returnCols
     """.query(projectCodec).map(toProject)
 
   val listByUser: Query[UUID, Project] =

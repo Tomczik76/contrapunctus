@@ -72,7 +72,7 @@ function TsDigit({ digit, x, y }: { digit: number; x: number; y: number }) {
 }
 
 
-export function NoteEditor({ header, subheader, lessonConfig, onTrebleBeatsChanged, onBassBeatsChanged, figuredBassValues, onFiguredBassChanged, trebleOnly, initialTonicIdx, initialScaleName, initialTsTop, initialTsBottom, initialTrebleBeats, initialBassBeats, embedded: embeddedProp, readOnly, maxWidth: maxWidthProp, onSettingsChanged }: NoteEditorProps) {
+export function NoteEditor({ header, subheader, lessonConfig, onTrebleBeatsChanged, onBassBeatsChanged, figuredBassValues, onFiguredBassChanged, trebleOnly, initialTonicIdx, initialScaleName, initialTsTop, initialTsBottom, initialTrebleBeats, initialBassBeats, embedded: embeddedProp, readOnly, maxWidth: maxWidthProp, onSettingsChanged, onSvgRef }: NoteEditorProps) {
   const embedded = embeddedProp ?? !!(onTrebleBeatsChanged || onBassBeatsChanged);
   const { token } = useAuth();
   // ── LocalStorage persistence ──────────────────────────────────────
@@ -222,6 +222,12 @@ export function NoteEditor({ header, subheader, lessonConfig, onTrebleBeatsChang
   const topBarSpacerRef = useRef<HTMLDivElement>(null);
   const [containerWidth, setContainerWidth] = useState(880);
 
+  // Expose SVG ref to parent via callback
+  useEffect(() => {
+    onSvgRef?.(svgRef.current);
+    return () => { onSvgRef?.(null); };
+  }, [onSvgRef]);
+
   // Save state to localStorage on changes (skip in lesson mode and admin embed)
   useEffect(() => {
     if (lessonConfig || embedded) return;
@@ -280,18 +286,20 @@ export function NoteEditor({ header, subheader, lessonConfig, onTrebleBeatsChang
 
   // Pad the shorter staff with whole-measure rests so both staves have equal measures.
   // If the last measure has notes, add an extra empty measure for easy continuation.
-  const [paddedTrebleBeats, paddedBassBeats] = useMemo(() => {
+  const [paddedTrebleBeats, paddedBassBeats, realMeasureCount] = useMemo(() => {
     const measureCap = tsTop / tsBottom;
     const tMeasures = computeMeasures(trebleBeats, tsTop, tsBottom);
     const bMeasures = computeMeasures(bassBeats, tsTop, tsBottom);
-    let maxM = Math.max(tMeasures.length, bMeasures.length);
+    const realM = Math.max(tMeasures.length, bMeasures.length);
+    let maxM = realM;
     if (!lessonConfig && (lastMeasureHasNote(trebleBeats, tMeasures) || lastMeasureHasNote(bassBeats, bMeasures))) {
       maxM += 1;
     }
     return [
       padToMeasuresFn(trebleBeats, tMeasures.length, maxM, fillWithRests, measureCap),
       padToMeasuresFn(bassBeats, bMeasures.length, maxM, fillWithRests, measureCap),
-    ];
+      realM,
+    ] as const;
   }, [trebleBeats, bassBeats, tsTop, tsBottom, lessonConfig]);
 
   // Time-based beat positioning
@@ -397,6 +405,16 @@ export function NoteEditor({ header, subheader, lessonConfig, onTrebleBeatsChang
 
   const { systems, barlines: barlineData, systemCount } = systemLayout;
   const staffW = systemLayout.staffW;
+
+  // Width for PNG export — crop at the last real barline (excludes the extra editing measure)
+  const exportWidth = useMemo(() => {
+    // barlineData[realMeasureCount - 1] is the barline at the end of the last real measure
+    const cropBarlineIdx = realMeasureCount - 1;
+    if (cropBarlineIdx >= 0 && cropBarlineIdx < barlineData.length && barlineData.length > cropBarlineIdx) {
+      return barlineData[cropBarlineIdx].x + RIGHT_MARGIN;
+    }
+    return staffW;
+  }, [barlineData, realMeasureCount, staffW]);
   const [showErrorsRaw, setShowErrors] = useState(false);
   const showErrors = lessonConfig?.checked || showErrorsRaw;
   const maxFBFigures = lessonConfig?.figuredBass
@@ -3179,6 +3197,7 @@ export function NoteEditor({ header, subheader, lessonConfig, onTrebleBeatsChang
         width="100%"
         height={svgHeight}
         viewBox={`0 0 ${staffW} ${svgHeight}`}
+        data-export-width={exportWidth}
         preserveAspectRatio="xMinYMin meet"
         style={{ fontFamily: "serif", cursor: correctionSelectionMode ? "pointer" : deleteMode ? "not-allowed" : "crosshair", display: "block" }}
         onMouseMove={handleMouseMove}

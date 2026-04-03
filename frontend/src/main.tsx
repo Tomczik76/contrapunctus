@@ -25,6 +25,8 @@ import { EducatorGradePage } from "./components/EducatorGradePage";
 import { CommunityPage } from "./components/CommunityPage";
 import { CommunityExercisePage } from "./components/CommunityExercisePage";
 import { SettingsPage } from "./components/SettingsPage";
+import { ShareButton } from "./components/ShareButton";
+import { SharedProjectPage } from "./components/SharedProjectPage";
 
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
   const { user, loading } = useAuth();
@@ -268,6 +270,7 @@ function EditorPage() {
     });
   };
 
+  const [svgEl, setSvgEl] = useState<SVGSVGElement | null>(null);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
 
   const handleDelete = () => {
@@ -378,6 +381,15 @@ function EditorPage() {
       {projectId && (
         <button style={{ ...tb, color: "#c0392b", borderColor: "#c0392b" }} onClick={handleDelete}>Delete</button>
       )}
+      {projectId && (
+        <ShareButton
+          svgElement={svgEl}
+          sourceType="project"
+          sourceId={projectId}
+          title={projectName}
+          style={tb}
+        />
+      )}
     </div>
   );
 
@@ -453,6 +465,7 @@ function EditorPage() {
         onTrebleBeatsChanged={handleTrebleChanged}
         onBassBeatsChanged={handleBassChanged}
         onSettingsChanged={handleSettingsChanged}
+        onSvgRef={setSvgEl}
       />
       {unsavedModal}
       {deleteModal}
@@ -532,6 +545,7 @@ function App() {
               <SettingsPage />
             </ProtectedRoute>
           } />
+          <Route path="/shared/:projectId" element={<SharedProjectPage />} />
           <Route path="/community" element={<CommunityPage />} />
           <Route path="/community/:id" element={<CommunityExercisePage />} />
           <Route path="/educator" element={

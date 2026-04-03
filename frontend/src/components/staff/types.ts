@@ -96,4 +96,6 @@ export interface NoteEditorProps {
   maxWidth?: number;
   /** Called whenever settings (time sig, key, scale) change. */
   onSettingsChanged?: (settings: { tsTop: number; tsBottom: number; tonicIdx: number; scaleName: string }) => void;
+  /** Callback to receive a ref to the SVG element for external use (e.g., image export). */
+  onSvgRef?: (svg: SVGSVGElement | null) => void;
 }

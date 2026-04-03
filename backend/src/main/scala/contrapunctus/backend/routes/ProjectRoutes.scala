@@ -28,6 +28,17 @@ object SaveProjectRequest:
 
 object ProjectRoutes:
 
+  def publicRoutes(projectService: ProjectService): HttpRoutes[IO] =
+    HttpRoutes.of[IO] {
+      case GET -> Root / "projects" / UUIDVar(id) / "public" =>
+        projectService.getShared(id).flatMap {
+          case Some(p) =>
+            Ok(p.asJson.mapObject(_.remove("userId")))
+          case None =>
+            NotFound(Json.obj("error" -> Json.fromString("not found")))
+        }
+    }
+
   def routes(projectService: ProjectService, jwtSecret: String): HttpRoutes[IO] =
     HttpRoutes.of[IO] {
 

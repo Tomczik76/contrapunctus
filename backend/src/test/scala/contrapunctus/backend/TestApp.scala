@@ -37,6 +37,7 @@ object TestApp:
     val exerciseService       = ExerciseService.make(pool, pointsService)
     val resetService          = PasswordResetService.make(pool, emailService)
     val projectService        = ProjectService.make(pool)
+    val shareService          = ShareService.makeTest(pool, projectService)
 
     val apiRoutes = SignupRoutes.routes(userService)
       <+> LoginRoutes.routes(userService)
@@ -51,10 +52,13 @@ object TestApp:
       <+> LessonRoutes.publicRoutes(lessonService)
       <+> LessonRoutes.adminRoutes(lessonService, adminPassword)
       <+> CommunityRoutes.routes(exerciseService, pointsService, jwtSecret)
+      <+> ProjectRoutes.publicRoutes(projectService)
       <+> ProjectRoutes.routes(projectService, jwtSecret)
+      <+> ShareRoutes.apiRoutes(shareService, "http://localhost:8080", jwtSecret)
       <+> AdminRoutes.routes(pool, adminPassword)
 
-    Router("/api" -> apiRoutes).orNotFound
+    val sharePublicRoutes = ShareRoutes.publicRoutes(shareService, "http://localhost:8080", "http://localhost:5173")
+    Router("/" -> sharePublicRoutes, "/api" -> apiRoutes).orNotFound
 
   def signup(app: HttpApp[IO], email: String, name: String, isEducator: Boolean = false): IO[(String, Json)] =
     val req = Request[IO](Method.POST, uri"/api/signup")

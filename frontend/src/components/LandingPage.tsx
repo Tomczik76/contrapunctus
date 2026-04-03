@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { TREBLE_CLEF_PATH, BASS_CLEF_PATH, NOTEHEAD_BLACK, NOTEHEAD_HALF, GLYPH_SCALE } from "./staff/glyphs";
 import { STEP, SPACE, STEM_HEIGHT, STEM_W, LINE_W } from "./staff/constants";
@@ -50,10 +50,6 @@ const LANDING_CSS = `
 @keyframes rnFadeIn {
   from { opacity: 0; }
   to   { opacity: 1; }
-}
-@keyframes fadeInUp {
-  from { opacity: 0; transform: translateY(20px); }
-  to   { opacity: 1; transform: translateY(0); }
 }
 .landing-card {
   transition: transform 0.2s ease, box-shadow 0.2s ease;
@@ -202,45 +198,6 @@ function StaffIllustration({ color = "#1a1a1a" }: { color?: string }) {
   );
 }
 
-// ── Intersection Observer hook for scroll animations ────────────────
-
-function useScrollReveal() {
-  const ref = useRef<HTMLDivElement>(null);
-  useEffect(() => {
-    const el = ref.current;
-    if (!el) return;
-    const observer = new IntersectionObserver(
-      ([entry]) => {
-        if (entry.isIntersecting) {
-          el.style.opacity = "1";
-          el.style.transform = "translateY(0)";
-          observer.unobserve(el);
-        }
-      },
-      { threshold: 0.15 },
-    );
-    observer.observe(el);
-    return () => observer.disconnect();
-  }, []);
-  return ref;
-}
-
-function RevealSection({ children, delay = 0, style }: {
-  children: React.ReactNode; delay?: number; style?: React.CSSProperties;
-}) {
-  const ref = useScrollReveal();
-  return (
-    <div ref={ref} style={{
-      opacity: 0,
-      transform: "translateY(20px)",
-      transition: `opacity 0.5s ease ${delay}ms, transform 0.5s ease ${delay}ms`,
-      ...style,
-    }}>
-      {children}
-    </div>
-  );
-}
-
 // ── Data ────────────────────────────────────────────────────────────
 
 
@@ -288,12 +245,11 @@ const personas: { title: string; desc: string; qualifier?: string; link?: { text
   },
   {
     title: "Composers",
-    desc: "Sketch ideas with real-time harmonic awareness. See roman numerals, part-writing errors, and non-chord tones as you write.",
+    desc: "Save projects to the cloud, pick up where you left off on any device, and sketch ideas with real-time harmonic analysis as you write.",
   },
 ];
 
 const roadmapSoon = [
-  { title: "Projects & Auto Save", desc: "Create and manage multiple compositions with automatic cloud saving." },
   { title: "Solution Gallery", desc: "After completing an exercise, see how others solved the same problem." },
   { title: "Share Compositions", desc: "Generate a public read-only link to share your work with anyone." },
   { title: "MIDI Export", desc: "Export to any DAW or notation software with full voice preservation." },
@@ -508,99 +464,84 @@ export function LandingPage() {
         margin: "0 auto",
         width: "100%",
       }}>
-        <RevealSection>
-          <div style={{ textAlign: "center", marginBottom: 40 }}>
-            <h2 style={{ ...sectionHeadingStyle, marginBottom: 12 }}>
-              Practice with the community
-            </h2>
-            <p style={{ fontSize: 16, lineHeight: 1.6, color: t.textSub, maxWidth: 560, margin: "0 auto" }}>
-              Create exercises, solve others' challenges, earn points, and climb the ranks.
-            </p>
-          </div>
-        </RevealSection>
+        <div style={{ textAlign: "center", marginBottom: 40 }}>
+          <h2 style={{ ...sectionHeadingStyle, marginBottom: 12 }}>
+            Practice with the community
+          </h2>
+          <p style={{ fontSize: 16, lineHeight: 1.6, color: t.textSub, maxWidth: 560, margin: "0 auto" }}>
+            Create exercises, solve others' challenges, earn points, and climb the ranks.
+          </p>
+        </div>
 
         <div className="features-grid" style={{
           display: "grid",
           gridTemplateColumns: "repeat(3, 1fr)",
           gap: 28,
         }}>
-          <RevealSection delay={100}>
-            <div className="landing-card" style={{ ...cardStyle, height: "100%" }}>
-              <h3 style={{ fontSize: 16, fontWeight: 700, marginBottom: 8, color: t.text }}>Create &amp; Solve</h3>
-              <p style={{ fontSize: 14, lineHeight: 1.6, color: t.textSub, margin: 0 }}>
-                Build your own theory exercises or attempt challenges created by the community.
-                Harmonize melodies, analyze chord progressions, and sharpen your skills with fresh content every day.
-              </p>
+          <div className="landing-card" style={{ ...cardStyle, height: "100%" }}>
+            <h3 style={{ fontSize: 16, fontWeight: 700, marginBottom: 8, color: t.text }}>Create &amp; Solve</h3>
+            <p style={{ fontSize: 14, lineHeight: 1.6, color: t.textSub, margin: 0 }}>
+              Build your own theory exercises or attempt challenges created by the community.
+              Harmonize melodies, analyze chord progressions, and sharpen your skills with fresh content every day.
+            </p>
+          </div>
+          <div className="landing-card" style={{ ...cardStyle, height: "100%" }}>
+            <h3 style={{ fontSize: 16, fontWeight: 700, marginBottom: 8, color: t.text }}>Earn Your Rank</h3>
+            <p style={{ fontSize: 14, lineHeight: 1.6, color: t.textSub, margin: 0 }}>
+              Earn points for completing exercises, creating content, and contributing corrections.
+              Progress through 15 music-themed ranks.
+            </p>
+            <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginTop: 14 }}>
+              {["Motif", "Phrase", "Period", "Theme", "Variation", "Invention", "Fugue", "Suite", "Sonata", "Concerto", "Symphony", "Requiem", "Oratorio", "Mass", "Opus"].map((rank, i) => (
+                <span key={rank} style={{
+                  fontSize: 11,
+                  padding: "2px 8px",
+                  borderRadius: 10,
+                  background: i < 3 ? (dk ? "rgba(110,231,160,0.15)" : "rgba(22,163,74,0.08)") : (dk ? "#32323a" : "#f0eeeb"),
+                  color: i < 3 ? (dk ? "#6ee7a0" : "#16a34a") : t.textMuted,
+                  fontWeight: i === 14 ? 700 : 400,
+                }}>
+                  {rank}
+                </span>
+              ))}
             </div>
-          </RevealSection>
-          <RevealSection delay={220}>
-            <div className="landing-card" style={{ ...cardStyle, height: "100%" }}>
-              <h3 style={{ fontSize: 16, fontWeight: 700, marginBottom: 8, color: t.text }}>Earn Your Rank</h3>
-              <p style={{ fontSize: 14, lineHeight: 1.6, color: t.textSub, margin: 0 }}>
-                Earn points for completing exercises, creating content, and contributing corrections.
-                Progress through 15 music-themed ranks.
-              </p>
-              <div style={{
-                display: "flex",
-                flexWrap: "wrap",
-                gap: 6,
-                marginTop: 14,
-              }}>
-                {["Motif", "Phrase", "Period", "Theme", "Variation", "Invention", "Fugue", "Suite", "Sonata", "Concerto", "Symphony", "Requiem", "Oratorio", "Mass", "Opus"].map((rank, i) => (
-                  <span key={rank} style={{
-                    fontSize: 11,
-                    padding: "2px 8px",
-                    borderRadius: 10,
-                    background: i < 3 ? (dk ? "rgba(110,231,160,0.15)" : "rgba(22,163,74,0.08)") : (dk ? "#32323a" : "#f0eeeb"),
-                    color: i < 3 ? (dk ? "#6ee7a0" : "#16a34a") : t.textMuted,
-                    fontWeight: i === 14 ? 700 : 400,
-                  }}>
-                    {rank}
-                  </span>
-                ))}
-              </div>
-            </div>
-          </RevealSection>
-          <RevealSection delay={340}>
-            <div className="landing-card" style={{ ...cardStyle, height: "100%" }}>
-              <h3 style={{ fontSize: 16, fontWeight: 700, marginBottom: 8, color: t.text }}>Compete &amp; Climb</h3>
-              <p style={{ fontSize: 14, lineHeight: 1.6, color: t.textSub, margin: 0 }}>
-                See how you stack up on the weekly and all-time leaderboards.
-                Upvote the best exercises and help surface quality content for the whole community.
-              </p>
-            </div>
-          </RevealSection>
+          </div>
+          <div className="landing-card" style={{ ...cardStyle, height: "100%" }}>
+            <h3 style={{ fontSize: 16, fontWeight: 700, marginBottom: 8, color: t.text }}>Compete &amp; Climb</h3>
+            <p style={{ fontSize: 14, lineHeight: 1.6, color: t.textSub, margin: 0 }}>
+              See how you stack up on the weekly and all-time leaderboards.
+              Upvote the best exercises and help surface quality content for the whole community.
+            </p>
+          </div>
         </div>
 
-        <RevealSection delay={460}>
-          <div style={{ display: "flex", gap: 14, justifyContent: "center", marginTop: 36, flexWrap: "wrap" }}>
-            <Link to="/community" className="landing-cta" style={{
-              padding: "14px 32px",
-              fontSize: 16,
-              fontWeight: 700,
-              fontFamily: "inherit",
-              color: t.btnText,
-              background: t.btnBg,
-              textDecoration: "none",
-              borderRadius: 6,
-            }}>
-              Browse Exercises
-            </Link>
-            <Link to="/signup" className="landing-cta" style={{
-              padding: "14px 32px",
-              fontSize: 16,
-              fontWeight: 700,
-              fontFamily: "inherit",
-              color: t.text,
-              background: "none",
-              textDecoration: "none",
-              border: `1px solid ${t.borderColor}`,
-              borderRadius: 6,
-            }}>
-              Create Free Account
-            </Link>
-          </div>
-        </RevealSection>
+        <div style={{ display: "flex", gap: 14, justifyContent: "center", marginTop: 36, flexWrap: "wrap" }}>
+          <Link to="/community" className="landing-cta" style={{
+            padding: "14px 32px",
+            fontSize: 16,
+            fontWeight: 700,
+            fontFamily: "inherit",
+            color: t.btnText,
+            background: t.btnBg,
+            textDecoration: "none",
+            borderRadius: 6,
+          }}>
+            Browse Exercises
+          </Link>
+          <Link to="/signup" className="landing-cta" style={{
+            padding: "14px 32px",
+            fontSize: 16,
+            fontWeight: 700,
+            fontFamily: "inherit",
+            color: t.text,
+            background: "none",
+            textDecoration: "none",
+            border: `1px solid ${t.borderColor}`,
+            borderRadius: 6,
+          }}>
+            Create Free Account
+          </Link>
+        </div>
       </section>
 
       {/* Classroom */}
@@ -610,80 +551,69 @@ export function LandingPage() {
         margin: "0 auto",
         width: "100%",
       }}>
-        <RevealSection>
-          <div style={{ textAlign: "center", marginBottom: 40 }}>
-            <h2 style={{ ...sectionHeadingStyle, marginBottom: 12 }}>
-              Designed for the theory classroom
-            </h2>
-            <span style={{
-              display: "inline-block",
-              fontSize: 12,
-              fontWeight: 600,
-              letterSpacing: 0.5,
-              color: dk ? "#6ee7a0" : "#16a34a",
-              background: dk ? "rgba(22,163,74,0.15)" : "rgba(22,163,74,0.08)",
-              padding: "4px 12px",
-              borderRadius: 12,
-              textTransform: "uppercase",
-            }}>
-              New
-            </span>
-          </div>
-        </RevealSection>
+        <div style={{ textAlign: "center", marginBottom: 40 }}>
+          <h2 style={{ ...sectionHeadingStyle, marginBottom: 12 }}>
+            Designed for the theory classroom
+          </h2>
+          <span style={{
+            display: "inline-block",
+            fontSize: 12,
+            fontWeight: 600,
+            letterSpacing: 0.5,
+            color: dk ? "#6ee7a0" : "#16a34a",
+            background: dk ? "rgba(22,163,74,0.15)" : "rgba(22,163,74,0.08)",
+            padding: "4px 12px",
+            borderRadius: 12,
+            textTransform: "uppercase",
+          }}>
+            New
+          </span>
+        </div>
 
         <div className="features-grid" style={{
           display: "grid",
           gridTemplateColumns: "repeat(3, 1fr)",
           gap: 28,
         }}>
-          <RevealSection delay={100}>
-            <div className="landing-card" style={{ ...cardStyle, height: "100%" }}>
-              <h3 style={{ fontSize: 16, fontWeight: 700, marginBottom: 8, color: t.text }}>Create Classes</h3>
-              <p style={{ fontSize: 14, lineHeight: 1.6, color: t.textSub, margin: 0 }}>
-                Set up a class and share an invite link. Students join with one click, no codes to type, no roster to manage.
-              </p>
-            </div>
-          </RevealSection>
-          <RevealSection delay={220}>
-            <div className="landing-card" style={{ ...cardStyle, height: "100%" }}>
-              <h3 style={{ fontSize: 16, fontWeight: 700, marginBottom: 8, color: t.text }}>Author Exercises</h3>
-              <p style={{ fontSize: 14, lineHeight: 1.6, color: t.textSub, margin: 0 }}>
-                Build melody harmonization, figured bass realization, and Roman numeral analysis assignments with the same editor your students use. Preview before assigning.
-              </p>
-            </div>
-          </RevealSection>
-          <RevealSection delay={340}>
-            <div className="landing-card" style={{ ...cardStyle, height: "100%" }}>
-              <h3 style={{ fontSize: 16, fontWeight: 700, marginBottom: 8, color: t.text }}>Grade &amp; Track Progress</h3>
-              <p style={{ fontSize: 14, lineHeight: 1.6, color: t.textSub, margin: 0 }}>
-                See which students have submitted each assignment, review their work, and assign grades. A color-coded gradebook shows scores and averages at a glance.
-              </p>
-            </div>
-          </RevealSection>
+          <div className="landing-card" style={{ ...cardStyle, height: "100%" }}>
+            <h3 style={{ fontSize: 16, fontWeight: 700, marginBottom: 8, color: t.text }}>Create Classes</h3>
+            <p style={{ fontSize: 14, lineHeight: 1.6, color: t.textSub, margin: 0 }}>
+              Set up a class and share an invite link. Students join with one click, no codes to type, no roster to manage.
+            </p>
+          </div>
+          <div className="landing-card" style={{ ...cardStyle, height: "100%" }}>
+            <h3 style={{ fontSize: 16, fontWeight: 700, marginBottom: 8, color: t.text }}>Author Exercises</h3>
+            <p style={{ fontSize: 14, lineHeight: 1.6, color: t.textSub, margin: 0 }}>
+              Build melody harmonization, figured bass realization, and Roman numeral analysis assignments with the same editor your students use. Preview before assigning.
+            </p>
+          </div>
+          <div className="landing-card" style={{ ...cardStyle, height: "100%" }}>
+            <h3 style={{ fontSize: 16, fontWeight: 700, marginBottom: 8, color: t.text }}>Grade &amp; Track Progress</h3>
+            <p style={{ fontSize: 14, lineHeight: 1.6, color: t.textSub, margin: 0 }}>
+              See which students have submitted each assignment, review their work, and assign grades. A color-coded gradebook shows scores and averages at a glance.
+            </p>
+          </div>
         </div>
 
-        {/* Exercise types */}
-        <RevealSection delay={460}>
-          <div className="landing-card" style={{ ...cardStyle, marginTop: 28 }}>
-            <h3 style={{ fontSize: 16, fontWeight: 700, marginBottom: 10, color: t.text }}>Exercise types</h3>
-            <ul style={{ margin: 0, paddingLeft: 20, fontSize: 14, lineHeight: 1.8, color: t.textSub }}>
-              <li>Harmonize a soprano melody in 4-part chorale style</li>
-              <li>Realize a figured bass line with proper voice leading</li>
-              <li>Analyze a given chorale and enter the correct Roman numerals</li>
-              <li>Progressive difficulty from basic triads through secondary dominants and modulation</li>
-            </ul>
-            <div style={{ marginTop: 16 }}>
-              <Link to="/community" style={{
-                fontSize: 14,
-                fontWeight: 600,
-                color: dk ? "#6ee7a0" : "#16a34a",
-                textDecoration: "none",
-              }}>
-                Try an exercise &rarr;
-              </Link>
-            </div>
+        <div className="landing-card" style={{ ...cardStyle, marginTop: 28 }}>
+          <h3 style={{ fontSize: 16, fontWeight: 700, marginBottom: 10, color: t.text }}>Exercise types</h3>
+          <ul style={{ margin: 0, paddingLeft: 20, fontSize: 14, lineHeight: 1.8, color: t.textSub }}>
+            <li>Harmonize a soprano melody in 4-part chorale style</li>
+            <li>Realize a figured bass line with proper voice leading</li>
+            <li>Analyze a given chorale and enter the correct Roman numerals</li>
+            <li>Progressive difficulty from basic triads through secondary dominants and modulation</li>
+          </ul>
+          <div style={{ marginTop: 16 }}>
+            <Link to="/community" style={{
+              fontSize: 14,
+              fontWeight: 600,
+              color: dk ? "#6ee7a0" : "#16a34a",
+              textDecoration: "none",
+            }}>
+              Try an exercise &rarr;
+            </Link>
           </div>
-        </RevealSection>
+        </div>
       </section>
 
       {/* Analysis features */}
@@ -693,23 +623,19 @@ export function LandingPage() {
         margin: "0 auto",
         width: "100%",
       }}>
-        <RevealSection>
-          <h2 style={sectionHeadingStyle}>
-            Powered by real-time analysis
-          </h2>
-        </RevealSection>
+        <h2 style={sectionHeadingStyle}>
+          Powered by real-time analysis
+        </h2>
         <div className="features-grid" style={{
           display: "grid",
           gridTemplateColumns: "repeat(3, 1fr)",
           gap: 28,
         }}>
-          {features.map((f, i) => (
-            <RevealSection key={f.title} delay={i * 120}>
-              <div className="landing-card" style={{ ...cardStyle, height: "100%" }}>
-                <h3 style={{ fontSize: 16, fontWeight: 700, marginBottom: 8, color: t.text }}>{f.title}</h3>
-                <p style={{ fontSize: 14, lineHeight: 1.6, color: t.textSub, margin: 0 }}>{f.desc}</p>
-              </div>
-            </RevealSection>
+          {features.map((f) => (
+            <div key={f.title} className="landing-card" style={{ ...cardStyle, height: "100%" }}>
+              <h3 style={{ fontSize: 16, fontWeight: 700, marginBottom: 8, color: t.text }}>{f.title}</h3>
+              <p style={{ fontSize: 14, lineHeight: 1.6, color: t.textSub, margin: 0 }}>{f.desc}</p>
+            </div>
           ))}
         </div>
       </section>
@@ -721,40 +647,36 @@ export function LandingPage() {
         margin: "0 auto",
         width: "100%",
       }}>
-        <RevealSection>
-          <h2 style={sectionHeadingStyle}>
-            Who it's for
-          </h2>
-        </RevealSection>
+        <h2 style={sectionHeadingStyle}>
+          Who it's for
+        </h2>
         <div className="personas-grid" style={{
           display: "grid",
           gridTemplateColumns: "repeat(4, 1fr)",
           gap: 28,
         }}>
-          {personas.map((p, i) => (
-            <RevealSection key={p.title} delay={i * 120}>
-              <div className="landing-card" style={{ ...cardStyle, height: "100%" }}>
-                <h3 style={{ fontSize: 16, fontWeight: 700, marginBottom: 8, color: t.text }}>{p.title}</h3>
-                <p style={{ fontSize: 14, lineHeight: 1.6, color: t.textSub, margin: 0 }}>{p.desc}</p>
-                {p.qualifier && (
-                  <p style={{ fontSize: 12, color: t.textFaint, marginTop: 8, marginBottom: 0, fontStyle: "italic" }}>
-                    {p.qualifier}
-                  </p>
-                )}
-                {p.link && (
-                  <div style={{ marginTop: 12 }}>
-                    <Link to={p.link.to} style={{
-                      fontSize: 13,
-                      fontWeight: 600,
-                      color: dk ? "#6ee7a0" : "#16a34a",
-                      textDecoration: "none",
-                    }}>
-                      {p.link.text}
-                    </Link>
-                  </div>
-                )}
-              </div>
-            </RevealSection>
+          {personas.map((p) => (
+            <div key={p.title} className="landing-card" style={{ ...cardStyle, height: "100%" }}>
+              <h3 style={{ fontSize: 16, fontWeight: 700, marginBottom: 8, color: t.text }}>{p.title}</h3>
+              <p style={{ fontSize: 14, lineHeight: 1.6, color: t.textSub, margin: 0 }}>{p.desc}</p>
+              {p.qualifier && (
+                <p style={{ fontSize: 12, color: t.textFaint, marginTop: 8, marginBottom: 0, fontStyle: "italic" }}>
+                  {p.qualifier}
+                </p>
+              )}
+              {p.link && (
+                <div style={{ marginTop: 12 }}>
+                  <Link to={p.link.to} style={{
+                    fontSize: 13,
+                    fontWeight: 600,
+                    color: dk ? "#6ee7a0" : "#16a34a",
+                    textDecoration: "none",
+                  }}>
+                    {p.link.text}
+                  </Link>
+                </div>
+              )}
+            </div>
           ))}
         </div>
       </section>
@@ -766,89 +688,80 @@ export function LandingPage() {
         margin: "0 auto",
         width: "100%",
       }}>
-        <RevealSection>
-          <h2 style={{ ...sectionHeadingStyle, marginBottom: 36 }}>
-            What's next
-          </h2>
-        </RevealSection>
-
-        <RevealSection delay={100}>
-          <div style={{ maxWidth: 720, margin: "0 auto", display: "flex", flexDirection: "column", gap: 32 }}>
-            {/* Coming Soon */}
-            <div>
-              <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 14 }}>
-                <div style={{ width: 12, height: 12, borderRadius: "50%", background: dk ? "#7c9cff" : "#4a6fff", flexShrink: 0 }} />
-                <div style={{
-                  fontSize: 11, fontWeight: 700, textTransform: "uppercase" as const, letterSpacing: 1,
-                  color: dk ? "#7c9cff" : "#4a6fff",
-                }}>
-                  Coming Soon
-                </div>
-              </div>
-              <div style={{ display: "flex", flexDirection: "column", gap: 12, marginLeft: 5, paddingLeft: 19, borderLeft: `2px solid ${dk ? "#3a3a40" : "#d5d0cb"}` }}>
-                {roadmapSoon.map(item => (
-                  <div key={item.title}>
-                    <h3 style={{ fontSize: 14, fontWeight: 700, color: t.text, margin: "0 0 2px" }}>{item.title}</h3>
-                    <p style={{ fontSize: 13, lineHeight: 1.5, color: t.textSub, margin: 0 }}>{item.desc}</p>
-                  </div>
-                ))}
+        <h2 style={{ ...sectionHeadingStyle, marginBottom: 36 }}>
+          What's next
+        </h2>
+        <div style={{ maxWidth: 720, margin: "0 auto", display: "flex", flexDirection: "column", gap: 32 }}>
+          <div>
+            <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 14 }}>
+              <div style={{ width: 12, height: 12, borderRadius: "50%", background: dk ? "#7c9cff" : "#4a6fff", flexShrink: 0 }} />
+              <div style={{
+                fontSize: 11, fontWeight: 700, textTransform: "uppercase" as const, letterSpacing: 1,
+                color: dk ? "#7c9cff" : "#4a6fff",
+              }}>
+                Coming Soon
               </div>
             </div>
-
-            {/* On the Horizon */}
-            <div>
-              <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 14 }}>
-                <div style={{ width: 10, height: 10, borderRadius: "50%", background: dk ? "#3a3a40" : "#d5d0cb", flexShrink: 0, marginLeft: 1 }} />
-                <div style={{
-                  fontSize: 11, fontWeight: 700, textTransform: "uppercase" as const, letterSpacing: 1,
-                  color: t.textMuted,
-                }}>
-                  On the Horizon
+            <div style={{ display: "flex", flexDirection: "column", gap: 12, marginLeft: 5, paddingLeft: 19, borderLeft: `2px solid ${dk ? "#3a3a40" : "#d5d0cb"}` }}>
+              {roadmapSoon.map(item => (
+                <div key={item.title}>
+                  <h3 style={{ fontSize: 14, fontWeight: 700, color: t.text, margin: "0 0 2px" }}>{item.title}</h3>
+                  <p style={{ fontSize: 13, lineHeight: 1.5, color: t.textSub, margin: 0 }}>{item.desc}</p>
                 </div>
-              </div>
-              <div style={{ display: "flex", flexDirection: "column", gap: 12, marginLeft: 5, paddingLeft: 19, borderLeft: `2px solid ${dk ? "#3a3a40" : "#d5d0cb"}`, opacity: 0.85 }}>
-                {roadmapHorizon.map(item => (
-                  <div key={item.title}>
-                    <h3 style={{ fontSize: 14, fontWeight: 700, color: t.text, margin: "0 0 2px" }}>{item.title}</h3>
-                    <p style={{ fontSize: 13, lineHeight: 1.5, color: t.textSub, margin: 0 }}>{item.desc}</p>
-                  </div>
-                ))}
-              </div>
+              ))}
             </div>
           </div>
-        </RevealSection>
+
+          <div>
+            <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 14 }}>
+              <div style={{ width: 10, height: 10, borderRadius: "50%", background: dk ? "#3a3a40" : "#d5d0cb", flexShrink: 0, marginLeft: 1 }} />
+              <div style={{
+                fontSize: 11, fontWeight: 700, textTransform: "uppercase" as const, letterSpacing: 1,
+                color: t.textMuted,
+              }}>
+                On the Horizon
+              </div>
+            </div>
+            <div style={{ display: "flex", flexDirection: "column", gap: 12, marginLeft: 5, paddingLeft: 19, borderLeft: `2px solid ${dk ? "#3a3a40" : "#d5d0cb"}`, opacity: 0.85 }}>
+              {roadmapHorizon.map(item => (
+                <div key={item.title}>
+                  <h3 style={{ fontSize: 14, fontWeight: 700, color: t.text, margin: "0 0 2px" }}>{item.title}</h3>
+                  <p style={{ fontSize: 13, lineHeight: 1.5, color: t.textSub, margin: 0 }}>{item.desc}</p>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
       </section>
 
       {/* Footer CTA */}
-      <RevealSection>
-        <section style={{
-          padding: "48px 24px 56px",
-          textAlign: "center",
-          maxWidth: 600,
-          margin: "0 auto",
-          width: "100%",
+      <section style={{
+        padding: "48px 24px 56px",
+        textAlign: "center",
+        maxWidth: 600,
+        margin: "0 auto",
+        width: "100%",
+      }}>
+        <h2 style={{ fontSize: 24, fontWeight: 700, color: t.text, marginBottom: 10 }}>
+          Ready to start?
+        </h2>
+        <p style={{ fontSize: 15, color: t.textSub, marginBottom: 24, lineHeight: 1.6 }}>
+          Free during beta. No credit card required.
+        </p>
+        <Link to="/signup" className="landing-cta" style={{
+          display: "inline-block",
+          padding: "14px 36px",
+          fontSize: 16,
+          fontWeight: 700,
+          fontFamily: "inherit",
+          color: t.btnText,
+          background: t.btnBg,
+          textDecoration: "none",
+          borderRadius: 6,
         }}>
-          <h2 style={{ fontSize: 24, fontWeight: 700, color: t.text, marginBottom: 10 }}>
-            Ready to start?
-          </h2>
-          <p style={{ fontSize: 15, color: t.textSub, marginBottom: 24, lineHeight: 1.6 }}>
-            Free during beta. No credit card required.
-          </p>
-          <Link to="/signup" className="landing-cta" style={{
-            display: "inline-block",
-            padding: "14px 36px",
-            fontSize: 16,
-            fontWeight: 700,
-            fontFamily: "inherit",
-            color: t.btnText,
-            background: t.btnBg,
-            textDecoration: "none",
-            borderRadius: 6,
-          }}>
-            Create Free Account
-          </Link>
-        </section>
-      </RevealSection>
+          Create Free Account
+        </Link>
+      </section>
 
       {/* Footer */}
       <footer style={{
