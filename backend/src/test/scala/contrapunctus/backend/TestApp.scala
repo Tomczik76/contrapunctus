@@ -36,6 +36,7 @@ object TestApp:
     val pointsService         = PointsService.make(pool)
     val exerciseService       = ExerciseService.make(pool, pointsService)
     val resetService          = PasswordResetService.make(pool, emailService)
+    val projectService        = ProjectService.make(pool)
 
     val apiRoutes = SignupRoutes.routes(userService)
       <+> LoginRoutes.routes(userService)
@@ -50,6 +51,7 @@ object TestApp:
       <+> LessonRoutes.publicRoutes(lessonService)
       <+> LessonRoutes.adminRoutes(lessonService, adminPassword)
       <+> CommunityRoutes.routes(exerciseService, pointsService, jwtSecret)
+      <+> ProjectRoutes.routes(projectService, jwtSecret)
       <+> AdminRoutes.routes(pool, adminPassword)
 
     Router("/api" -> apiRoutes).orNotFound

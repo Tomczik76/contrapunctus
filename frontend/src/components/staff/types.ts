@@ -86,10 +86,14 @@ export interface NoteEditorProps {
   initialTrebleBeats?: PlacedBeat[];
   /** Pre-populate bass beats (used when editing an existing figured bass lesson). */
   initialBassBeats?: PlacedBeat[];
+  /** If true, the editor is embedded within a parent form (hides key/time sig controls, uses sticky positioning). */
+  embedded?: boolean;
   /** If true, disable all editing interactions (note placement, toolbar, RN inputs). */
   readOnly?: boolean;
   /** Content to display between the toolbar and the score. */
   subheader?: React.ReactNode;
   /** Override the default max-width (960px) of the editor card. */
   maxWidth?: number;
+  /** Called whenever settings (time sig, key, scale) change. */
+  onSettingsChanged?: (settings: { tsTop: number; tsBottom: number; tonicIdx: number; scaleName: string }) => void;
 }

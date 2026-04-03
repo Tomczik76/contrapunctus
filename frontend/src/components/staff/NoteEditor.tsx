@@ -72,8 +72,8 @@ function TsDigit({ digit, x, y }: { digit: number; x: number; y: number }) {
 }
 
 
-export function NoteEditor({ header, subheader, lessonConfig, onTrebleBeatsChanged, onBassBeatsChanged, figuredBassValues, onFiguredBassChanged, trebleOnly, initialTonicIdx, initialScaleName, initialTsTop, initialTsBottom, initialTrebleBeats, initialBassBeats, readOnly, maxWidth: maxWidthProp }: NoteEditorProps) {
-  const embedded = !!(onTrebleBeatsChanged || onBassBeatsChanged);
+export function NoteEditor({ header, subheader, lessonConfig, onTrebleBeatsChanged, onBassBeatsChanged, figuredBassValues, onFiguredBassChanged, trebleOnly, initialTonicIdx, initialScaleName, initialTsTop, initialTsBottom, initialTrebleBeats, initialBassBeats, embedded: embeddedProp, readOnly, maxWidth: maxWidthProp, onSettingsChanged }: NoteEditorProps) {
+  const embedded = embeddedProp ?? !!(onTrebleBeatsChanged || onBassBeatsChanged);
   const { token } = useAuth();
   // ── LocalStorage persistence ──────────────────────────────────────
   const STORAGE_KEY = "contrapunctus_state";
@@ -93,7 +93,7 @@ export function NoteEditor({ header, subheader, lessonConfig, onTrebleBeatsChang
     return null;
   }
 
-  const saved = useRef(lessonConfig || onTrebleBeatsChanged || onBassBeatsChanged ? null : loadSaved());
+  const saved = useRef(lessonConfig || embedded ? null : loadSaved());
 
   const [selectedDuration, setSelectedDuration] = useState<Duration>(lessonConfig?.forceDuration ?? "quarter");
   // Keep duration in sync when forceDuration is set (e.g. after remount or config change)
@@ -224,11 +224,16 @@ export function NoteEditor({ header, subheader, lessonConfig, onTrebleBeatsChang
 
   // Save state to localStorage on changes (skip in lesson mode and admin embed)
   useEffect(() => {
-    if (lessonConfig || onTrebleBeatsChanged || onBassBeatsChanged) return;
+    if (lessonConfig || embedded) return;
     localStorage.setItem(STORAGE_KEY, JSON.stringify({
       trebleBeats, bassBeats, tsTop, tsBottom, tonicIdx, scaleName,
     }));
-  }, [trebleBeats, bassBeats, tsTop, tsBottom, tonicIdx, scaleName, lessonConfig, onTrebleBeatsChanged]);
+  }, [trebleBeats, bassBeats, tsTop, tsBottom, tonicIdx, scaleName, lessonConfig, embedded]);
+
+  // Notify parent of settings changes
+  useEffect(() => {
+    onSettingsChanged?.({ tsTop, tsBottom, tonicIdx, scaleName });
+  }, [tsTop, tsBottom, tonicIdx, scaleName, onSettingsChanged]);
 
   useEffect(() => {
     const el = containerRef.current;
