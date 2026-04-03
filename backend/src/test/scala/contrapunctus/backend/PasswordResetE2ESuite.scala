@@ -27,6 +27,8 @@ class PasswordResetE2ESuite extends CatsEffectSuite with TestContainerForAll:
       val service = new EmailService:
         def sendPasswordReset(toEmail: String, resetToken: String): IO[Unit] =
           ref.set(Some((toEmail, resetToken)))
+        def sendSignupNotification(userEmail: String, displayName: String, isEducator: Boolean, provider: String): IO[Unit] =
+          IO.unit
       (service, ref)
     }
 
@@ -59,7 +61,7 @@ class PasswordResetE2ESuite extends CatsEffectSuite with TestContainerForAll:
           import contrapunctus.backend.services._
           import org.http4s.server.Router
 
-          val userService    = UserService.make(pool, TestApp.jwtSecret)
+          val userService    = UserService.make(pool, TestApp.jwtSecret, EmailService.noOp)
           val resetService   = PasswordResetService.make(pool, emailService)
 
           val apiRoutes = SignupRoutes.routes(userService)

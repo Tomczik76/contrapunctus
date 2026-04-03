@@ -5,6 +5,7 @@ import { NoteEditor } from "./staff";
 import type { LessonConfig } from "./staff/types";
 import { useTheme } from "../useTheme";
 import { TEMPLATE_LABELS, DIFFICULTY_COLORS, TONIC_LABELS } from "../constants";
+import { VoteWidget } from "./VoteWidget";
 
 interface CommunityExercise {
   id: string;
@@ -135,12 +136,13 @@ export function CommunityPage() {
   const headers = { Authorization: `Bearer ${token}`, "Content-Type": "application/json" };
 
   useEffect(() => {
-    if (!token) return;
     setLoading(true);
-    Promise.all([
-      fetch(`${API_BASE}/api/community/exercises`, { headers }).then(r => r.ok ? r.json() : []),
-      fetch(`${API_BASE}/api/community/points`, { headers }).then(r => r.ok ? r.json() : null),
-    ]).then(([exs, pts]) => {
+    const fetchHeaders = token ? headers : { "Content-Type": "application/json" };
+    const exercisesFetch = fetch(`${API_BASE}/api/community/exercises`, { headers: fetchHeaders }).then(r => r.ok ? r.json() : []);
+    const pointsFetch = token
+      ? fetch(`${API_BASE}/api/community/points`, { headers }).then(r => r.ok ? r.json() : null)
+      : Promise.resolve(null);
+    Promise.all([exercisesFetch, pointsFetch]).then(([exs, pts]) => {
       setExercises(exs);
       setPoints(pts);
       setLoading(false);
@@ -157,13 +159,13 @@ export function CommunityPage() {
   }, [tab, token]);
 
   useEffect(() => {
-    if (tab === "leaderboard" && token) {
-      fetch(`${API_BASE}/api/community/leaderboard?timeframe=${lbTimeframe}`, { headers })
+    if (tab === "leaderboard") {
+      fetch(`${API_BASE}/api/community/leaderboard?timeframe=${lbTimeframe}`)
         .then(r => r.ok ? r.json() : [])
         .then(setLeaderboard)
         .catch(() => {});
     }
-  }, [tab, lbTimeframe, token]);
+  }, [tab, lbTimeframe]);
 
   // Pitch class from dp + accidental (for CF tonic validation)
   const LETTER_TO_PC = [0, 2, 4, 5, 7, 9, 11]; // C D E F G A B
@@ -494,18 +496,10 @@ export function CommunityPage() {
             </>
           ) : (
             <>
-              <div style={{ display: "flex", gap: 6 }}>
-                <span title="Upvotes" style={{
-                  fontSize: 12, fontWeight: 600, padding: "2px 8px", borderRadius: 4,
-                  background: dk ? "rgba(22,163,74,0.15)" : "rgba(22,163,74,0.08)",
-                  color: dk ? "#6ee7a0" : "#16a34a",
-                }}>+{ex.upvotes}</span>
-                <span title="Downvotes" style={{
-                  fontSize: 12, fontWeight: 600, padding: "2px 8px", borderRadius: 4,
-                  background: dk ? "rgba(220,38,38,0.15)" : "rgba(220,38,38,0.08)",
-                  color: dk ? "#fca5a5" : "#dc2626",
-                }}>-{ex.downvotes}</span>
-              </div>
+              <VoteWidget
+                count={(ex.upvotes || 0) - (ex.downvotes || 0)}
+                compact
+              />
               <div style={{ fontSize: 12, color: theme.textMuted }}>
                 {ex.attemptCount} attempt{ex.attemptCount !== 1 ? "s" : ""}
               </div>
@@ -547,7 +541,7 @@ export function CommunityPage() {
   );
 
   return (
-    <div style={{ minHeight: "100vh", display: "flex", flexDirection: "column", background: theme.bg, color: theme.text }}>
+    <div style={{ minHeight: "100vh", display: "flex", flexDirection: "column", background: theme.bg, color: theme.text, paddingTop: 44 }}>
       {/* Header */}
       <div style={{ padding: "32px 24px 0", maxWidth: 800, margin: "0 auto", width: "100%" }}>
         <div style={{ display: "flex", alignItems: "center", justifyContent: "flex-end", marginBottom: 8 }}>
@@ -569,8 +563,8 @@ export function CommunityPage() {
         {/* Tabs */}
         <div style={{ display: "flex", gap: 0, borderBottom: `1px solid ${theme.cardBorder}`, marginBottom: 24 }}>
           <button style={tabStyle("browse")} onClick={() => setTab("browse")}>Browse</button>
-          <button style={tabStyle("mine")} onClick={() => setTab("mine")}>My Exercises</button>
-          <button style={tabStyle("create")} onClick={() => setTab("create")}>Create</button>
+          {token && <button style={tabStyle("mine")} onClick={() => setTab("mine")}>My Exercises</button>}
+          {token && <button style={tabStyle("create")} onClick={() => setTab("create")}>Create</button>}
           <button style={tabStyle("leaderboard")} onClick={() => setTab("leaderboard")}>Leaderboard</button>
         </div>
       </div>
@@ -772,8 +766,10 @@ export function CommunityPage() {
                         ["Complete (advanced)", "+25"],
                         ["Complete (expert)", "+40"],
                         ["Vote on an exercise", "+1"],
-                        ["Receive an upvote", "+3"],
+                        ["Receive an upvote", "+5"],
                         ["Receive a downvote", "-1"],
+                        ["Solution upvote received", "+5"],
+                        ["Upvote a solution", "+1"],
                       ].map(([action, pts]) => (
                         <tr key={action} style={{ borderBottom: `1px solid ${theme.cardBorder}` }}>
                           <td style={{ padding: "8px 0" }}>{action}</td>
@@ -890,7 +886,7 @@ export function CommunityPage() {
         <style>{`
           .create-layout { display: flex; flex: 1; min-height: 0; position: relative; }
           .create-sidebar { width: 320px; min-width: 280px; max-width: 360px; flex-shrink: 0; }
-          @media (max-width: 768px) {
+          @media (max-width: 768px), (max-height: 500px) {
             .create-layout { flex-direction: column; }
             .create-sidebar { width: 100% !important; max-width: 100% !important; min-width: 0 !important; border-right: none !important; border-bottom: 1px solid var(--border); }
           }

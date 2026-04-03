@@ -19,16 +19,19 @@ object UserService:
   enum LoginError:
     case InvalidCredentials
 
-  def make(pool: Resource[IO, Session[IO]], jwtSecret: String): UserService =
+  def make(pool: Resource[IO, Session[IO]], jwtSecret: String, emailService: EmailService): UserService =
     new UserService:
       def signup(input: SignupInput): IO[Either[SignupError, (User, String)]] =
         pool.use { session =>
           val hash = AuthService.hashPassword(input.password)
           session
             .unique(Users.insert)((input.email, input.displayName, hash, input.isEducator))
-            .map { user =>
+            .flatMap { user =>
               val token = AuthService.createToken(user.id, jwtSecret)
-              Right((user, token))
+              emailService.sendSignupNotification(input.email, input.displayName, input.isEducator, "email")
+                .handleErrorWith(e => IO.println(s"[SignupNotification] Failed: ${e.getMessage}"))
+                .start *>
+              IO.pure(Right((user, token)))
             }
             .recoverWith {
               case e if Option(e.getMessage).exists(_.contains("23505")) =>

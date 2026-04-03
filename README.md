@@ -56,8 +56,11 @@ contrapunctus/
 ├── dev.conf                    # Local dev configuration
 ├── docker-compose.yml          # PostgreSQL container
 └── scripts/
-    ├── deploy-backend.sh       # Build Docker image, push to ECR, update ECS
-    └── deploy-frontend.sh      # Build Vite, sync to S3, invalidate CloudFront
+    ├── deploy.sh               # Full deploy: backend + frontend + cutover
+    ├── deploy-backend.sh       # Build Docker image, push to ECR, deploy to inactive slot
+    ├── deploy-frontend.sh      # Build Vite, sync to S3 inactive slot prefix
+    ├── cutover.sh              # Switch live traffic to the inactive slot
+    └── rollback.sh             # Revert to the previous slot
 ```
 
 ## The Shared Music Theory Engine
@@ -185,6 +188,44 @@ Migrations live in `backend/src/main/resources/db/migration/` and are run by Fly
 ```
 
 Requires: sbt, Node.js/npm, Podman (or Docker with compose).
+
+## Blue-Green Deployment
+
+The application uses blue-green deployments for zero-downtime releases with instant rollback. Two slots (`blue` and `green`) exist for both the frontend (S3 prefixes) and backend (ECS services + ALB target groups). A CloudFront Function routes S3 requests to the active slot prefix, and the ALB listener rule forwards to the active target group. Only the active slot runs containers; the inactive slot is scaled to zero between deploys.
+
+### Deploy
+
+```bash
+# Full deploy (backend + frontend + cutover)
+scripts/deploy.sh
+
+# Or deploy individually, then cut over
+scripts/deploy-backend.sh       # Builds, pushes image, deploys to inactive slot
+scripts/deploy-frontend.sh      # Builds, syncs to inactive slot S3 prefix
+scripts/cutover.sh              # Switches live traffic to the new slot
+```
+
+Pass `--skipTests` to skip test suites during build.
+
+### Rollback
+
+```bash
+scripts/rollback.sh    # Instantly reverts to the previous slot
+```
+
+Rollback works because old frontend assets remain in S3 at their prefix, and the old backend service stays running for a grace period after cutover. If the old service has already been scaled down, the rollback script will scale it back up and wait for it to stabilize before switching traffic.
+
+### How it works
+
+1. `deploy-backend.sh` / `deploy-frontend.sh` build and deploy to the **inactive** slot
+2. `cutover.sh` runs `tofu apply -var="active_slot={new_slot}"` which updates both:
+   - The CloudFront Function (rewrites S3 URIs to the new prefix) — propagates globally in <1 second
+   - The ALB listener rule (points to the new target group)
+3. After cutover, keep both slots running for ~30 minutes before scaling down the old one
+
+### Migration from non-blue-green
+
+If migrating from the previous single-service setup, see the infra repo for state migration instructions (`tofu state mv` commands and S3 content migration).
 
 ## Routes
 

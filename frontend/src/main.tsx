@@ -98,16 +98,8 @@ function App() {
               <SettingsPage />
             </ProtectedRoute>
           } />
-          <Route path="/community" element={
-            <ProtectedRoute>
-              <CommunityPage />
-            </ProtectedRoute>
-          } />
-          <Route path="/community/:id" element={
-            <ProtectedRoute>
-              <CommunityExercisePage />
-            </ProtectedRoute>
-          } />
+          <Route path="/community" element={<CommunityPage />} />
+          <Route path="/community/:id" element={<CommunityExercisePage />} />
           <Route path="/educator" element={
             <ProtectedRoute>
               <EducatorDashboard section="classes" />

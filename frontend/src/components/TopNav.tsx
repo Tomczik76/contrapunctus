@@ -26,9 +26,46 @@ export function TopNav() {
   const location = useLocation();
   const isHome = location.pathname === "/";
 
-  if (!user) return null;
-
   const hoverBg = dk ? "rgba(255,255,255,0.05)" : "rgba(0,0,0,0.03)";
+
+  if (!user) {
+    // Show minimal nav with logo + login/signup on public pages
+    if (location.pathname === "/landing" || location.pathname === "/login" || location.pathname === "/signup"
+        || location.pathname === "/forgot-password" || location.pathname.startsWith("/reset-password")) {
+      return null;
+    }
+    return (
+      <div style={{
+        position: "fixed", top: 0, left: 0, right: 0, zIndex: 200,
+        background: dk ? "rgba(28,28,32,0.92)" : "rgba(250,248,245,0.92)",
+        backdropFilter: "blur(8px)",
+        borderBottom: `1px solid ${theme.cardBorder}`,
+        height: 44,
+        display: "flex", alignItems: "center", justifyContent: "space-between",
+        padding: "0 16px",
+      }}>
+        <Link to="/landing" style={{
+          fontSize: 15, fontWeight: 700, color: theme.text, textDecoration: "none",
+          letterSpacing: -0.3, display: "inline-flex", alignItems: "center", gap: 6,
+        }}>
+          Contrapunctus
+        </Link>
+        <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+          <Link to="/login" style={{
+            fontSize: 13, fontWeight: 600, color: theme.text, textDecoration: "none",
+            padding: "4px 12px", borderRadius: 8,
+            border: `1px solid ${theme.cardBorder}`,
+            fontFamily: "inherit",
+          }}>Log in</Link>
+          <Link to="/signup" style={{
+            fontSize: 13, fontWeight: 600, color: theme.btnText, textDecoration: "none",
+            padding: "5px 12px", borderRadius: 8, background: theme.btnBg,
+            fontFamily: "inherit",
+          }}>Sign up</Link>
+        </div>
+      </div>
+    );
+  }
   const menuItemStyle: React.CSSProperties = {
     display: "flex", alignItems: "center", gap: 8, width: "100%",
     padding: "10px 14px", fontSize: 13, color: theme.text,

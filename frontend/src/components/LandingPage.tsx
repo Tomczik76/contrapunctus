@@ -355,7 +355,7 @@ export function LandingPage() {
   };
 
   return (
-    <div style={{ minHeight: "100vh", display: "flex", flexDirection: "column" }}>
+    <div style={{ minHeight: "100vh", display: "flex", flexDirection: "column", background: dk ? "#1a1a1e" : "#e8e4e0", color: dk ? "#e0ddd8" : "#2c2c2c" }}>
       <style>{LANDING_CSS}</style>
 
       {/* Nav */}

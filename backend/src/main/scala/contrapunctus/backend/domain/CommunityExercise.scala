@@ -3,8 +3,8 @@ package contrapunctus.backend.domain
 import java.time.OffsetDateTime
 import java.util.UUID
 
-import io.circe.{Encoder, Json}
-import io.circe.generic.semiauto.deriveEncoder
+import io.circe.{Decoder, Encoder, Json}
+import io.circe.generic.semiauto.{deriveDecoder, deriveEncoder}
 import io.circe.syntax._
 
 case class CommunityExercise(
@@ -50,12 +50,34 @@ case class ExerciseAttempt(
   completed: Boolean,
   status: String,
   savedAt: OffsetDateTime,
-  submittedAt: Option[OffsetDateTime]
+  submittedAt: Option[OffsetDateTime],
+  shared: Boolean = false,
+  upvoteCount: Int = 0
 )
 
 object ExerciseAttempt:
   given Encoder[OffsetDateTime] = User.given_Encoder_OffsetDateTime
   given Encoder[ExerciseAttempt] = deriveEncoder
+
+case class SharedSolution(
+  attemptId: UUID,
+  userId: UUID,
+  displayName: String,
+  trebleBeats: Json,
+  bassBeats: Json,
+  studentRomans: Json,
+  score: Option[BigDecimal],
+  completed: Boolean,
+  submittedAt: Option[OffsetDateTime],
+  upvoteCount: Int,
+  userUpvoted: Boolean
+)
+
+object SharedSolution:
+  given Encoder[OffsetDateTime] = User.given_Encoder_OffsetDateTime
+  given Decoder[OffsetDateTime] = User.given_Decoder_OffsetDateTime
+  given Encoder[SharedSolution] = deriveEncoder
+  given Decoder[SharedSolution] = deriveDecoder
 
 case class PointEvent(
   id: UUID,

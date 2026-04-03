@@ -26,7 +26,8 @@ object TestApp:
       }
 
   def buildApp(pool: Resource[IO, Session[IO]]): HttpApp[IO] =
-    val userService           = UserService.make(pool, jwtSecret)
+    val emailService          = EmailService.noOp
+    val userService           = UserService.make(pool, jwtSecret, emailService)
     val bugReportService      = BugReportService.make(pool)
     val featureRequestService = FeatureRequestService.make(pool)
     val correctionService     = CorrectionService.make(pool)
@@ -34,8 +35,6 @@ object TestApp:
     val educatorService       = EducatorService.make(pool)
     val pointsService         = PointsService.make(pool)
     val exerciseService       = ExerciseService.make(pool, pointsService)
-
-    val emailService          = EmailService.noOp
     val resetService          = PasswordResetService.make(pool, emailService)
 
     val apiRoutes = SignupRoutes.routes(userService)

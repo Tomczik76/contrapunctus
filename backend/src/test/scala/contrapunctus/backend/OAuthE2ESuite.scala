@@ -60,9 +60,10 @@ class OAuthE2ESuite extends CatsEffectSuite with TestContainerForAll:
         import contrapunctus.backend.services._
         import org.http4s.server.Router
 
-        val userService  = UserService.make(pool, TestApp.jwtSecret)
+        val emailService = EmailService.noOp
+        val userService  = UserService.make(pool, TestApp.jwtSecret, emailService)
         val httpClient   = fakeGoogleClient(tokenResponses)
-        val oAuthService = OAuthService.make(pool, httpClient, TestApp.jwtSecret, testClientId)
+        val oAuthService = OAuthService.make(pool, httpClient, TestApp.jwtSecret, testClientId, emailService)
 
         val apiRoutes = SignupRoutes.routes(userService)
           <+> LoginRoutes.routes(userService)

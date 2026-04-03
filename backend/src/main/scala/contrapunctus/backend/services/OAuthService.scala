@@ -23,7 +23,8 @@ object OAuthService:
     pool: Resource[IO, Session[IO]],
     httpClient: Client[IO],
     jwtSecret: String,
-    googleClientId: String
+    googleClientId: String,
+    emailService: EmailService
   ): OAuthService =
     new OAuthService:
       def authenticateGoogle(idToken: String, isEducator: Boolean): IO[Either[OAuthError, (User, String)]] =
@@ -80,7 +81,10 @@ object OAuthService:
                   // Create new user without password
                   session.unique(Users.insertOAuth)((email, displayName, isEducator)).flatMap { user =>
                     session.execute(AuthProviders.insert)((user.id, provider, providerId)) *>
-                      IO.pure((user, AuthService.createToken(user.id, jwtSecret)))
+                    emailService.sendSignupNotification(email, displayName, isEducator, provider)
+                      .handleErrorWith(e => IO.println(s"[SignupNotification] Failed: ${e.getMessage}"))
+                      .start *>
+                    IO.pure((user, AuthService.createToken(user.id, jwtSecret)))
                   }
               }
           }

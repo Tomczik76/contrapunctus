@@ -7,6 +7,7 @@ import software.amazon.awssdk.regions.Region
 
 trait EmailService:
   def sendPasswordReset(toEmail: String, resetToken: String): IO[Unit]
+  def sendSignupNotification(userEmail: String, displayName: String, isEducator: Boolean, provider: String): IO[Unit]
 
 object EmailService:
   def make(frontendBaseUrl: String, sesRegion: String, fromEmail: String): EmailService =
@@ -49,7 +50,40 @@ object EmailService:
           ()
         }
 
+      def sendSignupNotification(userEmail: String, displayName: String, isEducator: Boolean, provider: String): IO[Unit] =
+        IO.blocking {
+          val role = if isEducator then "Educator" else "Student"
+          val html =
+            s"""<div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; max-width: 480px; margin: 0 auto; padding: 32px;">
+               |  <h2 style="font-size: 20px; font-weight: 700; color: #1a1a1a;">New signup on Contrapunctus</h2>
+               |  <table style="font-size: 14px; color: #333; line-height: 1.8; border-collapse: collapse;">
+               |    <tr><td style="padding-right: 16px; font-weight: 600;">Name</td><td>$displayName</td></tr>
+               |    <tr><td style="padding-right: 16px; font-weight: 600;">Email</td><td>$userEmail</td></tr>
+               |    <tr><td style="padding-right: 16px; font-weight: 600;">Role</td><td>$role</td></tr>
+               |    <tr><td style="padding-right: 16px; font-weight: 600;">Sign-up method</td><td>$provider</td></tr>
+               |  </table>
+               |</div>""".stripMargin
+
+          val request = SendEmailRequest.builder()
+            .source(fromEmail)
+            .destination(Destination.builder().toAddresses("info@contrapunctus.app").build())
+            .message(
+              Message.builder()
+                .subject(Content.builder().data(s"New signup: $displayName ($role)").charset("UTF-8").build())
+                .body(Body.builder()
+                  .html(Content.builder().data(html).charset("UTF-8").build())
+                  .build())
+                .build()
+            )
+            .build()
+
+          client.sendEmail(request)
+          ()
+        }
+
   def noOp: EmailService =
     new EmailService:
       def sendPasswordReset(toEmail: String, resetToken: String): IO[Unit] =
         IO.println(s"[EmailService.noOp] Reset token for $toEmail: $resetToken")
+      def sendSignupNotification(userEmail: String, displayName: String, isEducator: Boolean, provider: String): IO[Unit] =
+        IO.println(s"[EmailService.noOp] New signup: $displayName <$userEmail> educator=$isEducator provider=$provider")

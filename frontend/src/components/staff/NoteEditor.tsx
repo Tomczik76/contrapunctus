@@ -72,7 +72,7 @@ function TsDigit({ digit, x, y }: { digit: number; x: number; y: number }) {
 }
 
 
-export function NoteEditor({ header, subheader, lessonConfig, onTrebleBeatsChanged, onBassBeatsChanged, figuredBassValues, onFiguredBassChanged, trebleOnly, initialTonicIdx, initialScaleName, initialTsTop, initialTsBottom, initialTrebleBeats, initialBassBeats, readOnly }: NoteEditorProps) {
+export function NoteEditor({ header, subheader, lessonConfig, onTrebleBeatsChanged, onBassBeatsChanged, figuredBassValues, onFiguredBassChanged, trebleOnly, initialTonicIdx, initialScaleName, initialTsTop, initialTsBottom, initialTrebleBeats, initialBassBeats, readOnly, maxWidth: maxWidthProp }: NoteEditorProps) {
   const embedded = !!(onTrebleBeatsChanged || onBassBeatsChanged);
   const { token } = useAuth();
   // ── LocalStorage persistence ──────────────────────────────────────
@@ -171,7 +171,13 @@ export function NoteEditor({ header, subheader, lessonConfig, onTrebleBeatsChang
   }
 
   const [zoom, setZoom] = useState(() => {
-    try { const z = localStorage.getItem("contrapunctus_zoom"); return z ? Number(z) : 1; } catch { return 1; }
+    try {
+      const z = localStorage.getItem("contrapunctus_zoom");
+      if (z) return Number(z);
+      // Default to 200% on mobile
+      if (typeof window !== "undefined" && window.innerWidth < 700) return 2;
+      return 1;
+    } catch { return 1; }
   });
   const [isMobile, setIsMobile] = useState(() => typeof window !== "undefined" && window.innerWidth < 700);
   const [isLandscape, setIsLandscape] = useState(() => typeof window !== "undefined" && window.innerWidth > window.innerHeight);
@@ -259,7 +265,8 @@ export function NoteEditor({ header, subheader, lessonConfig, onTrebleBeatsChang
   // Layout: treble from dp 40 down to 30, gap, bass from 26 down to 16
   const displayTopDp = 42;
   const trebleYOffset = (displayTopDp - ED_TREBLE_TOP) * STEP;
-  const bassYOffset = trebleYOffset + (ED_TREBLE_TOP - ED_TREBLE_LINES[0]) * STEP + STAFF_GAP;
+  const staffGap = (isShortScreen && isLandscape) ? 60 : STAFF_GAP;
+  const bassYOffset = trebleYOffset + (ED_TREBLE_TOP - ED_TREBLE_LINES[0]) * STEP + staffGap;
   const displayBotDp = 14;
   // Per-staff note placement bounds (a few ledger lines beyond each staff)
   const TREBLE_MIN_DP = 24; // ~3 ledger lines below treble staff (C4)
@@ -709,6 +716,22 @@ export function NoteEditor({ header, subheader, lessonConfig, onTrebleBeatsChang
   }, [bassBeats, onBassBeatsChanged]);
 
   const [errorPanelOpen, setErrorPanelOpen] = useState(false);
+  const savedZoomRef = useRef<number | null>(null);
+  const openErrorPanel = useCallback(() => {
+    if (isShortScreen || isMobile) {
+      savedZoomRef.current = zoom;
+      setZoom(1);
+    }
+    setErrorPanelOpen(true);
+  }, [isShortScreen, isMobile, zoom]);
+  const closeErrorPanel = useCallback(() => {
+    if (savedZoomRef.current !== null) {
+      setZoom(savedZoomRef.current);
+      savedZoomRef.current = null;
+    }
+    setErrorPanelOpen(false);
+    setHighlightedBeat(null);
+  }, []);
   const [highlightedBeat, setHighlightedBeat] = useState<number | null>(null);
 
   const [rnSelections, setRnSelections] = useState<Record<number, number>>({});
@@ -734,27 +757,74 @@ export function NoteEditor({ header, subheader, lessonConfig, onTrebleBeatsChang
   const [legendOpen, setLegendOpen] = useState(false);
 
   // ── Playback state ──────────────────────────────────────────────────
-  type InstrumentName = "piano" | "epiano" | "organ" | "strings" | "synth";
+  type InstrumentName = "piano" | "epiano" | "organ" | "strings" | "synth" | "midi";
   const INSTRUMENTS: { value: InstrumentName; label: string }[] = [
     { value: "piano", label: "Piano" },
     { value: "epiano", label: "E. Piano" },
     { value: "organ", label: "Organ" },
     { value: "strings", label: "Strings" },
     { value: "synth", label: "Synth" },
+    { value: "midi", label: "MIDI" },
   ];
 
   const [isPlaying, setIsPlaying] = useState(false);
   const [isPaused, setIsPaused] = useState(false);
   const [playbackTimeIdx, setPlaybackTimeIdx] = useState<number | null>(null);
-  const [tempo, setTempo] = useState(120);
+  const [tempo, setTempoRaw] = useState(() => {
+    const saved = localStorage.getItem("contrapunctus_tempo");
+    return saved ? Math.max(40, Math.min(240, Number(saved))) || 120 : 120;
+  });
+  const [tempoInput, setTempoInput] = useState(String(tempo));
+  const setTempo = (v: number) => { setTempoRaw(v); setTempoInput(String(v)); localStorage.setItem("contrapunctus_tempo", String(v)); };
+  const [looping, setLooping] = useState(false);
+  const loopingRef = useRef(false);
+  useEffect(() => { loopingRef.current = looping; }, [looping]);
+  const handlePlayRef = useRef<() => void>(() => {});
   const [playbackStartIdx, setPlaybackStartIdx] = useState(0);
-  const [instrument, setInstrument] = useState<InstrumentName>("piano");
+  const [instrument, setInstrumentRaw] = useState<InstrumentName>(() => {
+    const saved = localStorage.getItem("contrapunctus_instrument");
+    return saved && ["piano", "epiano", "organ", "strings", "synth", "midi"].includes(saved) ? saved as InstrumentName : "piano";
+  });
+  const setInstrument = (v: InstrumentName) => { setInstrumentRaw(v); localStorage.setItem("contrapunctus_instrument", v); };
   type SynthLike = { triggerAttackRelease(notes: string | string[], duration: number | string, time?: number, velocity?: number): any; releaseAll: () => void; dispose: () => void };
   const synthRef = useRef<SynthLike | null>(null);
   const synthInstrumentRef = useRef<InstrumentName | null>(null);
   const samplerLoadedRef = useRef(false);
   const rafRef = useRef<number>(0);
   const playbackRef = useRef<{ startTimeVal: number; wholeNoteSec: number; startIdx: number } | null>(null);
+
+  // MIDI output state
+  const midiAccessRef = useRef<MIDIAccess | null>(null);
+  const [midiPorts, setMidiPorts] = useState<MIDIOutput[]>([]);
+  const [selectedMidiPort, setSelectedMidiPortRaw] = useState<string>(() => localStorage.getItem("contrapunctus_midi_port") || "");
+  const setSelectedMidiPort = (v: string) => { setSelectedMidiPortRaw(v); localStorage.setItem("contrapunctus_midi_port", v); };
+  const midiTimeoutsRef = useRef<number[]>([]);
+
+  useEffect(() => {
+    if (instrument !== "midi") return;
+    if (!navigator.requestMIDIAccess) return;
+
+    const refreshPorts = (access: MIDIAccess) => {
+      const ports = Array.from(access.outputs.values());
+      console.log("[MIDI] Found ports:", ports.map(p => `${p.name} (${p.id})`));
+      setMidiPorts(ports);
+      if (ports.length > 0) {
+        const savedStillExists = selectedMidiPort && ports.some(p => p.id === selectedMidiPort);
+        if (!savedStillExists) setSelectedMidiPort(ports[0].id);
+      }
+    };
+
+    if (midiAccessRef.current) {
+      refreshPorts(midiAccessRef.current);
+      return;
+    }
+
+    navigator.requestMIDIAccess().then((access) => {
+      midiAccessRef.current = access;
+      refreshPorts(access);
+      access.onstatechange = () => refreshPorts(access);
+    }).catch((e) => { console.warn("[MIDI] Access denied:", e); });
+  }, [instrument, selectedMidiPort]);
 
   // Lazy-load Tone.js — only fetched when user first triggers playback
   const toneRef = useRef<typeof ToneNs | null>(null);
@@ -860,6 +930,103 @@ export function NoteEditor({ header, subheader, lessonConfig, onTrebleBeatsChang
   }
 
   const handlePlay = useCallback(async () => {
+    // ── MIDI playback path ──
+    if (instrument === "midi") {
+      if (isPaused) return; // MIDI doesn't support pause/resume
+      const access = midiAccessRef.current;
+      if (!access) { console.warn("[MIDI] No MIDI access"); return; }
+      const port = access.outputs.get(selectedMidiPort);
+      if (!port) { console.warn("[MIDI] No port found for id:", selectedMidiPort); return; }
+      await port.open();
+      // Clear any previous scheduled MIDI events
+      midiTimeoutsRef.current.forEach(clearTimeout);
+      midiTimeoutsRef.current = [];
+
+      const wholeNoteSec = (60 / tempo) * 4;
+      const startTime = allTimePoints[playbackStartIdx] ?? 0;
+      const velocity = 80;
+      const channel = 0;
+
+      // Compute total duration (skip rests so trailing empty bars don't extend playback)
+      let maxEnd = 0;
+      for (let i = 0; i < paddedTrebleBeats.length; i++) {
+        if (trebleTimes[i] < startTime - 1e-9) continue;
+        if (paddedTrebleBeats[i].isRest || paddedTrebleBeats[i].notes.length === 0) continue;
+        const end = trebleTimes[i] + beatValue(paddedTrebleBeats[i]);
+        if (end > maxEnd) maxEnd = end;
+      }
+      for (let i = 0; i < paddedBassBeats.length; i++) {
+        if (bassTimes[i] < startTime - 1e-9) continue;
+        if (paddedBassBeats[i].isRest || paddedBassBeats[i].notes.length === 0) continue;
+        const end = bassTimes[i] + beatValue(paddedBassBeats[i]);
+        if (end > maxEnd) maxEnd = end;
+      }
+      const loopDurationMs = (maxEnd - startTime) * wholeNoteSec * 1000;
+
+      // Pre-schedule multiple iterations for seamless looping
+      const iterations = loopingRef.current ? 64 : 1;
+
+      const scheduleMidiBeats = (beats: PlacedBeat[], times: number[], iterOffset: number) => {
+        for (let i = 0; i < beats.length; i++) {
+          const beat = beats[i];
+          if (beat.isRest || beat.notes.length === 0) continue;
+          if (times[i] < startTime - 1e-9) continue;
+          const offsetMs = (times[i] - startTime) * wholeNoteSec * 1000 + iterOffset;
+          const durMs = Math.max(50, beatValue(beat) * wholeNoteSec * 0.9 * 1000);
+          const midiNotes = beat.notes.map(n => {
+            const eff = effectiveAccidental(n.accidental, n.dp, keySig);
+            return dpToMidi(n.dp, eff);
+          });
+          const onId = window.setTimeout(() => {
+            for (const note of midiNotes) port.send([0x90 | channel, note, velocity]);
+          }, offsetMs);
+          const offId = window.setTimeout(() => {
+            for (const note of midiNotes) port.send([0x80 | channel, note, 0]);
+          }, offsetMs + durMs);
+          midiTimeoutsRef.current.push(onId, offId);
+        }
+      };
+
+      for (let iter = 0; iter < iterations; iter++) {
+        scheduleMidiBeats(paddedTrebleBeats, trebleTimes, iter * loopDurationMs);
+        scheduleMidiBeats(paddedBassBeats, bassTimes, iter * loopDurationMs);
+      }
+
+      const totalMs = iterations * loopDurationMs;
+      const stopId = window.setTimeout(() => {
+        setIsPlaying(false);
+        setPlaybackTimeIdx(null);
+        playbackRef.current = null;
+      }, totalMs + 100);
+      midiTimeoutsRef.current.push(stopId);
+
+      // Position tracking via RAF (wraps around for looping)
+      playbackRef.current = { startTimeVal: startTime, wholeNoteSec, startIdx: playbackStartIdx };
+      const perfStart = performance.now();
+      setIsPlaying(true);
+      setIsPaused(false);
+      setPlaybackTimeIdx(playbackStartIdx);
+
+      const tick = () => {
+        const elapsedMs = performance.now() - perfStart;
+        if (elapsedMs > totalMs + 100) return;
+        const elapsedInLoop = loopingRef.current
+          ? (elapsedMs % loopDurationMs) / 1000
+          : elapsedMs / 1000;
+        const curTime = startTime + elapsedInLoop / wholeNoteSec;
+        let idx = playbackStartIdx;
+        for (let i = playbackStartIdx; i < allTimePoints.length; i++) {
+          if (allTimePoints[i] <= curTime + 1e-9) idx = i;
+          else break;
+        }
+        setPlaybackTimeIdx(idx);
+        rafRef.current = requestAnimationFrame(tick);
+      };
+      rafRef.current = requestAnimationFrame(tick);
+      return;
+    }
+
+    // ── Tone.js playback path ──
     const Tone = await getTone();
     await Tone.start();
     const transport = Tone.getTransport();
@@ -909,49 +1076,47 @@ export function NoteEditor({ header, subheader, lessonConfig, onTrebleBeatsChang
     const wholeNoteSec = (60 / tempo) * 4;
     const startTime = allTimePoints[playbackStartIdx] ?? 0;
 
-    // Schedule treble notes
-    for (let i = 0; i < paddedTrebleBeats.length; i++) {
-      const beat = paddedTrebleBeats[i];
-      if (beat.isRest || beat.notes.length === 0) continue;
-      if (trebleTimes[i] < startTime - 1e-9) continue;
-      const offset = (trebleTimes[i] - startTime) * wholeNoteSec;
-      const dur = Math.max(0.05, beatValue(beat) * wholeNoteSec * 0.9);
-      const noteNames = beat.notes.map((n) => {
-        const eff = effectiveAccidental(n.accidental, n.dp, keySig);
-        return midiToNoteName(dpToMidi(n.dp, eff));
-      });
-      transport.schedule((time) => { s.triggerAttackRelease(noteNames, dur, time); }, offset);
-    }
-
-    // Schedule bass notes
-    for (let i = 0; i < paddedBassBeats.length; i++) {
-      const beat = paddedBassBeats[i];
-      if (beat.isRest || beat.notes.length === 0) continue;
-      if (bassTimes[i] < startTime - 1e-9) continue;
-      const offset = (bassTimes[i] - startTime) * wholeNoteSec;
-      const dur = Math.max(0.05, beatValue(beat) * wholeNoteSec * 0.9);
-      const noteNames = beat.notes.map((n) => {
-        const eff = effectiveAccidental(n.accidental, n.dp, keySig);
-        return midiToNoteName(dpToMidi(n.dp, eff));
-      });
-      transport.schedule((time) => { s.triggerAttackRelease(noteNames, dur, time); }, offset);
-    }
-
-    // Compute total duration
+    // Compute total duration (skip rests so trailing empty bars don't extend playback)
     let maxEnd = 0;
     for (let i = 0; i < paddedTrebleBeats.length; i++) {
       if (trebleTimes[i] < startTime - 1e-9) continue;
+      if (paddedTrebleBeats[i].isRest || paddedTrebleBeats[i].notes.length === 0) continue;
       const end = trebleTimes[i] + beatValue(paddedTrebleBeats[i]);
       if (end > maxEnd) maxEnd = end;
     }
     for (let i = 0; i < paddedBassBeats.length; i++) {
       if (bassTimes[i] < startTime - 1e-9) continue;
+      if (paddedBassBeats[i].isRest || paddedBassBeats[i].notes.length === 0) continue;
       const end = bassTimes[i] + beatValue(paddedBassBeats[i]);
       if (end > maxEnd) maxEnd = end;
     }
-    const totalSec = (maxEnd - startTime) * wholeNoteSec;
+    const loopDurationSec = (maxEnd - startTime) * wholeNoteSec;
 
-    // Schedule stop — inline to avoid stale closure
+    // Pre-schedule multiple iterations for seamless looping
+    const iterations = loopingRef.current ? 64 : 1;
+    const totalSec = iterations * loopDurationSec;
+
+    const scheduleToneBeats = (beats: PlacedBeat[], times: number[], iterOffset: number) => {
+      for (let i = 0; i < beats.length; i++) {
+        const beat = beats[i];
+        if (beat.isRest || beat.notes.length === 0) continue;
+        if (times[i] < startTime - 1e-9) continue;
+        const offset = (times[i] - startTime) * wholeNoteSec + iterOffset;
+        const dur = Math.max(0.05, beatValue(beat) * wholeNoteSec * 0.9);
+        const noteNames = beat.notes.map((n) => {
+          const eff = effectiveAccidental(n.accidental, n.dp, keySig);
+          return midiToNoteName(dpToMidi(n.dp, eff));
+        });
+        transport.schedule((time) => { s.triggerAttackRelease(noteNames, dur, time); }, offset);
+      }
+    };
+
+    for (let iter = 0; iter < iterations; iter++) {
+      scheduleToneBeats(paddedTrebleBeats, trebleTimes, iter * loopDurationSec);
+      scheduleToneBeats(paddedBassBeats, bassTimes, iter * loopDurationSec);
+    }
+
+    // Schedule stop at end
     transport.schedule(() => {
       Tone.getDraw().schedule(() => {
         const tr = Tone.getTransport();
@@ -972,11 +1137,14 @@ export function NoteEditor({ header, subheader, lessonConfig, onTrebleBeatsChang
     setIsPaused(false);
     setPlaybackTimeIdx(playbackStartIdx);
 
-    // RAF position tracking
+    // RAF position tracking (wraps around for looping)
     const tick = () => {
       if (Tone.getTransport().state !== "started") return;
       const elapsed = Tone.getTransport().seconds;
-      const curTime = startTime + elapsed / wholeNoteSec;
+      const elapsedInLoop = loopingRef.current && loopDurationSec > 0
+        ? (elapsed % loopDurationSec)
+        : elapsed;
+      const curTime = startTime + elapsedInLoop / wholeNoteSec;
       let idx = playbackStartIdx;
       for (let i = playbackStartIdx; i < allTimePoints.length; i++) {
         if (allTimePoints[i] <= curTime + 1e-9) idx = i;
@@ -986,7 +1154,8 @@ export function NoteEditor({ header, subheader, lessonConfig, onTrebleBeatsChang
       rafRef.current = requestAnimationFrame(tick);
     };
     rafRef.current = requestAnimationFrame(tick);
-  }, [isPaused, tempo, playbackStartIdx, allTimePoints, paddedTrebleBeats, paddedBassBeats, trebleTimes, bassTimes, keySig, instrument]);
+  }, [isPaused, tempo, playbackStartIdx, allTimePoints, paddedTrebleBeats, paddedBassBeats, trebleTimes, bassTimes, keySig, instrument, selectedMidiPort]);
+  useEffect(() => { handlePlayRef.current = handlePlay; }, [handlePlay]);
 
   const handlePause = useCallback(() => {
     const Tone = toneRef.current;
@@ -998,6 +1167,14 @@ export function NoteEditor({ header, subheader, lessonConfig, onTrebleBeatsChang
   }, []);
 
   const handleStop = useCallback(() => {
+    // Clear MIDI scheduled events and send all-notes-off
+    midiTimeoutsRef.current.forEach(clearTimeout);
+    midiTimeoutsRef.current = [];
+    const access = midiAccessRef.current;
+    const port = access?.outputs.get(selectedMidiPort);
+    if (port) {
+      for (let note = 0; note < 128; note++) port.send([0x80, note, 0]);
+    }
     const Tone = toneRef.current;
     if (Tone) {
       const transport = Tone.getTransport();
@@ -1011,7 +1188,7 @@ export function NoteEditor({ header, subheader, lessonConfig, onTrebleBeatsChang
     setPlaybackTimeIdx(null);
     setPlaybackStartIdx(0);
     playbackRef.current = null;
-  }, []);
+  }, [selectedMidiPort]);
 
   // Stop playback when notes change
   useEffect(() => {
@@ -1354,8 +1531,7 @@ export function NoteEditor({ header, subheader, lessonConfig, onTrebleBeatsChang
         const newNotes = beat.notes.filter((n) => !posMatch(n));
         if (newNotes.length === 0) {
           // In lesson mode, don't allow deleting all notes from a locked beat
-          if (lessonConfig && curStaff === "treble" && lessonConfig.lockedTrebleBeats.length > 0) return prev;
-          if (lessonConfig && curStaff === "bass" && lessonConfig.lockedBassBeats && lessonConfig.lockedBassBeats.length > 0) return prev;
+          if (lessonConfig && isLockedNote(curStaff, curBeatIdx, curDp)) return prev;
           const updated = [...prev];
           updated[curBeatIdx] = { notes: [], duration: beat.duration, isRest: true };
           return updated;
@@ -2085,8 +2261,106 @@ export function NoteEditor({ header, subheader, lessonConfig, onTrebleBeatsChang
     }
   }, [darkMode]);
 
+  const outerRef = useRef<HTMLDivElement>(null);
+  const [isFullscreen, setIsFullscreen] = useState(false);
+  const [portraitDismissed, setPortraitDismissed] = useState(false);
+  const toggleFullscreen = useCallback(() => {
+    if (!document.fullscreenElement) {
+      outerRef.current?.requestFullscreen?.();
+    } else {
+      document.exitFullscreen?.();
+    }
+  }, []);
+  useEffect(() => {
+    const handler = () => setIsFullscreen(!!document.fullscreenElement);
+    document.addEventListener("fullscreenchange", handler);
+    return () => document.removeEventListener("fullscreenchange", handler);
+  }, []);
+
+  const scrollIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const scrollLastYRef = useRef<number | null>(null);
+  const scrollTarget = useCallback((): Window | Element => {
+    return (document.fullscreenElement === outerRef.current && outerRef.current) ? outerRef.current : window;
+  }, []);
+  const startScrolling = useCallback((direction: "up" | "down") => {
+    if (scrollIntervalRef.current) return;
+    const step = direction === "up" ? -40 : 40;
+    scrollTarget().scrollBy({ top: step });
+    scrollIntervalRef.current = setInterval(() => scrollTarget().scrollBy({ top: step }), 80);
+  }, [scrollTarget]);
+  const stopScrolling = useCallback(() => {
+    if (scrollIntervalRef.current) { clearInterval(scrollIntervalRef.current); scrollIntervalRef.current = null; }
+    scrollLastYRef.current = null;
+  }, []);
+  const scrollDragCleanupRef = useRef<(() => void) | null>(null);
+  const scrollDragRefCallback = useCallback((el: HTMLDivElement | null) => {
+    // Clean up previous element's listeners
+    if (scrollDragCleanupRef.current) { scrollDragCleanupRef.current(); scrollDragCleanupRef.current = null; }
+    if (!el) return;
+    const onStart = (e: TouchEvent) => {
+      e.preventDefault();
+      stopScrolling();
+      scrollLastYRef.current = e.touches[0].clientY;
+    };
+    const onMove = (e: TouchEvent) => {
+      e.preventDefault();
+      if (scrollLastYRef.current === null) return;
+      const y = e.touches[0].clientY;
+      const delta = scrollLastYRef.current - y;
+      scrollTarget().scrollBy({ top: delta * 3 });
+      scrollLastYRef.current = y;
+    };
+    const onEnd = () => { scrollLastYRef.current = null; };
+    el.addEventListener("touchstart", onStart, { passive: false });
+    el.addEventListener("touchmove", onMove, { passive: false });
+    el.addEventListener("touchend", onEnd);
+    el.addEventListener("touchcancel", onEnd);
+    scrollDragCleanupRef.current = () => {
+      el.removeEventListener("touchstart", onStart);
+      el.removeEventListener("touchmove", onMove);
+      el.removeEventListener("touchend", onEnd);
+      el.removeEventListener("touchcancel", onEnd);
+    };
+  }, [stopScrolling, scrollTarget]);
+  useEffect(() => () => { if (scrollIntervalRef.current) clearInterval(scrollIntervalRef.current); }, []);
+
   return (
-    <div style={{ width: "100%", minWidth: 0, overflow: "hidden" }}>
+    <div ref={outerRef} style={{ width: "100%", minWidth: 0, overflow: isFullscreen ? "auto" : "hidden", height: isFullscreen ? "100%" : undefined, background: isFullscreen ? (dk ? "#1a1a1e" : "#e8e4e0") : undefined }}>
+      {/* Portrait orientation overlay for mobile */}
+      {isMobile && !isLandscape && !portraitDismissed && (
+        <div style={{
+          position: "fixed", top: 0, left: 0, right: 0, bottom: 0, zIndex: 9999,
+          background: dk ? "rgba(20,20,24,0.97)" : "rgba(232,228,224,0.97)",
+          display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center",
+          color: theme.text, fontFamily: "-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif",
+        }}>
+          <svg width="80" height="80" viewBox="0 0 80 80" fill="none" style={{ marginBottom: 24, animation: "cp-rotate-hint 2s ease-in-out infinite", transformOrigin: "center center" }}>
+            <rect x="20" y="8" width="40" height="64" rx="6" stroke={dk ? "#888" : "#666"} strokeWidth="2.5" fill="none" />
+            <circle cx="40" cy="64" r="3" fill={dk ? "#888" : "#666"} />
+          </svg>
+          <div style={{ fontSize: 20, fontWeight: 700, marginBottom: 8 }}>Rotate your device</div>
+          <div style={{ fontSize: 14, color: theme.textMuted, textAlign: "center", maxWidth: 260, lineHeight: 1.5 }}>
+            The music editor works best in landscape mode. Please turn your phone sideways.
+          </div>
+          <button
+            onClick={() => setPortraitDismissed(true)}
+            style={{
+              marginTop: 24, padding: "10px 24px", borderRadius: 6,
+              background: "none", border: `1px solid ${theme.textMuted}`,
+              color: theme.textMuted, fontSize: 14, cursor: "pointer",
+              fontFamily: "inherit",
+            }}
+          >
+            Continue in portrait
+          </button>
+        </div>
+      )}
+      <style>{`
+        @keyframes cp-rotate-hint {
+          0%, 100% { transform: rotate(0deg); }
+          30%, 70% { transform: rotate(90deg); }
+        }
+      `}</style>
       {/* Toolbar hover styles */}
       <style>{`
         .cp-toolbar button:hover:not([disabled]):not(.cp-active):not(.cp-active-danger) { opacity: 0.8; }
@@ -2102,9 +2376,9 @@ export function NoteEditor({ header, subheader, lessonConfig, onTrebleBeatsChang
       {/* Fixed top bar */}
       <div ref={topBarRef} className="cp-toolbar" style={{
         position: embedded ? "sticky" : "fixed",
-        top: embedded ? 0 : 44,
+        top: embedded ? 0 : isFullscreen ? 0 : 44,
         left: embedded ? undefined : 0,
-        right: embedded ? undefined : 0,
+        right: embedded ? undefined : (isShortScreen && isLandscape ? 36 : 0),
         zIndex: 100,
         background: theme.toolbarBg,
         borderBottom: `1px solid ${theme.toolbarBorder}`,
@@ -2197,13 +2471,21 @@ export function NoteEditor({ header, subheader, lessonConfig, onTrebleBeatsChang
             >
               {"\u23F9"}
             </button>
+            <button
+              onClick={() => setLooping(v => !v)}
+              style={textBtnStyle(looping)}
+              className={textBtnClass(looping)}
+              title="Loop"
+            >
+              {"\uD83D\uDD01"}
+            </button>
           </div>
 
           {/* Species counterpoint: Errors + Legend in compact toolbar */}
           {lessonConfig?.template === "species_counterpoint" && (
             <div style={groupStyle}>
               <button
-                onClick={() => setShowErrors((v) => { if (!v) setErrorPanelOpen(true); return !v; })}
+                onClick={() => setShowErrors((v) => { if (!v) openErrorPanel(); return !v; })}
                 style={textBtnStyle(showErrors)}
                 className={textBtnClass(showErrors)}
                 title="Show counterpoint errors"
@@ -2218,7 +2500,7 @@ export function NoteEditor({ header, subheader, lessonConfig, onTrebleBeatsChang
                   : (dk ? "#4ade80" : "#16a34a");
                 return hasIssues ? (
                   <button
-                    onClick={() => { setErrorPanelOpen((v) => !v); setHighlightedBeat(null); }}
+                    onClick={() => { if (errorPanelOpen) closeErrorPanel(); else openErrorPanel(); }}
                     style={{ ...textBtnStyle(errorPanelOpen), color: errorPanelOpen ? "#fff" : issueColor, fontSize: 11 }}
                     className={textBtnClass(errorPanelOpen)}
                     title="Toggle error summary panel"
@@ -2247,8 +2529,19 @@ export function NoteEditor({ header, subheader, lessonConfig, onTrebleBeatsChang
               <button onClick={() => { const z = Math.max(0.5, +(zoom - 0.1).toFixed(1)); setZoom(z); localStorage.setItem("contrapunctus_zoom", String(z)); }}
                 style={{ ...btnBase, width: 28, height: 28 }} title="Zoom out">−</button>
               <span style={{ fontSize: 12, color: theme.textMuted, minWidth: 32, textAlign: "center" }}>{Math.round(zoom * 100)}%</span>
-              <button onClick={() => { const z = Math.min(2, +(zoom + 0.1).toFixed(1)); setZoom(z); localStorage.setItem("contrapunctus_zoom", String(z)); }}
+              <button onClick={() => { const z = Math.min(3, +(zoom + 0.1).toFixed(1)); setZoom(z); localStorage.setItem("contrapunctus_zoom", String(z)); }}
                 style={{ ...btnBase, width: 28, height: 28 }} title="Zoom in">+</button>
+              <button onClick={toggleFullscreen} style={{ ...btnBase, width: 28, height: 28 }} title={isFullscreen ? "Exit fullscreen" : "Fullscreen"}>
+                <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+                  {isFullscreen ? (<>
+                    <polyline points="6,1 6,6 1,6" /><polyline points="10,15 10,10 15,10" />
+                    <polyline points="15,6 10,6 10,1" /><polyline points="1,10 6,10 6,15" />
+                  </>) : (<>
+                    <polyline points="1,6 1,1 6,1" /><polyline points="15,10 15,15 10,15" />
+                    <polyline points="10,1 15,1 15,6" /><polyline points="6,15 1,15 1,10" />
+                  </>)}
+                </svg>
+              </button>
             </div>
           )}
 
@@ -2301,6 +2594,18 @@ export function NoteEditor({ header, subheader, lessonConfig, onTrebleBeatsChang
           padding: "6px 0",
           gap: 8,
         }}>
+          {/* Collapse toggle — visible at start of row 1 on mobile/short screens */}
+          {(isMobile || isShortScreen) && !lessonConfig?.forceDuration && (
+            <button
+              onClick={() => setToolbarExpanded(false)}
+              style={{ ...btnBase, width: 32, height: 32, color: "#888", flexShrink: 0 }}
+              title="Collapse toolbar"
+            >
+              <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M3 9.5 L7 5.5 L11 9.5" />
+              </svg>
+            </button>
+          )}
           {/* Note values */}
           <div style={groupStyle}>
             <span className="cp-group-label" style={groupLabel}>Note</span>
@@ -2375,7 +2680,7 @@ export function NoteEditor({ header, subheader, lessonConfig, onTrebleBeatsChang
             </button>
             </>}
             <button
-              onClick={() => setShowErrors((v) => { if (!v) setErrorPanelOpen(true); return !v; })}
+              onClick={() => setShowErrors((v) => { if (!v) openErrorPanel(); return !v; })}
               style={textBtnStyle(showErrors)}
               className={textBtnClass(showErrors)}
               title="Show part-writing errors"
@@ -2390,7 +2695,7 @@ export function NoteEditor({ header, subheader, lessonConfig, onTrebleBeatsChang
                 : (dk ? "#4ade80" : "#16a34a");
               return hasIssues ? (
                 <button
-                  onClick={() => { setErrorPanelOpen((v) => !v); setHighlightedBeat(null); }}
+                  onClick={() => { if (errorPanelOpen) closeErrorPanel(); else openErrorPanel(); }}
                   style={{ ...textBtnStyle(errorPanelOpen), color: errorPanelOpen ? "#fff" : issueColor, fontSize: 11 }}
                   className={textBtnClass(errorPanelOpen)}
                   title="Toggle error summary panel"
@@ -2462,6 +2767,14 @@ export function NoteEditor({ header, subheader, lessonConfig, onTrebleBeatsChang
             >
               {"\u23F9"}
             </button>
+            <button
+              onClick={() => setLooping(v => !v)}
+              style={textBtnStyle(looping)}
+              className={textBtnClass(looping)}
+              title="Loop"
+            >
+              {"\uD83D\uDD01"}
+            </button>
             <label style={{ display: "flex", alignItems: "center", gap: 3, fontSize: 13, color: "#5a5a5a" }}>
               <span style={{ fontSize: 14 }}>{"\u2669"}</span>
               <span>=</span>
@@ -2469,8 +2782,10 @@ export function NoteEditor({ header, subheader, lessonConfig, onTrebleBeatsChang
                 type="number"
                 min={40}
                 max={240}
-                value={tempo}
-                onChange={(e) => setTempo(Math.max(40, Math.min(240, Number(e.target.value))))}
+                value={tempoInput}
+                onChange={(e) => setTempoInput(e.target.value)}
+                onBlur={() => { const v = Math.max(40, Math.min(240, Number(tempoInput) || 120)); setTempo(v); }}
+                onKeyDown={(e) => { if (e.key === "Enter") { const v = Math.max(40, Math.min(240, Number(tempoInput) || 120)); setTempo(v); (e.target as HTMLInputElement).blur(); } }}
                 style={{
                   width: 52,
                   fontSize: 13,
@@ -2493,6 +2808,19 @@ export function NoteEditor({ header, subheader, lessonConfig, onTrebleBeatsChang
                 <option key={inst.value} value={inst.value}>{inst.label}</option>
               ))}
             </select>
+            {instrument === "midi" && (
+              <select
+                value={selectedMidiPort}
+                onChange={(e) => setSelectedMidiPort(e.target.value)}
+                style={selectStyle}
+                title="MIDI Output Port"
+              >
+                {midiPorts.length === 0 && <option value="">No MIDI ports</option>}
+                {midiPorts.map((p) => (
+                  <option key={p.id} value={p.id}>{p.name}</option>
+                ))}
+              </select>
+            )}
           </div>
 
           {/* Time signature — hidden in embedded mode (controlled by form) */}
@@ -2552,8 +2880,19 @@ export function NoteEditor({ header, subheader, lessonConfig, onTrebleBeatsChang
             <button onClick={() => { const z = Math.max(0.5, +(zoom - 0.1).toFixed(1)); setZoom(z); localStorage.setItem("contrapunctus_zoom", String(z)); }}
               style={{ ...btnBase, width: 28, height: 28 }} title="Zoom out">−</button>
             <span style={{ fontSize: 12, color: theme.textMuted, minWidth: 32, textAlign: "center" }}>{Math.round(zoom * 100)}%</span>
-            <button onClick={() => { const z = Math.min(2, +(zoom + 0.1).toFixed(1)); setZoom(z); localStorage.setItem("contrapunctus_zoom", String(z)); }}
+            <button onClick={() => { const z = Math.min(3, +(zoom + 0.1).toFixed(1)); setZoom(z); localStorage.setItem("contrapunctus_zoom", String(z)); }}
               style={{ ...btnBase, width: 28, height: 28 }} title="Zoom in">+</button>
+            <button onClick={toggleFullscreen} style={{ ...btnBase, width: 28, height: 28 }} title={isFullscreen ? "Exit fullscreen" : "Fullscreen"}>
+              <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+                {isFullscreen ? (<>
+                  <polyline points="6,1 6,6 1,6" /><polyline points="10,15 10,10 15,10" />
+                  <polyline points="15,6 10,6 10,1" /><polyline points="1,10 6,10 6,15" />
+                </>) : (<>
+                  <polyline points="1,6 1,1 6,1" /><polyline points="15,10 15,15 10,15" />
+                  <polyline points="10,1 15,1 15,6" /><polyline points="6,15 1,15 1,10" />
+                </>)}
+              </svg>
+            </button>
           </div>
 
           {/* Collapse toggle — pushed right (hidden when forceDuration locks toolbar open) */}
@@ -2707,6 +3046,14 @@ export function NoteEditor({ header, subheader, lessonConfig, onTrebleBeatsChang
             >
               {"\u23F9"}
             </button>
+            <button
+              onClick={() => setLooping(v => !v)}
+              style={textBtnStyle(looping)}
+              className={textBtnClass(looping)}
+              title="Loop"
+            >
+              {"\uD83D\uDD01"}
+            </button>
             <label style={{ display: "flex", alignItems: "center", gap: 3, fontSize: 13, color: "#5a5a5a" }}>
               <span style={{ fontSize: 14 }}>{"\u2669"}</span>
               <span>=</span>
@@ -2714,8 +3061,10 @@ export function NoteEditor({ header, subheader, lessonConfig, onTrebleBeatsChang
                 type="number"
                 min={40}
                 max={240}
-                value={tempo}
-                onChange={(e) => setTempo(Math.max(40, Math.min(240, Number(e.target.value))))}
+                value={tempoInput}
+                onChange={(e) => setTempoInput(e.target.value)}
+                onBlur={() => { const v = Math.max(40, Math.min(240, Number(tempoInput) || 120)); setTempo(v); }}
+                onKeyDown={(e) => { if (e.key === "Enter") { const v = Math.max(40, Math.min(240, Number(tempoInput) || 120)); setTempo(v); (e.target as HTMLInputElement).blur(); } }}
                 style={{
                   width: 52,
                   fontSize: 13,
@@ -2739,6 +3088,38 @@ export function NoteEditor({ header, subheader, lessonConfig, onTrebleBeatsChang
                 <option key={inst.value} value={inst.value}>{inst.label}</option>
               ))}
             </select>
+            {instrument === "midi" && (
+              <select
+                value={selectedMidiPort}
+                onChange={(e) => setSelectedMidiPort(e.target.value)}
+                style={selectStyle}
+                title="MIDI Output Port"
+              >
+                {midiPorts.length === 0 && <option value="">No MIDI ports</option>}
+                {midiPorts.map((p) => (
+                  <option key={p.id} value={p.id}>{p.name}</option>
+                ))}
+              </select>
+            )}
+          </div>
+          <div style={groupStyle}>
+            <span className="cp-group-label" style={groupLabel}>Zoom</span>
+            <button onClick={() => { const z = Math.max(0.5, +(zoom - 0.1).toFixed(1)); setZoom(z); localStorage.setItem("contrapunctus_zoom", String(z)); }}
+              style={{ ...btnBase, width: 28, height: 28 }} title="Zoom out">−</button>
+            <span style={{ fontSize: 12, color: theme.textMuted, minWidth: 32, textAlign: "center" }}>{Math.round(zoom * 100)}%</span>
+            <button onClick={() => { const z = Math.min(3, +(zoom + 0.1).toFixed(1)); setZoom(z); localStorage.setItem("contrapunctus_zoom", String(z)); }}
+              style={{ ...btnBase, width: 28, height: 28 }} title="Zoom in">+</button>
+            <button onClick={toggleFullscreen} style={{ ...btnBase, width: 28, height: 28 }} title={isFullscreen ? "Exit fullscreen" : "Fullscreen"}>
+              <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+                {isFullscreen ? (<>
+                  <polyline points="6,1 6,6 1,6" /><polyline points="10,15 10,10 15,10" />
+                  <polyline points="15,6 10,6 10,1" /><polyline points="1,10 6,10 6,15" />
+                </>) : (<>
+                  <polyline points="1,6 1,1 6,1" /><polyline points="15,10 15,15 10,15" />
+                  <polyline points="10,1 15,1 15,6" /><polyline points="6,15 1,15 1,10" />
+                </>)}
+              </svg>
+            </button>
           </div>
         </div>
       )}
@@ -2757,15 +3138,16 @@ export function NoteEditor({ header, subheader, lessonConfig, onTrebleBeatsChang
         justifyContent: "center",
         gap: 16,
         padding: isShortScreen ? "4px 4px" : isMobile ? "12px 4px" : "24px 16px",
+        paddingRight: (isShortScreen && isLandscape) ? 40 : undefined,
         paddingBottom: header ? (isMobile ? 40 : 20) : undefined,
         alignItems: "flex-start",
       }}>
 
       {/* Page card */}
       <div style={{
-        maxWidth: embedded ? undefined : 960,
+        maxWidth: embedded ? undefined : (maxWidthProp ?? 960),
         width: "100%",
-        minWidth: (isMobile || isShortScreen || embedded) ? undefined : 960,
+        minWidth: undefined,
         flex: showErrors && errorPanelOpen ? "1 1 0" : undefined,
         padding: isShortScreen ? "8px 8px 12px" : isMobile ? "16px 8px 24px" : "36px 40px 48px",
         borderRadius: 8,
@@ -3281,7 +3663,7 @@ export function NoteEditor({ header, subheader, lessonConfig, onTrebleBeatsChang
               </span>
             </div>
             <button
-              onClick={() => { setErrorPanelOpen(false); setHighlightedBeat(null); }}
+              onClick={() => closeErrorPanel()}
               style={{
                 background: "none", border: "none", cursor: "pointer",
                 color: theme.textMuted, fontSize: 18, padding: "2px 6px", lineHeight: 1,
@@ -3354,6 +3736,75 @@ export function NoteEditor({ header, subheader, lessonConfig, onTrebleBeatsChang
         {lessonConfig && !lessonConfig.checked && lessonConfig.template !== "species_counterpoint" && <RnLegend dark={dk} />}
         <div style={{ padding: "16px 24px" }}>{header}</div>
       </div>}
+
+      {/* Mobile landscape scroll navigation bar */}
+      {isShortScreen && isLandscape && (
+        <div style={{
+          position: "fixed", right: 0,
+          top: isFullscreen ? 0 : 44, bottom: 0, width: 36, zIndex: 90,
+          display: "flex", flexDirection: "column", alignItems: "center",
+          background: dk ? "rgba(30,30,36,0.85)" : "rgba(220,216,210,0.85)",
+          backdropFilter: "blur(4px)",
+          borderLeft: `1px solid ${dk ? "#3a3a40" : "#ccc8c0"}`,
+          touchAction: "none",
+          paddingBottom: "env(safe-area-inset-bottom, 0px)",
+        }}>
+          {/* Tap to scroll up */}
+          <button
+            onTouchStart={(e) => { e.preventDefault(); startScrolling("up"); }}
+            onTouchEnd={stopScrolling}
+            onTouchCancel={stopScrolling}
+            onMouseDown={() => startScrolling("up")}
+            onMouseUp={stopScrolling}
+            onMouseLeave={stopScrolling}
+            style={{
+              height: 44, width: "100%", display: "flex", alignItems: "center", justifyContent: "center",
+              background: "none", border: "none", color: theme.textMuted, cursor: "pointer",
+              touchAction: "none", userSelect: "none", flexShrink: 0,
+            }}
+            aria-label="Scroll up"
+          >
+            <svg width="18" height="18" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M4 13 L10 7 L16 13" />
+            </svg>
+          </button>
+          {/* Drag zone */}
+          <div
+            ref={scrollDragRefCallback}
+            style={{
+              flex: 1, width: "100%", display: "flex", alignItems: "center", justifyContent: "center",
+              touchAction: "none", userSelect: "none", cursor: "grab",
+            }}
+            aria-label="Drag to scroll"
+          >
+            {/* Drag handle dots */}
+            <div style={{ display: "flex", flexDirection: "column", gap: 4, alignItems: "center" }}>
+              {[0, 1, 2].map(i => (
+                <div key={i} style={{ width: 12, height: 2, borderRadius: 1, background: dk ? "#555" : "#aaa" }} />
+              ))}
+            </div>
+          </div>
+          {/* Tap to scroll down */}
+          <button
+            onTouchStart={(e) => { e.preventDefault(); startScrolling("down"); }}
+            onTouchEnd={stopScrolling}
+            onTouchCancel={stopScrolling}
+            onMouseDown={() => startScrolling("down")}
+            onMouseUp={stopScrolling}
+            onMouseLeave={stopScrolling}
+            style={{
+              height: 44, width: "100%", display: "flex", alignItems: "center", justifyContent: "center",
+              background: "none", border: "none", color: theme.textMuted, cursor: "pointer",
+              touchAction: "none", userSelect: "none", flexShrink: 0,
+            }}
+            aria-label="Scroll down"
+          >
+            <svg width="18" height="18" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M4 7 L10 13 L16 7" />
+            </svg>
+          </button>
+        </div>
+      )}
     </div>
   );
 }

@@ -4,8 +4,8 @@ set -euo pipefail
 AWS_PROFILE="${AWS_PROFILE:-yield}"
 AWS_REGION="${AWS_REGION:-us-west-2}"
 CLUSTER="contrapunctus"
-SERVICE="backend"
 FAMILY="contrapunctus-backend"
+INFRA_DIR="${INFRA_DIR:-$(cd "$(dirname "$0")/../../aws-applications-infra/contrapunctus" && pwd)}"
 
 SKIP_TESTS=false
 for arg in "$@"; do
@@ -15,6 +15,20 @@ for arg in "$@"; do
 done
 
 cd "$(dirname "$0")/.."
+
+# ── Determine active/inactive slot ──────────────────────────────────────────
+
+ACTIVE_SLOT=$(AWS_PROFILE="$AWS_PROFILE" tofu -chdir="$INFRA_DIR" output -raw active_slot)
+if [ "$ACTIVE_SLOT" = "blue" ]; then
+  TARGET_SLOT="green"
+else
+  TARGET_SLOT="blue"
+fi
+TARGET_SERVICE="backend-$TARGET_SLOT"
+
+echo "==> Active slot: $ACTIVE_SLOT → deploying to: $TARGET_SLOT"
+
+# ── Build ───────────────────────────────────────────────────────────────────
 
 if [ "$SKIP_TESTS" = false ]; then
   echo "==> Running Scala.js tests (shared module)..."
@@ -53,6 +67,8 @@ echo "==> Tagging and pushing image ($IMAGE_TAG)..."
 "$DOCKER" push "$FULL_IMAGE"
 "$DOCKER" push "$ECR_URL:latest"
 
+# ── Deploy to inactive slot ─────────────────────────────────────────────────
+
 echo "==> Registering new task definition revision with image $IMAGE_TAG..."
 CURRENT_TASK_DEF=$(aws ecs describe-task-definition \
   --task-definition "$FAMILY" \
@@ -80,20 +96,21 @@ NEW_ARN=$(aws ecs register-task-definition \
 
 echo "==> New task definition: $NEW_ARN"
 
-echo "==> Updating service to new task definition..."
+echo "==> Scaling up $TARGET_SERVICE with new task definition..."
 aws ecs update-service \
   --cluster "$CLUSTER" \
-  --service "$SERVICE" \
+  --service "$TARGET_SERVICE" \
   --task-definition "$NEW_ARN" \
+  --desired-count 1 \
   --region "$AWS_REGION" \
   --profile "$AWS_PROFILE" \
   --output json > /dev/null
 
-echo "==> Waiting for service to stabilize..."
+echo "==> Waiting for $TARGET_SERVICE to stabilize..."
 aws ecs wait services-stable \
   --cluster "$CLUSTER" \
-  --services "$SERVICE" \
+  --services "$TARGET_SERVICE" \
   --region "$AWS_REGION" \
   --profile "$AWS_PROFILE"
 
-echo "==> Done. Deployed $FULL_IMAGE"
+echo "==> Backend deployed to $TARGET_SLOT slot. Run 'scripts/cutover.sh' to go live."

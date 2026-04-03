@@ -13,6 +13,19 @@ done
 
 cd "$(dirname "$0")/.."
 
+# ── Determine inactive slot ─────────────────────────────────────────────────
+
+ACTIVE_SLOT=$(AWS_PROFILE="$AWS_PROFILE" tofu -chdir="$INFRA_DIR" output -raw active_slot)
+if [ "$ACTIVE_SLOT" = "blue" ]; then
+  TARGET_SLOT="green"
+else
+  TARGET_SLOT="blue"
+fi
+
+echo "==> Active slot: $ACTIVE_SLOT → deploying frontend to: $TARGET_SLOT"
+
+# ── Build ───────────────────────────────────────────────────────────────────
+
 if [ "$SKIP_TESTS" = false ]; then
   echo "==> Running Scala.js tests (shared module)..."
   sbt coreJS/test
@@ -31,21 +44,13 @@ fi
 echo "==> Building Vite frontend..."
 npm run build --prefix frontend
 
-echo "==> Fetching S3 bucket and CloudFront distribution from Tofu state..."
-BUCKET=$(AWS_PROFILE="$AWS_PROFILE" tofu -chdir="$INFRA_DIR" output -raw frontend_bucket)
-DISTRIBUTION_ID=$(AWS_PROFILE="$AWS_PROFILE" tofu -chdir="$INFRA_DIR" output -raw cloudfront_distribution_id)
+# ── Upload to inactive slot prefix ──────────────────────────────────────────
 
-echo "==> Syncing to s3://$BUCKET..."
-aws s3 sync frontend/dist "s3://$BUCKET" \
+BUCKET=$(AWS_PROFILE="$AWS_PROFILE" tofu -chdir="$INFRA_DIR" output -raw frontend_bucket)
+
+echo "==> Syncing to s3://$BUCKET/$TARGET_SLOT/..."
+aws s3 sync frontend/dist "s3://$BUCKET/$TARGET_SLOT/" \
   --delete \
   --profile "$AWS_PROFILE"
 
-echo "==> Invalidating CloudFront cache..."
-aws cloudfront create-invalidation \
-  --distribution-id "$DISTRIBUTION_ID" \
-  --paths "/*" \
-  --profile "$AWS_PROFILE" \
-  --output json > /dev/null
-
-FRONTEND_URL=$(AWS_PROFILE="$AWS_PROFILE" tofu -chdir="$INFRA_DIR" output -raw cloudfront_url)
-echo "==> Done. Live at $FRONTEND_URL"
+echo "==> Frontend deployed to $TARGET_SLOT slot. Run 'scripts/cutover.sh' to go live."

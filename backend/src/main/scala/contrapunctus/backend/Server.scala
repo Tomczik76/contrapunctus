@@ -21,7 +21,11 @@ object Server:
     given Network[IO] = Network.forAsync[IO]
 
     EmberClientBuilder.default[IO].build.use { httpClient =>
-      val userService           = UserService.make(pool, config.jwtSecret)
+      val emailService          = if config.fromEmail.nonEmpty then
+                                    EmailService.make(config.frontendBaseUrl, config.sesRegion, config.fromEmail)
+                                  else
+                                    EmailService.noOp
+      val userService           = UserService.make(pool, config.jwtSecret, emailService)
       val bugReportService      = BugReportService.make(pool)
       val featureRequestService = FeatureRequestService.make(pool)
       val correctionService     = CorrectionService.make(pool)
@@ -29,12 +33,8 @@ object Server:
       val educatorService       = EducatorService.make(pool)
       val pointsService         = PointsService.make(pool)
       val exerciseService       = ExerciseService.make(pool, pointsService)
-      val emailService          = if config.fromEmail.nonEmpty then
-                                    EmailService.make(config.frontendBaseUrl, config.sesRegion, config.fromEmail)
-                                  else
-                                    EmailService.noOp
       val resetService          = PasswordResetService.make(pool, emailService)
-      val oAuthService          = OAuthService.make(pool, httpClient, config.jwtSecret, config.googleClientId)
+      val oAuthService          = OAuthService.make(pool, httpClient, config.jwtSecret, config.googleClientId, emailService)
 
       val healthRoutes = HttpRoutes.of[IO] { case GET -> Root / "health" => Ok("ok") }
       val apiRoutes    = SignupRoutes.routes(userService)

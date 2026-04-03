@@ -90,4 +90,6 @@ export interface NoteEditorProps {
   readOnly?: boolean;
   /** Content to display between the toolbar and the score. */
   subheader?: React.ReactNode;
+  /** Override the default max-width (960px) of the editor card. */
+  maxWidth?: number;
 }

@@ -10,7 +10,7 @@ import org.http4s.dsl.io._
 import org.http4s.headers.Authorization
 import org.http4s.Credentials
 import contrapunctus.backend.db.PointEvents
-import contrapunctus.backend.domain.{CommunityExercise, ExerciseAttempt, PointEvent, Rank}
+import contrapunctus.backend.domain.{CommunityExercise, ExerciseAttempt, PointEvent, Rank, SharedSolution}
 import contrapunctus.backend.services.{AuthService, ExerciseScoring, ExerciseService, PointsService}
 
 import java.util.UUID
@@ -37,7 +37,7 @@ case class SaveAttemptRequest(trebleBeats: Json, bassBeats: Json, studentRomans:
 object SaveAttemptRequest:
   given Decoder[SaveAttemptRequest] = deriveDecoder
 
-case class SubmitAttemptRequest(score: Option[BigDecimal], completed: Option[Boolean])
+case class SubmitAttemptRequest(score: Option[BigDecimal], completed: Option[Boolean], shared: Option[Boolean])
 object SubmitAttemptRequest:
   given Decoder[SubmitAttemptRequest] = deriveDecoder
 
@@ -208,7 +208,7 @@ object CommunityRoutes:
             validate(
               body.score.exists(s => s < 0 || s > 100) -> "score must be between 0 and 100"
             ) {
-              exerciseService.submitAttempt(userId, id, body.score, body.completed).flatMap {
+              exerciseService.submitAttempt(userId, id, body.shared.getOrElse(true), body.score, body.completed).flatMap {
                 case Some(a) => Ok(a.asJson)
                 case None    => Conflict(Json.obj("error" -> Json.fromString("no draft to submit or already submitted")))
               }
@@ -221,6 +221,40 @@ object CommunityRoutes:
           exerciseService.getAttempt(userId, id).flatMap {
             case Some(a) => Ok(a.asJson)
             case None    => NotFound(Json.obj("error" -> Json.fromString("no attempt found")))
+          }
+        }
+
+      // ── Solutions ──
+
+      case req @ GET -> Root / "community" / "exercises" / UUIDVar(id) / "solutions" =>
+        val nilUUID = UUID.fromString("00000000-0000-0000-0000-000000000000")
+        extractUserId(req, jwtSecret).flatMap { userIdOpt =>
+          userIdOpt match
+            case None =>
+              // Unauthenticated — allow access
+              exerciseService.listSharedSolutions(id, nilUUID).flatMap(sols => Ok(sols.asJson))
+            case Some(userId) =>
+              // Authenticated — must have submitted or be the creator
+              for
+                attemptOpt  <- exerciseService.getAttempt(userId, id)
+                exerciseOpt <- exerciseService.get(id)
+                resp <- (attemptOpt, exerciseOpt) match
+                  case (Some(att), _) if att.status == "submitted" =>
+                    exerciseService.listSharedSolutions(id, userId).flatMap(sols => Ok(sols.asJson))
+                  case (_, Some(ex)) if ex.creatorId == userId =>
+                    exerciseService.listSharedSolutions(id, userId).flatMap(sols => Ok(sols.asJson))
+                  case _ =>
+                    Forbidden(Json.obj("error" -> Json.fromString("submit your solution first")))
+              yield resp
+        }.handleErrorWith { e =>
+          IO(e.printStackTrace()) *>
+            InternalServerError(Json.obj("error" -> Json.fromString("internal server error")))
+        }
+
+      case req @ POST -> Root / "community" / "exercises" / UUIDVar(id) / "solutions" / UUIDVar(attemptId) / "upvote" =>
+        withAuth(req, jwtSecret) { userId =>
+          exerciseService.toggleSolutionUpvote(attemptId, userId).flatMap { upvoted =>
+            Ok(Json.obj("upvoted" -> Json.fromBoolean(upvoted)))
           }
         }
 

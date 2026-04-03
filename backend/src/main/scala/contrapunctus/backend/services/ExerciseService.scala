@@ -4,7 +4,7 @@ import cats.effect.{IO, Resource}
 import io.circe.Json
 import skunk.Session
 import contrapunctus.backend.db.{CommunityExercises, ExerciseAttempts}
-import contrapunctus.backend.domain.{CommunityExercise, ExerciseAttempt, Rank}
+import contrapunctus.backend.domain.{CommunityExercise, ExerciseAttempt, Rank, SharedSolution}
 
 import java.util.UUID
 
@@ -26,8 +26,10 @@ trait ExerciseService:
   def vote(exerciseId: UUID, userId: UUID, vote: String): IO[Unit]
   def getUserVote(exerciseId: UUID, userId: UUID): IO[Option[String]]
   def saveAttempt(userId: UUID, exerciseId: UUID, trebleBeats: Json, bassBeats: Json, studentRomans: Json): IO[Option[ExerciseAttempt]]
-  def submitAttempt(userId: UUID, exerciseId: UUID, clientScore: Option[BigDecimal], clientCompleted: Option[Boolean]): IO[Option[ExerciseAttempt]]
+  def submitAttempt(userId: UUID, exerciseId: UUID, shared: Boolean, clientScore: Option[BigDecimal], clientCompleted: Option[Boolean]): IO[Option[ExerciseAttempt]]
   def getAttempt(userId: UUID, exerciseId: UUID): IO[Option[ExerciseAttempt]]
+  def listSharedSolutions(exerciseId: UUID, requestingUserId: UUID): IO[List[SharedSolution]]
+  def toggleSolutionUpvote(attemptId: UUID, userId: UUID): IO[Boolean]
 
 object ExerciseService:
   def make(pool: Resource[IO, Session[IO]], pointsService: PointsService): ExerciseService =
@@ -95,7 +97,7 @@ object ExerciseService:
           // Award points to the exercise creator
           pool.use(_.option(CommunityExercises.selectById)(exerciseId)).flatMap {
             case Some(ex) if ex.creatorId != userId =>
-              val creatorPoints = if vote == "up" then 3 else -1
+              val creatorPoints = if vote == "up" then 5 else -1
               pointsService.awardPoints(ex.creatorId, if vote == "up" then "upvote_received" else "downvote_received", creatorPoints, Some(exerciseId)) *>
               pointsService.awardPoints(userId, "vote_cast", 1, Some(exerciseId)) *>
               pointsService.updateStreak(userId)
@@ -111,7 +113,7 @@ object ExerciseService:
           session.option(ExerciseAttempts.upsert)((userId, exerciseId, trebleBeats, bassBeats, studentRomans))
         }
 
-      def submitAttempt(userId: UUID, exerciseId: UUID, clientScore: Option[BigDecimal], clientCompleted: Option[Boolean]): IO[Option[ExerciseAttempt]] =
+      def submitAttempt(userId: UUID, exerciseId: UUID, shared: Boolean, clientScore: Option[BigDecimal], clientCompleted: Option[Boolean]): IO[Option[ExerciseAttempt]] =
         // Compute score server-side
         val scoreIO: IO[(BigDecimal, Boolean)] = for
           exerciseOpt <- get(exerciseId)
@@ -124,7 +126,7 @@ object ExerciseService:
 
         scoreIO.flatMap { case (score, wasCompleted) =>
           pool.use { session =>
-            session.option(ExerciseAttempts.submit)((score, wasCompleted, userId, exerciseId))
+            session.option(ExerciseAttempts.submit)((score, wasCompleted, shared, userId, exerciseId))
           }.flatMap {
           case Some(attempt) =>
             // Refresh stats (attempt_count, completion_count, completion_rate) from actual data
@@ -155,3 +157,29 @@ object ExerciseService:
 
       def getAttempt(userId: UUID, exerciseId: UUID): IO[Option[ExerciseAttempt]] =
         pool.use(_.option(ExerciseAttempts.findByUserAndExercise)((userId, exerciseId)))
+
+      def listSharedSolutions(exerciseId: UUID, requestingUserId: UUID): IO[List[SharedSolution]] =
+        pool.use(_.execute(ExerciseAttempts.listSharedByExercise)((requestingUserId, exerciseId)))
+
+      def toggleSolutionUpvote(attemptId: UUID, userId: UUID): IO[Boolean] =
+        pool.use { session =>
+          session.unique(ExerciseAttempts.getSolutionUpvote)((attemptId, userId))
+        }.flatMap { alreadyUpvoted =>
+          if alreadyUpvoted then
+            // Remove upvote
+            pool.use(_.execute(ExerciseAttempts.deleteSolutionUpvote)((attemptId, userId))) *>
+            pool.use(_.execute(ExerciseAttempts.refreshSolutionUpvoteCount)(attemptId)) *>
+            IO.pure(false)
+          else
+            // Add upvote
+            pool.use(_.execute(ExerciseAttempts.insertSolutionUpvote)((attemptId, userId))) *>
+            pool.use(_.execute(ExerciseAttempts.refreshSolutionUpvoteCount)(attemptId)) *>
+            // Award points
+            pool.use(_.unique(ExerciseAttempts.getAttemptOwner)(attemptId)).flatMap { ownerId =>
+              if ownerId != userId then
+                pointsService.awardPoints(ownerId, "solution_upvote_received", 5, Some(attemptId)).void *>
+                pointsService.awardPoints(userId, "solution_upvote_cast", 1, Some(attemptId)).void *>
+                pointsService.updateStreak(userId)
+              else IO.unit
+            } *> IO.pure(true)
+        }
