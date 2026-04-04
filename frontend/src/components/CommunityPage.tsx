@@ -439,7 +439,7 @@ export function CommunityPage() {
   };
 
   const renderExerciseCard = (ex: CommunityExercise, showActions = false) => (
-    <div key={ex.id} style={cardStyle}>
+    <div key={ex.id} style={{ ...cardStyle, position: "relative" as const }}>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 16 }}>
         <div style={{ flex: 1 }}>
           <Link
@@ -512,6 +512,22 @@ export function CommunityPage() {
           )}
         </div>
       </div>
+      {ex.attemptCount > 0 && (
+        <Link
+          to={`/community/${ex.id}/solutions`}
+          onClick={e => e.stopPropagation()}
+          style={{
+            position: "absolute", bottom: 12, right: 16,
+            fontSize: 12, fontWeight: 600, color: theme.accent,
+            textDecoration: "none",
+            padding: "3px 10px",
+            border: `1px solid ${theme.accent}`,
+            borderRadius: 6,
+          }}
+        >
+          Solutions
+        </Link>
+      )}
       {showActions && ex.creatorId === user?.id && (
         <div style={{ display: "flex", gap: 8, marginTop: 12, borderTop: `1px solid ${theme.cardBorder}`, paddingTop: 12 }}>
           <span style={{ fontSize: 12, padding: "3px 8px", borderRadius: 4, background: ex.status === "published" ? (dk ? "#1a3a1a" : "#e8f5e9") : (dk ? "#3a3a1a" : "#fff8e1"), color: ex.status === "published" ? "#16a34a" : "#d97706" }}>
@@ -1002,7 +1018,7 @@ export function CommunityPage() {
           {/* Editor — takes remaining space */}
           <div style={{ flex: 1, minWidth: 0 }}>
             <NoteEditor
-              key={`${editingExercise?.id ?? "new"}-${createTemplate}`}
+              key={`${editingExercise?.id ?? "new"}-${createTemplate}-${createTonicIdx}-${createScale}-${createTsTop}-${createTsBottom}`}
               lessonConfig={createLessonConfig}
               initialTonicIdx={createTonicIdx}
               initialScaleName={createScale}

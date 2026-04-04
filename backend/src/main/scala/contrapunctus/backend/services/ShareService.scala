@@ -15,6 +15,7 @@ trait ShareService:
   def create(userId: UUID, sourceType: String, sourceId: UUID,
              title: String, description: String, imageData: Array[Byte]): IO[ShareImage]
   def get(id: UUID): IO[Option[ShareImage]]
+  def getBySource(sourceType: String, sourceId: UUID): IO[Option[ShareImage]]
 
 object ShareService:
   def make(pool: Resource[IO, Session[IO]], bucket: String, s3Region: String, projectService: ProjectService): ShareService =
@@ -49,6 +50,9 @@ object ShareService:
       def get(id: UUID): IO[Option[ShareImage]] =
         pool.use(_.option(ShareImages.selectById)(id))
 
+      def getBySource(sourceType: String, sourceId: UUID): IO[Option[ShareImage]] =
+        pool.use(_.option(ShareImages.selectLatestBySource)((sourceType, sourceId)))
+
   /** Test-only: stores a fake URL instead of uploading to S3. */
   def makeTest(pool: Resource[IO, Session[IO]], projectService: ProjectService): ShareService =
     new ShareService:
@@ -64,3 +68,6 @@ object ShareService:
 
       def get(id: UUID): IO[Option[ShareImage]] =
         pool.use(_.option(ShareImages.selectById)(id))
+
+      def getBySource(sourceType: String, sourceId: UUID): IO[Option[ShareImage]] =
+        pool.use(_.option(ShareImages.selectLatestBySource)((sourceType, sourceId)))

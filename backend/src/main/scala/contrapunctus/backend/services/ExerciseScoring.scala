@@ -261,11 +261,90 @@ object ExerciseScoring:
         catch
           case _: Exception => (BigDecimal(0), false)
 
+  /** Normalize a roman numeral label for comparison.
+    * Converts Unicode superscripts/subscripts to ASCII, strips whitespace,
+    * and lowercases alteration symbols so student input matches engine output.
+    */
+  def normalizeRn(s: String): String =
+    s.trim
+      .replace("♭", "b").replace("♯", "#").replace("𝄫", "bb").replace("𝄪", "##")
+      .replace("⁰", "0").replace("¹", "1").replace("²", "2").replace("³", "3")
+      .replace("⁴", "4").replace("⁵", "5").replace("⁶", "6").replace("⁷", "7")
+      .replace("⁸", "8").replace("⁹", "9")
+      .replace("₀", "0").replace("₁", "1").replace("₂", "2").replace("₃", "3")
+      .replace("₄", "4").replace("₅", "5").replace("₆", "6").replace("₇", "7")
+      .replace("₈", "8").replace("₉", "9")
+      .replace("⁺", "+")
+      .replace("ø", "o/").replace("°", "o").replace("Δ", "M")
+
+  /** Score a roman numeral analysis attempt by comparing student labels
+    * against the analysis engine's computed labels for each beat.
+    */
+  def scoreRomanNumerals(exercise: CommunityExercise, attempt: ExerciseAttempt): (BigDecimal, Boolean) =
+    val tonic = if exercise.tonicIdx >= 0 && exercise.tonicIdx < tonicByIdx.length
+                then tonicByIdx(exercise.tonicIdx) else NoteType.C
+    val scale = parseScale(exercise.scaleName)
+
+    // Use the exercise's notes (not the attempt's, since they're locked/identical)
+    val trebleBeats = parseBeatsWithTime(exercise.sopranoBeats)
+    val bassBeats = exercise.bassBeats.map(parseBeatsWithTime).getOrElse(Nil)
+    val merged = mergeStaves(trebleBeats, bassBeats)
+
+    if merged.isEmpty || merged.forall(_._2.isEmpty) then
+      return (BigDecimal(0), false)
+
+    val measures = groupIntoMeasures(merged, exercise.tsTop, exercise.tsBottom)
+    val pulses = measures.map(buildPulse)
+
+    NonEmptyList.fromList(pulses) match
+      case None => (BigDecimal(0), false)
+      case Some(nel) =>
+        try
+          val analyses = Analysis.analyzeWithPartWriting(tonic, scale, nel)
+          val flatBeats = analyses.toList.flatMap(Pulse.flatten)
+
+          // Build accepted labels per beat (normalized)
+          val acceptedPerBeat: List[Set[String]] = flatBeats.map { analysisNel =>
+            val analysis = analysisNel.head
+            analysis.chords.flatMap { ac =>
+              ac.romanNumerals.toList.map(normalizeRn)
+            }
+          }
+
+          // Parse student answers from JSON object {"0": "i", "1": "ii6", ...}
+          val studentMap: Map[Int, String] = attempt.studentRomans.asObject match
+            case Some(obj) =>
+              obj.toMap.flatMap { case (k, v) =>
+                for
+                  idx <- scala.util.Try(k.toInt).toOption
+                  str <- v.asString
+                yield (idx, str)
+              }
+            case None => Map.empty
+
+          val totalBeats = acceptedPerBeat.size
+          if totalBeats == 0 then return (BigDecimal(0), false)
+
+          var wrongCount = 0
+          for i <- 0 until totalBeats do
+            val accepted = acceptedPerBeat(i)
+            val student = studentMap.get(i).map(normalizeRn).getOrElse("")
+            if student.isEmpty then
+              wrongCount += 1 // no answer given
+            else if !accepted.contains(student) then
+              wrongCount += 1
+
+          val pct = BigDecimal(Math.round(((totalBeats - wrongCount).toDouble / totalBeats) * 100))
+          (pct, pct >= 70)
+        catch
+          case _: Exception => (BigDecimal(0), false)
+
   /** Dispatch scoring to the appropriate method based on template. */
   def score(exercise: CommunityExercise, attempt: ExerciseAttempt): (BigDecimal, Boolean) =
     exercise.template match
       case "species_counterpoint" => scoreSpecies(exercise, attempt)
-      case "harmonize_melody" | "rn_analysis" => scoreHarmony(exercise, attempt)
+      case "rn_analysis" => scoreRomanNumerals(exercise, attempt)
+      case "harmonize_melody" => scoreHarmony(exercise, attempt)
       case _ => (BigDecimal(0), false)
 
   private def computeScore(errorCount: Int): (BigDecimal, Boolean) =

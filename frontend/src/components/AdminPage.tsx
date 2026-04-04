@@ -347,7 +347,7 @@ function UsersTab({ users }: { users: User[] }) {
           <th style={{ padding: "10px 12px" }}>Name</th>
           <th style={{ padding: "10px 12px" }}>Role</th>
           <th style={thStyle("classes")} onClick={() => handleSort("classes")}>Classes{arrow("classes")}</th>
-          <th style={thStyle("projects")} onClick={() => handleSort("projects")}>Projects{arrow("projects")}</th>
+          <th style={thStyle("projects")} onClick={() => handleSort("projects")}>Compositions{arrow("projects")}</th>
           <th style={thStyle("attempted")} onClick={() => handleSort("attempted")}>Ex. Attempted{arrow("attempted")}</th>
           <th style={thStyle("created_ex")} onClick={() => handleSort("created_ex")}>Ex. Created{arrow("created_ex")}</th>
           <th style={thStyle("upvotes")} onClick={() => handleSort("upvotes")}>Upvotes{arrow("upvotes")}</th>

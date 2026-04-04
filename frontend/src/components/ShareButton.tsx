@@ -11,6 +11,9 @@ interface ShareButtonProps {
   style?: React.CSSProperties;
 }
 
+// Set to true to always regenerate share images (bypasses cache)
+const FORCE_REGENERATE = true;
+
 export function ShareButton({ svgElement, sourceType, sourceId, title, description = "", style }: ShareButtonProps) {
   const { token } = useAuth();
   const [sharing, setSharing] = useState(false);
@@ -27,7 +30,8 @@ export function ShareButton({ svgElement, sourceType, sourceId, title, descripti
     return () => document.removeEventListener("mousedown", handler);
   }, [showMenu]);
 
-  const upload = async (): Promise<string | null> => {
+  // Authenticated upload for projects (original flow)
+  const uploadAuth = async (): Promise<string | null> => {
     if (!svgElement || !token) return null;
     setSharing(true);
     try {
@@ -50,8 +54,51 @@ export function ShareButton({ svgElement, sourceType, sourceId, title, descripti
     }
   };
 
+  // Public exercise share: checks for existing share, creates if needed (no auth)
+  const shareExercise = async (): Promise<string | null> => {
+    if (!svgElement) return null;
+    setSharing(true);
+    try {
+      if (!FORCE_REGENERATE) {
+        // Check if a fresh share already exists
+        const checkRes = await fetch(`${API_BASE}/api/community/exercises/${sourceId}/share`);
+        if (checkRes.ok) {
+          const data = await checkRes.json();
+          if (data.shareUrl) {
+            setShareUrl(data.shareUrl);
+            return data.shareUrl;
+          }
+        }
+      }
+      // Upload image (force=true bypasses backend cache too)
+      const imageBase64 = await svgToPngBase64(svgElement);
+      const forceParam = FORCE_REGENERATE ? "?force=true" : "";
+      const res = await fetch(`${API_BASE}/api/community/exercises/${sourceId}/share${forceParam}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ imageBase64 }),
+      });
+      if (!res.ok) throw new Error("Upload failed");
+      const data = await res.json();
+      const url = data.shareUrl || `${API_BASE}/share/${data.id}`;
+      setShareUrl(url);
+      return url;
+    } catch (err) {
+      console.error("Share failed:", err);
+      return null;
+    } finally {
+      setSharing(false);
+    }
+  };
+
   const handleClick = async () => {
-    const url = shareUrl || await upload();
+    if (shareUrl) {
+      setShowMenu(true);
+      return;
+    }
+    const url = sourceType === "exercise"
+      ? await shareExercise()
+      : await uploadAuth();
     if (url) setShowMenu(true);
   };
 
@@ -73,7 +120,8 @@ export function ShareButton({ svgElement, sourceType, sourceId, title, descripti
     }
   };
 
-  if (!token) return null;
+  // Projects still require auth
+  if (sourceType === "project" && !token) return null;
 
   const menuStyle: React.CSSProperties = {
     position: "absolute",

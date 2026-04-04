@@ -74,6 +74,8 @@ function TsDigit({ digit, x, y }: { digit: number; x: number; y: number }) {
 
 export function NoteEditor({ header, subheader, lessonConfig, onTrebleBeatsChanged, onBassBeatsChanged, figuredBassValues, onFiguredBassChanged, trebleOnly, initialTonicIdx, initialScaleName, initialTsTop, initialTsBottom, initialTrebleBeats, initialBassBeats, embedded: embeddedProp, readOnly, maxWidth: maxWidthProp, onSettingsChanged, onSvgRef }: NoteEditorProps) {
   const embedded = embeddedProp ?? !!(onTrebleBeatsChanged || onBassBeatsChanged);
+  // RN analysis: notes are fully locked but RN inputs remain interactive
+  const notesLocked = lessonConfig?.template === "roman_numeral_analysis" && !readOnly;
   const { token } = useAuth();
   // ── LocalStorage persistence ──────────────────────────────────────
   const STORAGE_KEY = "contrapunctus_state";
@@ -302,6 +304,16 @@ export function NoteEditor({ header, subheader, lessonConfig, onTrebleBeatsChang
     ] as const;
   }, [trebleBeats, bassBeats, tsTop, tsBottom, lessonConfig]);
 
+  // In lesson mode, the exercise boundary is defined by the locked beats — not the user's working beats
+  const lockedMeasureCount = useMemo(() => {
+    if (!lessonConfig) return realMeasureCount;
+    const lockedTreble = lessonConfig.lockedTrebleBeats || [];
+    const lockedBass = lessonConfig.lockedBassBeats || [];
+    const tM = computeMeasures(lockedTreble, tsTop, tsBottom).length;
+    const bM = computeMeasures(lockedBass, tsTop, tsBottom).length;
+    return Math.max(tM, bM, 1);
+  }, [lessonConfig, tsTop, tsBottom, realMeasureCount]);
+
   // Time-based beat positioning
   const trebleTimes = useMemo(() => beatTimeOffsets(paddedTrebleBeats), [paddedTrebleBeats]);
   const bassTimes = useMemo(() => beatTimeOffsets(paddedBassBeats), [paddedBassBeats]);
@@ -400,21 +412,45 @@ export function NoteEditor({ header, subheader, lessonConfig, onTrebleBeatsChang
       }
     }
 
-    return { systems, positions, barlines, staffW, systemCount: Math.max(systems.length, 1) };
+    // Compute the right edge of content per system (for cropping staff lines)
+    const systemEndX: number[] = [];
+    for (let s = 0; s < systems.length; s++) {
+      // Find rightmost note position in this system
+      let maxX = edLeft;
+      for (let i = systems[s].startIdx; i < systems[s].endIdx; i++) {
+        const p = positions.get(allTimePoints[i]);
+        if (p && p.systemIdx === s) maxX = Math.max(maxX, p.x);
+      }
+      // Also consider barlines in this system
+      for (const bl of barlines) {
+        if (bl.systemIdx === s) maxX = Math.max(maxX, bl.x);
+      }
+      systemEndX.push(maxX + ED_NOTE_SPACING);
+    }
+
+    return { systems, positions, barlines, staffW, systemCount: Math.max(systems.length, 1), systemEndX };
   }, [allTimePoints, containerWidth, edLeft, tsTop, tsBottom]);
 
-  const { systems, barlines: barlineData, systemCount } = systemLayout;
+  const { systems, barlines: barlineData, systemCount, systemEndX } = systemLayout;
   const staffW = systemLayout.staffW;
 
-  // Width for PNG export — crop at the last real barline (excludes the extra editing measure)
+  // Width for PNG export — crop at the end of the last real content
   const exportWidth = useMemo(() => {
-    // barlineData[realMeasureCount - 1] is the barline at the end of the last real measure
+    // In lesson/readOnly mode, use systemEndX which tracks the rightmost content per system
+    if ((lessonConfig || readOnly) && systemEndX.length > 0) {
+      const maxEnd = Math.max(...systemEndX) + RIGHT_MARGIN;
+      return Math.min(maxEnd, staffW);
+    }
+    // In free editor mode, crop at the barline after the last real measure (before the extra editing measure)
     const cropBarlineIdx = realMeasureCount - 1;
-    if (cropBarlineIdx >= 0 && cropBarlineIdx < barlineData.length && barlineData.length > cropBarlineIdx) {
+    if (cropBarlineIdx >= 0 && cropBarlineIdx < barlineData.length) {
       return barlineData[cropBarlineIdx].x + RIGHT_MARGIN;
     }
     return staffW;
-  }, [barlineData, realMeasureCount, staffW]);
+  }, [barlineData, realMeasureCount, staffW, lessonConfig, readOnly, systemEndX]);
+
+  // In lesson/readOnly mode, crop the SVG to content width instead of filling the container
+  const displayWidth = (lessonConfig || readOnly) && exportWidth < staffW ? exportWidth : staffW;
   const [showErrorsRaw, setShowErrors] = useState(false);
   const showErrors = lessonConfig?.checked || showErrorsRaw;
   const maxFBFigures = lessonConfig?.figuredBass
@@ -1356,7 +1392,7 @@ export function NoteEditor({ header, subheader, lessonConfig, onTrebleBeatsChang
   }, []);
 
   const handleMouseMove = useCallback((e: React.MouseEvent<SVGSVGElement>) => {
-    if (readOnly || correctionSelectionModeRef.current || bugReportOpenRef.current) return;
+    if (readOnly || notesLocked || correctionSelectionModeRef.current || bugReportOpenRef.current) return;
     const svg = svgRef.current;
     if (!svg) return;
     const rect = svg.getBoundingClientRect();
@@ -1381,7 +1417,7 @@ export function NoteEditor({ header, subheader, lessonConfig, onTrebleBeatsChang
       setHoverStaff(null);
       setHoverBeatIdx(null);
     }
-  }, [readOnly, yToDpAndStaff, trebleBeatPositions, bassBeatPositions, svgHeight, staffW, systemTotalHeight, systemCount]);
+  }, [readOnly, notesLocked, yToDpAndStaff, trebleBeatPositions, bassBeatPositions, svgHeight, staffW, systemTotalHeight, systemCount]);
 
   /** In lesson mode, check if a note at the given staff/beat/dp is locked (part of the given soprano). */
   const isLockedNote = useCallback((staff: "treble" | "bass", beatIdx: number, dp: number): boolean => {
@@ -1400,7 +1436,7 @@ export function NoteEditor({ header, subheader, lessonConfig, onTrebleBeatsChang
   }, [lessonConfig]);
 
   const handleMouseDown = useCallback((e: React.MouseEvent<SVGSVGElement>) => {
-    if (readOnly || correctionSelectionModeRef.current || bugReportOpenRef.current) return;
+    if (readOnly || notesLocked || correctionSelectionModeRef.current || bugReportOpenRef.current) return;
     if (hoverDp === null || hoverBeatIdx === null || hoverStaff === null) return;
     if (deleteMode) return;
     const beats = getStaffBeats(hoverStaff);
@@ -1422,11 +1458,11 @@ export function NoteEditor({ header, subheader, lessonConfig, onTrebleBeatsChang
         return;
       }
     }
-  }, [hoverDp, hoverStaff, hoverBeatIdx, trebleBeats, bassBeats, deleteMode, isLockedNote, readOnly]);
+  }, [hoverDp, hoverStaff, hoverBeatIdx, trebleBeats, bassBeats, deleteMode, isLockedNote, readOnly, notesLocked]);
 
   /** Core click/tap handler. Accepts explicit position to avoid stale state from touch events. */
   const handleMouseUpWithPos = useCallback((overrideDp?: number, overrideStaff?: "treble" | "bass", overrideBeatIdx?: number) => {
-    if (readOnly || correctionSelectionModeRef.current || bugReportOpenRef.current) return;
+    if (readOnly || notesLocked || correctionSelectionModeRef.current || bugReportOpenRef.current) return;
     const curDp = overrideDp ?? hoverDp;
     const curStaff = overrideStaff ?? hoverStaff;
     const curBeatIdx = overrideBeatIdx ?? hoverBeatIdx;
@@ -1468,13 +1504,19 @@ export function NoteEditor({ header, subheader, lessonConfig, onTrebleBeatsChang
       if (lessonConfig && curStaff === "treble" && lessonConfig.lockedTrebleBeats.length > 0) return;
       if (lessonConfig && curStaff === "bass" && lessonConfig.lockedBassBeats && lessonConfig.lockedBassBeats.length > 0) return;
       setter((prev) => {
+        // In lesson mode, block any click in measures beyond the exercise boundary
+        if (lessonConfig) {
+          const dBeats = curStaff === "treble" ? paddedTrebleBeats : paddedBassBeats;
+          const measures = computeMeasures(dBeats, tsTop, tsBottom);
+          const clickedMeasure = measures.findIndex((m) => curBeatIdx >= m.startIdx && curBeatIdx < m.startIdx + m.count);
+          if (clickedMeasure === -1 || clickedMeasure >= lockedMeasureCount) return prev;
+        }
         // If clicking a padded rest (beyond raw beats), expand prev to include the measure
         let working = prev;
         if (curBeatIdx >= prev.length) {
           const dBeats = curStaff === "treble" ? paddedTrebleBeats : paddedBassBeats;
           if (curBeatIdx < dBeats.length) {
-            const measures = computeMeasures(dBeats, tsTop, tsBottom);
-            const measure = measures.find((m) => curBeatIdx >= m.startIdx && curBeatIdx < m.startIdx + m.count);
+            const measure = computeMeasures(dBeats, tsTop, tsBottom).find((m) => curBeatIdx >= m.startIdx && curBeatIdx < m.startIdx + m.count);
             if (measure) {
               working = dBeats.slice(0, measure.startIdx + measure.count);
             } else {
@@ -1567,6 +1609,13 @@ export function NoteEditor({ header, subheader, lessonConfig, onTrebleBeatsChang
     }
 
     setter((prev) => {
+      // In lesson mode, block any click in measures beyond the exercise boundary
+      if (lessonConfig) {
+        const dBeats = curStaff === "treble" ? paddedTrebleBeats : paddedBassBeats;
+        const measures = computeMeasures(dBeats, tsTop, tsBottom);
+        const clickedMeasure = measures.findIndex((m) => curBeatIdx >= m.startIdx && curBeatIdx < m.startIdx + m.count);
+        if (clickedMeasure === -1 || clickedMeasure >= lockedMeasureCount) return prev;
+      }
       // If clicking a padded rest (beyond raw beats), expand prev to include it
       let working = prev;
       if (curBeatIdx >= prev.length) {
@@ -1688,7 +1737,7 @@ export function NoteEditor({ header, subheader, lessonConfig, onTrebleBeatsChang
       // Past the end — start a new measure
       return [...working, { notes: [hoverNote], duration: selectedDuration, dotted: dottedMode || undefined }];
     });
-  }, [hoverDp, hoverStaff, hoverBeatIdx, selectedDuration, selectedAccidental, dottedMode, deleteMode, restMode, tsTop, tsBottom, trebleBeats, bassBeats, paddedTrebleBeats, paddedBassBeats, isLockedNote, lessonConfig, readOnly]);
+  }, [hoverDp, hoverStaff, hoverBeatIdx, selectedDuration, selectedAccidental, dottedMode, deleteMode, restMode, tsTop, tsBottom, trebleBeats, bassBeats, paddedTrebleBeats, paddedBassBeats, isLockedNote, lessonConfig, lockedMeasureCount, readOnly, notesLocked]);
 
   /** No-arg wrapper for mouse events (uses current hover state from closure). */
   const handleMouseUp = useCallback(() => handleMouseUpWithPos(), [handleMouseUpWithPos]);
@@ -1738,7 +1787,7 @@ export function NoteEditor({ header, subheader, lessonConfig, onTrebleBeatsChang
       // Don't intercept when typing in inputs
       const tag = (e.target as HTMLElement)?.tagName;
       if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT") return;
-      if (readOnly) return;
+      if (readOnly || notesLocked) return;
 
       const key = e.key.toLowerCase();
       const ctrl = e.ctrlKey || e.metaKey;
@@ -1760,7 +1809,7 @@ export function NoteEditor({ header, subheader, lessonConfig, onTrebleBeatsChang
     };
     window.addEventListener("keydown", handler);
     return () => window.removeEventListener("keydown", handler);
-  }, [handleUndo, handleRedo, handlePlay, handlePause, isPlaying, lessonConfig?.forceDuration]);
+  }, [handleUndo, handleRedo, handlePlay, handlePause, isPlaying, lessonConfig?.forceDuration, readOnly, notesLocked]);
 
   // ── Touch event handlers for mobile ─────────────────────────────────
   const svgCoordsFromClient = useCallback((clientX: number, clientY: number) => {
@@ -1804,7 +1853,7 @@ export function NoteEditor({ header, subheader, lessonConfig, onTrebleBeatsChang
   const touchHoverRef = useRef<{ dp: number; staff: "treble" | "bass"; beatIdx: number } | null>(null);
 
   const handleTouchStartNative = useCallback((e: TouchEvent) => {
-    if (readOnly || correctionSelectionModeRef.current || bugReportOpenRef.current) return;
+    if (readOnly || notesLocked || correctionSelectionModeRef.current || bugReportOpenRef.current) return;
     const touch = e.touches[0];
     if (!isTouchOnStaff(touch.clientX, touch.clientY)) {
       touchActiveRef.current = false;
@@ -1825,10 +1874,10 @@ export function NoteEditor({ header, subheader, lessonConfig, onTrebleBeatsChang
         setHoverBeatIdx(beatIdx);
       }
     }
-  }, [readOnly, isTouchOnStaff, svgCoordsFromClient, yToDpAndStaff, isValidStaffDp]);
+  }, [readOnly, notesLocked, isTouchOnStaff, svgCoordsFromClient, yToDpAndStaff, isValidStaffDp]);
 
   const handleTouchMoveNative = useCallback((e: TouchEvent) => {
-    if (readOnly || correctionSelectionModeRef.current || bugReportOpenRef.current || !touchActiveRef.current) return;
+    if (readOnly || notesLocked || correctionSelectionModeRef.current || bugReportOpenRef.current || !touchActiveRef.current) return;
     e.preventDefault();
     const touch = e.touches[0];
     const coords = svgCoordsFromClient(touch.clientX, touch.clientY);
@@ -1848,10 +1897,10 @@ export function NoteEditor({ header, subheader, lessonConfig, onTrebleBeatsChang
         setHoverBeatIdx(null);
       }
     }
-  }, [readOnly, svgCoordsFromClient, yToDpAndStaff, isValidStaffDp]);
+  }, [readOnly, notesLocked, svgCoordsFromClient, yToDpAndStaff, isValidStaffDp]);
 
   const handleTouchEndNative = useCallback((e: TouchEvent) => {
-    if (readOnly || correctionSelectionModeRef.current || bugReportOpenRef.current || !touchActiveRef.current) return;
+    if (readOnly || notesLocked || correctionSelectionModeRef.current || bugReportOpenRef.current || !touchActiveRef.current) return;
     e.preventDefault();
     touchActiveRef.current = false;
     const hover = touchHoverRef.current;
@@ -1866,7 +1915,7 @@ export function NoteEditor({ header, subheader, lessonConfig, onTrebleBeatsChang
       setHoverBeatIdx(null);
       touchHoverRef.current = null;
     }, 100);
-  }, [readOnly, handleMouseUpWithPos]);
+  }, [readOnly, notesLocked, handleMouseUpWithPos]);
 
   // Attach touch listeners imperatively with { passive: false } so preventDefault works
   useEffect(() => {
@@ -2409,7 +2458,7 @@ export function NoteEditor({ header, subheader, lessonConfig, onTrebleBeatsChang
         color: theme.text,
       }}>
         {/* Collapsed: single compact row */}
-        {!readOnly && !toolbarExpanded && (
+        {!readOnly && !notesLocked && !toolbarExpanded && (
         <div style={{
           display: "flex",
           alignItems: "center",
@@ -2608,7 +2657,7 @@ export function NoteEditor({ header, subheader, lessonConfig, onTrebleBeatsChang
         )}
 
         {/* Expanded: full two-row toolbar */}
-        {!readOnly && toolbarExpanded && (<>
+        {!readOnly && !notesLocked && toolbarExpanded && (<>
         {/* Row 1: Note entry */}
         <div style={{
           display: "flex",
@@ -3042,8 +3091,8 @@ export function NoteEditor({ header, subheader, lessonConfig, onTrebleBeatsChang
         </div>
       )}
 
-      {/* Read-only playback bar (e.g. after submission) */}
-      {readOnly && (
+      {/* Read-only playback bar (e.g. after submission or RN analysis) */}
+      {(readOnly || notesLocked) && (
         <div style={{
           display: "flex",
           alignItems: "center",
@@ -3199,7 +3248,7 @@ export function NoteEditor({ header, subheader, lessonConfig, onTrebleBeatsChang
         viewBox={`0 0 ${staffW} ${svgHeight}`}
         data-export-width={exportWidth}
         preserveAspectRatio="xMinYMin meet"
-        style={{ fontFamily: "serif", cursor: correctionSelectionMode ? "pointer" : deleteMode ? "not-allowed" : "crosshair", display: "block" }}
+        style={{ fontFamily: "serif", cursor: correctionSelectionMode ? "pointer" : (readOnly || notesLocked) ? "default" : deleteMode ? "not-allowed" : "crosshair", display: "block" }}
         onMouseMove={handleMouseMove}
         onMouseDown={handleMouseDown}
         onMouseUp={handleMouseUp}
@@ -3213,12 +3262,16 @@ export function NoteEditor({ header, subheader, lessonConfig, onTrebleBeatsChang
               {/* Treble staff lines */}
               {ED_TREBLE_LINES.map((dp) => {
                 const y = dpToY(dp, ED_TREBLE_TOP, trebleYOffset);
-                return <line key={`tl-${dp}`} x1={5} y1={y} x2={staffW - RIGHT_MARGIN} y2={y} stroke="currentColor" strokeWidth={LINE_W} />;
+                const fullEnd = staffW - RIGHT_MARGIN;
+                const lineEnd = (lessonConfig || readOnly) ? Math.min(fullEnd, systemEndX[sysIdx] ?? fullEnd) : fullEnd;
+                return <line key={`tl-${dp}`} x1={5} y1={y} x2={lineEnd} y2={y} stroke="currentColor" strokeWidth={LINE_W} />;
               })}
               {/* Bass staff lines */}
               {ED_BASS_LINES.map((dp) => {
                 const y = dpToY(dp, ED_BASS_TOP, bassYOffset);
-                return <line key={`bl-${dp}`} x1={5} y1={y} x2={staffW - RIGHT_MARGIN} y2={y} stroke="currentColor" strokeWidth={LINE_W} />;
+                const fullEnd = staffW - RIGHT_MARGIN;
+                const lineEnd = (lessonConfig || readOnly) ? Math.min(fullEnd, systemEndX[sysIdx] ?? fullEnd) : fullEnd;
+                return <line key={`bl-${dp}`} x1={5} y1={y} x2={lineEnd} y2={y} stroke="currentColor" strokeWidth={LINE_W} />;
               })}
 
               {/* Playback highlight — blue column on the currently playing beat */}
@@ -3321,6 +3374,14 @@ export function NoteEditor({ header, subheader, lessonConfig, onTrebleBeatsChang
                 const bassBotY = dpToY(ED_BASS_LINES[0], ED_BASS_TOP, bassYOffset);
                 return <line key={`bar-${i}`} x1={b.x} y1={trebleTopY} x2={b.x} y2={bassBotY} stroke="currentColor" strokeWidth={1} />;
               })}
+              {/* Closing barline at the end of each system in lesson/readOnly mode */}
+              {(lessonConfig || readOnly) && (() => {
+                const endX = systemEndX[sysIdx];
+                if (!endX) return null;
+                const trebleTopY = dpToY(ED_TREBLE_LINES[4], ED_TREBLE_TOP, trebleYOffset);
+                const bassBotY = dpToY(ED_BASS_LINES[0], ED_BASS_TOP, bassYOffset);
+                return <line key="closing-bar" x1={endX} y1={trebleTopY} x2={endX} y2={bassBotY} stroke="currentColor" strokeWidth={2} />;
+              })()}
 
               {/* Placed beats — treble staff */}
               {(() => {

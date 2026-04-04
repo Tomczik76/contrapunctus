@@ -24,6 +24,7 @@ import { ClassLessonPage } from "./components/ClassLessonPage";
 import { EducatorGradePage } from "./components/EducatorGradePage";
 import { CommunityPage } from "./components/CommunityPage";
 import { CommunityExercisePage } from "./components/CommunityExercisePage";
+import { CommunityExerciseSolutionsPage } from "./components/CommunityExerciseSolutionsPage";
 import { SettingsPage } from "./components/SettingsPage";
 import { ShareButton } from "./components/ShareButton";
 import { SharedProjectPage } from "./components/SharedProjectPage";
@@ -547,6 +548,7 @@ function App() {
           } />
           <Route path="/shared/:projectId" element={<SharedProjectPage />} />
           <Route path="/community" element={<CommunityPage />} />
+          <Route path="/community/:id/solutions" element={<CommunityExerciseSolutionsPage />} />
           <Route path="/community/:id" element={<CommunityExercisePage />} />
           <Route path="/educator" element={
             <ProtectedRoute>

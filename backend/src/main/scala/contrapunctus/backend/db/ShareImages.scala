@@ -30,3 +30,11 @@ object ShareImages:
       SELECT #$returnCols FROM share_images
       WHERE id = $uuid
     """.query(shareImageCodec).map(toShareImage)
+
+  val selectLatestBySource: Query[(String, UUID), ShareImage] =
+    sql"""
+      SELECT #$returnCols FROM share_images
+      WHERE source_type = ${varchar(20)} AND source_id = $uuid
+      ORDER BY created_at DESC
+      LIMIT 1
+    """.query(shareImageCodec).map(toShareImage)

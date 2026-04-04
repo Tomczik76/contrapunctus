@@ -1,12 +1,12 @@
-import { useState, useEffect, useCallback, useMemo } from "react";
+import { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import { Link, useParams } from "react-router-dom";
 import { useAuth, API_BASE } from "../auth";
 import { NoteEditor } from "./staff";
 import type { LessonConfig, LessonErrorItem } from "./staff/types";
 import { useTheme } from "../useTheme";
-import { TEMPLATE_LABELS, DIFFICULTY_COLORS, NOTE_NAMES } from "../constants";
 import { VoteWidget } from "./VoteWidget";
 import { ShareButton } from "./ShareButton";
+import { SignupModal } from "./SignupModal";
 
 interface CommunityExercise {
   id: string;
@@ -34,6 +34,7 @@ interface CommunityExercise {
   downvotes: number;
   createdAt: string;
   updatedAt: string;
+  contentUpdatedAt: string;
 }
 
 interface ExerciseAttempt {
@@ -52,25 +53,9 @@ interface ExerciseAttempt {
   upvoteCount: number;
 }
 
-interface SharedSolution {
-  attemptId: string;
-  userId: string;
-  displayName: string;
-  trebleBeats: any;
-  bassBeats: any;
-  studentRomans: any;
-  score: number | null;
-  completed: boolean;
-  submittedAt: string | null;
-  upvoteCount: number;
-  userUpvoted: boolean;
-}
-
-type ExerciseTab = "my-solution" | "solutions";
-
 export function CommunityExercisePage() {
   const { id } = useParams<{ id: string }>();
-  const { user, token, logout } = useAuth();
+  const { user, token } = useAuth();
   const theme = useTheme();
   const dk = theme.dk;
 
@@ -84,16 +69,16 @@ export function CommunityExercisePage() {
   const [studentRomans, setStudentRomans] = useState<any>(null);
   const [checked, setChecked] = useState(false);
   const [score, setScore] = useState<number | null>(null);
-
-  // Solution gallery state
-  const [activeTab, setActiveTab] = useState<ExerciseTab | null>(null);
-  const [solutions, setSolutions] = useState<SharedSolution[]>([]);
-  const [solutionsLoading, setSolutionsLoading] = useState(false);
   const [shareOnSubmit, setShareOnSubmit] = useState(true);
-  const [expandedSolution, setExpandedSolution] = useState<string | null>(null);
   const [svgEl, setSvgEl] = useState<SVGSVGElement | null>(null);
+  const [revising, setRevising] = useState(false);
+  const [feedbackOpen, setFeedbackOpen] = useState(true);
 
-  const headers = { Authorization: `Bearer ${token}`, "Content-Type": "application/json" };
+  // Signup modal state
+  const [showSignupModal, setShowSignupModal] = useState(false);
+  const [pendingAction, setPendingAction] = useState<"save" | "submit" | null>(null);
+
+  const headers = token ? { Authorization: `Bearer ${token}`, "Content-Type": "application/json" } : undefined;
 
   useEffect(() => {
     if (!id) return;
@@ -116,24 +101,12 @@ export function CommunityExercisePage() {
   }, [token, id]);
 
   const isOwnExercise = exercise?.creatorId === user?.id;
-  // Discard stale attempts when the exercise has been updated since the save
+  // Discard stale draft attempts when the exercise content has been updated since the save.
   const attemptIsStale = attempt && exercise
-    && new Date(exercise.updatedAt) > new Date(attempt.savedAt);
+    && attempt.status !== "submitted"
+    && new Date(exercise.contentUpdatedAt) > new Date(attempt.savedAt);
   const effectiveAttempt = attemptIsStale ? null : attempt;
   const isSubmitted = effectiveAttempt?.status === "submitted";
-  const [revising, setRevising] = useState(false);
-  const [feedbackOpen, setFeedbackOpen] = useState(true);
-
-  // Default tab: authors without a submission and unauthenticated users go straight to solutions
-  useEffect(() => {
-    if (activeTab === null && !loading) {
-      if (!token || (isOwnExercise && !isSubmitted)) {
-        setActiveTab("solutions");
-      } else {
-        setActiveTab("my-solution");
-      }
-    }
-  }, [loading, isOwnExercise, isSubmitted, activeTab, token]);
 
   // Auto-enable checking when viewing a submitted exercise so errors are computed
   useEffect(() => {
@@ -144,26 +117,29 @@ export function CommunityExercisePage() {
     }
   }, [isSubmitted, revising]);
 
-  // Fetch solutions when switching to solutions tab
+  // After signup, execute the pending action
+  const pendingActionRef = useRef(pendingAction);
+  pendingActionRef.current = pendingAction;
   useEffect(() => {
-    if (activeTab === "solutions" && id) {
-      setSolutionsLoading(true);
-      const opts = token ? { headers } : {};
-      fetch(`${API_BASE}/api/community/exercises/${id}/solutions`, opts)
-        .then(r => r.ok ? r.json() : [])
-        .then(data => { setSolutions(data); setSolutionsLoading(false); })
-        .catch(() => setSolutionsLoading(false));
+    if (token && pendingActionRef.current) {
+      const action = pendingActionRef.current;
+      setPendingAction(null);
+      if (action === "submit") {
+        handleSubmitAuth();
+      } else if (action === "save") {
+        handleSaveAuth();
+      }
     }
-  }, [activeTab, id, token]);
+  }, [token]);
 
   const handleVote = async (vote: string) => {
+    if (!token) return;
     const res = await fetch(`${API_BASE}/api/community/exercises/${id}/vote`, {
       method: "POST",
-      headers,
+      headers: headers!,
       body: JSON.stringify({ vote }),
     });
     if (res.ok) {
-      // Toggle behavior: if same vote, it removes it
       if (userVote === vote) {
         setUserVote(null);
         setExercise(prev => prev ? {
@@ -180,21 +156,6 @@ export function CommunityExercisePage() {
           downvotes: (vote === "down" ? prev.downvotes + 1 : prev.downvotes) - (prevVote === "down" ? 1 : 0),
         } : prev);
       }
-    }
-  };
-
-  const handleSolutionUpvote = async (attemptId: string) => {
-    const res = await fetch(`${API_BASE}/api/community/exercises/${id}/solutions/${attemptId}/upvote`, {
-      method: "POST",
-      headers,
-    });
-    if (res.ok) {
-      const { upvoted } = await res.json();
-      setSolutions(prev => prev.map(s =>
-        s.attemptId === attemptId
-          ? { ...s, userUpvoted: upvoted, upvoteCount: s.upvoteCount + (upvoted ? 1 : -1) }
-          : s
-      ));
     }
   };
 
@@ -217,13 +178,13 @@ export function CommunityExercisePage() {
     setStudentRomans(romans);
   }, []);
 
-  const handleSave = async () => {
-    if (!latestBeats || !id) return;
+  const handleSaveAuth = async () => {
+    if (!latestBeats || !id || !token) return;
     setSaving(true);
     try {
       const res = await fetch(`${API_BASE}/api/community/exercises/${id}/attempt`, {
         method: "PUT",
-        headers,
+        headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
         body: JSON.stringify({
           trebleBeats: latestBeats.treble || [],
           bassBeats: latestBeats.bass || [],
@@ -239,20 +200,43 @@ export function CommunityExercisePage() {
     }
   };
 
+  const handleSave = () => {
+    if (!token) {
+      setPendingAction("save");
+      setShowSignupModal(true);
+      return;
+    }
+    handleSaveAuth();
+  };
+
   const handleCheck = () => {
     setChecked(true);
   };
 
-  const handleSubmit = async () => {
-    if (!id) return;
+  const handleSubmitAuth = async () => {
+    if (!id || !token) return;
     // Save first
-    await handleSave();
+    if (latestBeats) {
+      setSaving(true);
+      try {
+        await fetch(`${API_BASE}/api/community/exercises/${id}/attempt`, {
+          method: "PUT",
+          headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+          body: JSON.stringify({
+            trebleBeats: latestBeats.treble || [],
+            bassBeats: latestBeats.bass || [],
+            studentRomans: studentRomans || [],
+          }),
+        });
+      } finally {
+        setSaving(false);
+      }
+    }
     setSubmitting(true);
     try {
-      // Score is computed server-side for all templates
       const res = await fetch(`${API_BASE}/api/community/exercises/${id}/submit`, {
         method: "POST",
-        headers,
+        headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
         body: JSON.stringify({ shared: shareOnSubmit }),
       });
       if (res.ok) {
@@ -266,11 +250,24 @@ export function CommunityExercisePage() {
     }
   };
 
+  const handleSubmit = () => {
+    if (!token) {
+      setPendingAction("submit");
+      setShowSignupModal(true);
+      return;
+    }
+    handleSubmitAuth();
+  };
+
+  const handleSignupSuccess = () => {
+    setShowSignupModal(false);
+    // The useEffect watching `token` will pick up the pending action
+  };
+
   const lessonConfig: LessonConfig | null = useMemo(() => {
     if (!exercise) return null;
 
     if (exercise.template === "species_counterpoint") {
-      // Detect CF voice: if sopranoBeats populated and bassBeats empty/null → CF is soprano
       const cfIsSoprano = exercise.sopranoBeats && exercise.sopranoBeats.length > 0
         && (!exercise.bassBeats || exercise.bassBeats.length === 0);
       return {
@@ -288,8 +285,9 @@ export function CommunityExercisePage() {
       };
     }
 
+    const isRN = exercise.template === "rn_analysis";
     return {
-      lockedTrebleBeats: exercise.template === "harmonize_melody" ? exercise.sopranoBeats : [],
+      lockedTrebleBeats: (exercise.template === "harmonize_melody" || isRN) ? exercise.sopranoBeats : [],
       lockedBassBeats: exercise.bassBeats || undefined,
       figuredBass: exercise.figuredBass || undefined,
       tonicIdx: exercise.tonicIdx,
@@ -301,6 +299,7 @@ export function CommunityExercisePage() {
       onStudentRomansChanged: handleStudentRomansChanged,
       onBeatsChanged: handleBeatsChanged,
       checked,
+      template: isRN ? "roman_numeral_analysis" : undefined,
     };
   }, [exercise, handleErrorsComputed, handleRomansComputed, handleStudentRomansChanged, handleBeatsChanged, checked]);
 
@@ -327,43 +326,15 @@ export function CommunityExercisePage() {
         template: "species_counterpoint",
       };
     }
+    const isRN = exercise.template === "rn_analysis";
     return {
       ...base,
-      lockedTrebleBeats: exercise.template === "harmonize_melody" ? exercise.sopranoBeats : [],
+      lockedTrebleBeats: (exercise.template === "harmonize_melody" || isRN) ? exercise.sopranoBeats : [],
       lockedBassBeats: exercise.bassBeats || undefined,
       figuredBass: exercise.figuredBass || undefined,
+      template: isRN ? "roman_numeral_analysis" : undefined,
     };
   }, [exercise, attempt, handleErrorsComputed]);
-
-  const makeSolutionLessonConfig = (sol: SharedSolution): LessonConfig | null => {
-    if (!exercise) return null;
-    const base = {
-      tonicIdx: exercise.tonicIdx,
-      scaleName: exercise.template === "species_counterpoint" ? "none" : exercise.scaleName,
-      tsTop: exercise.tsTop,
-      tsBottom: exercise.tsBottom,
-      checked: true,
-      showStudentRomans: true,
-      initialStudentRomans: sol.studentRomans || undefined,
-    };
-    if (exercise.template === "species_counterpoint") {
-      const cfIsSoprano = exercise.sopranoBeats && exercise.sopranoBeats.length > 0
-        && (!exercise.bassBeats || exercise.bassBeats.length === 0);
-      return {
-        ...base,
-        lockedTrebleBeats: cfIsSoprano ? exercise.sopranoBeats : [],
-        lockedBassBeats: cfIsSoprano ? undefined : (exercise.bassBeats || undefined),
-        forceDuration: "whole" as const,
-        template: "species_counterpoint",
-      };
-    }
-    return {
-      ...base,
-      lockedTrebleBeats: exercise.template === "harmonize_melody" ? exercise.sopranoBeats : [],
-      lockedBassBeats: exercise.bassBeats || undefined,
-      figuredBass: exercise.figuredBass || undefined,
-    };
-  };
 
   const btnStyle: React.CSSProperties = {
     padding: "10px 20px",
@@ -394,195 +365,86 @@ export function CommunityExercisePage() {
     );
   }
 
-  const showTabs = (isSubmitted && !revising) || isOwnExercise || !token;
+  const showSubmittedView = isSubmitted && !revising;
 
   return (
     <div style={{ minHeight: "100vh", paddingTop: 44, display: "flex", flexDirection: "column" }}>
-      {showTabs ? (
-        <>
-          {/* Tab bar */}
-          <div style={{
-            maxWidth: 960, width: "100%", margin: "0 auto", padding: "12px 24px 0",
-            display: "flex", gap: 0,
-          }}>
-            {(isSubmitted && token ? ["my-solution", "solutions"] as ExerciseTab[] : ["solutions"] as ExerciseTab[]).map(tab => (
-              <button
-                key={tab}
-                onClick={() => setActiveTab(tab)}
-                style={{
-                  padding: "8px 20px",
-                  fontSize: 13,
-                  fontWeight: 600,
-                  fontFamily: "inherit",
-                  background: activeTab === tab ? (dk ? "rgba(255,255,255,0.08)" : "rgba(0,0,0,0.05)") : "transparent",
-                  color: activeTab === tab ? theme.text : theme.textMuted,
-                  border: `1px solid ${activeTab === tab ? theme.cardBorder : "transparent"}`,
-                  borderBottom: activeTab === tab ? "none" : `1px solid ${theme.cardBorder}`,
-                  borderRadius: "8px 8px 0 0",
-                  cursor: "pointer",
-                }}
-              >
-                {tab === "my-solution" ? "My Solution" : "Solutions"}
-              </button>
-            ))}
-            <div style={{ flex: 1, borderBottom: `1px solid ${theme.cardBorder}` }} />
-          </div>
+      {showSignupModal && (
+        <SignupModal onSuccess={handleSignupSuccess} onClose={() => { setShowSignupModal(false); setPendingAction(null); }} />
+      )}
 
-          {activeTab === "my-solution" ? (
-            <>
-              <NoteEditor
-                key={attempt?.id ?? "no-attempt"}
-                lessonConfig={mySubmittedLessonConfig ?? lessonConfig}
-                readOnly={true}
-                maxWidth={1200}
-                initialTrebleBeats={attempt?.trebleBeats || undefined}
-                initialBassBeats={attempt?.bassBeats || undefined}
-                onSvgRef={setSvgEl}
-                subheader={exercise.description ? (
-                  <div style={{ maxWidth: 960, margin: "0 auto", padding: "12px 24px 0", fontSize: 14, color: theme.textSub, lineHeight: 1.5 }}>
-                    {exercise.description}
-                  </div>
-                ) : undefined}
-                header={
-                  <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-                    <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                      <Link to="/community" style={{ fontSize: 13, color: theme.textMuted, textDecoration: "none" }}>
-                        &larr;
-                      </Link>
-                      <span style={{ fontSize: 14, fontWeight: 600 }}>{exercise.title}</span>
-                    </div>
-                    <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-                      {token && !isOwnExercise && (
-                        <VoteWidget
-                          count={(exercise.upvotes || 0) - (exercise.downvotes || 0)}
-                          userVote={userVote}
-                          onVote={handleVote}
-                        />
-                      )}
-                      <span style={{ fontSize: 12, fontWeight: 600, color: attempt?.completed ? "#16a34a" : "#d97706" }}>
-                        {attempt?.completed ? "Completed" : "Submitted"}{attempt?.score !== null && ` ${attempt?.score}%`}
-                      </span>
-                      {!isOwnExercise && (
-                        <button onClick={() => setRevising(true)} style={{
-                          ...btnStyle, padding: "4px 12px", fontSize: 12,
-                          background: "transparent", color: theme.accent,
-                          border: `1px solid ${theme.accent}`,
-                        }}>Revise</button>
-                      )}
-                      {id && (
-                        <ShareButton
-                          svgElement={svgEl}
-                          sourceType="exercise"
-                          sourceId={id}
-                          title={exercise.title}
-                          description={exercise.description}
-                          style={{
-                            ...btnStyle, padding: "4px 12px", fontSize: 12,
-                            background: "transparent", color: theme.accent,
-                            border: `1px solid ${theme.accent}`,
-                          }}
-                        />
-                      )}
-                    </div>
-                  </div>
-                }
-              />
-              {/* Species counterpoint feedback */}
-              {errors !== null && exercise.template === "species_counterpoint" && renderSpeciesFeedback()}
-            </>
-          ) : (
-            /* Solutions tab */
-            <div style={{ maxWidth: 960, width: "100%", margin: "0 auto", padding: "16px 24px" }}>
-              <div style={{ marginBottom: 16 }}>
-                <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                  <Link to="/community" style={{ fontSize: 13, color: theme.textMuted, textDecoration: "none" }}>&larr;</Link>
-                  <span style={{ fontSize: 14, fontWeight: 600 }}>{exercise.title}</span>
-                </div>
-                {exercise.description && (
-                  <div style={{ fontSize: 14, color: theme.textSub, lineHeight: 1.5, marginTop: 8, paddingLeft: 21 }}>
-                    {exercise.description}
-                  </div>
-                )}
-              </div>
-              {solutionsLoading ? (
-                <div style={{ textAlign: "center", padding: 32, color: theme.textMuted }}>Loading solutions...</div>
-              ) : solutions.length === 0 ? (
-                <div style={{ textAlign: "center", padding: 32, color: theme.textMuted }}>No shared solutions yet.</div>
-              ) : (
-                <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-                  {solutions.map(sol => {
-                    const isExpanded = expandedSolution === sol.attemptId;
-                    const solConfig = isExpanded ? makeSolutionLessonConfig(sol) : null;
-                    return (
-                      <div key={sol.attemptId} style={{
-                        border: `1px solid ${theme.cardBorder}`,
-                        borderRadius: 8,
-                        overflow: "hidden",
-                      }}>
-                        <button
-                          onClick={() => setExpandedSolution(isExpanded ? null : sol.attemptId)}
-                          style={{
-                            width: "100%",
-                            display: "flex", alignItems: "center", justifyContent: "space-between",
-                            padding: "12px 16px",
-                            background: dk ? "rgba(255,255,255,0.03)" : "rgba(0,0,0,0.02)",
-                            border: "none",
-                            cursor: "pointer",
-                            fontFamily: "inherit",
-                            color: theme.text,
-                          }}
-                        >
-                          <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-                            <span style={{ fontSize: 13, fontWeight: 600 }}>{sol.displayName}</span>
-                            {sol.score !== null && (
-                              <span style={{ fontSize: 12, color: sol.completed ? "#16a34a" : "#d97706" }}>
-                                {sol.score}%
-                              </span>
-                            )}
-                          </div>
-                          <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-                            <VoteWidget
-                              count={sol.upvoteCount}
-                              userVote={sol.userUpvoted ? "up" : null}
-                              onVote={token && sol.userId !== user?.id ? () => handleSolutionUpvote(sol.attemptId) : undefined}
-                              upvoteOnly
-                              compact
-                            />
-                            <span style={{ fontSize: 11, color: theme.textMuted }}>
-                              {isExpanded ? "\u25B2" : "\u25BC"}
-                            </span>
-                          </div>
-                        </button>
-                        {isExpanded && solConfig && (
-                          <div style={{ borderTop: `1px solid ${theme.cardBorder}` }}>
-                            <NoteEditor
-                              key={sol.attemptId}
-                              lessonConfig={solConfig}
-                              readOnly={true}
-                              maxWidth={1200}
-                              initialTrebleBeats={sol.trebleBeats || undefined}
-                              initialBassBeats={sol.bassBeats || undefined}
-                            />
-                          </div>
-                        )}
-                      </div>
-                    );
-                  })}
-                </div>
-              )}
-            </div>
-          )}
-        </>
-      ) : (
-        /* Pre-submission / revising view */
+      {showSubmittedView ? (
         <>
           <NoteEditor
-            key={effectiveAttempt?.id ?? "no-attempt"}
+            key={attempt?.id ?? "submitted"}
+            lessonConfig={mySubmittedLessonConfig ?? lessonConfig}
+            readOnly={true}
+            maxWidth={1200}
+            initialTrebleBeats={attempt?.trebleBeats || undefined}
+            initialBassBeats={attempt?.bassBeats || undefined}
+            onSvgRef={setSvgEl}
+            subheader={exercise.description ? (
+              <div style={{ maxWidth: 960, margin: "0 auto", padding: "12px 24px 0", fontSize: 14, color: theme.textSub, lineHeight: 1.5 }}>
+                {exercise.description}
+              </div>
+            ) : undefined}
+            header={
+              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                  <Link to="/community" style={{ fontSize: 13, color: theme.textMuted, textDecoration: "none" }}>
+                    &larr;
+                  </Link>
+                  <span style={{ fontSize: 14, fontWeight: 600 }}>{exercise.title}</span>
+                </div>
+                <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+                  {token && !isOwnExercise && (
+                    <VoteWidget
+                      count={(exercise.upvotes || 0) - (exercise.downvotes || 0)}
+                      userVote={userVote}
+                      onVote={handleVote}
+                    />
+                  )}
+                  <span style={{ fontSize: 12, fontWeight: 600, color: attempt?.completed ? "#16a34a" : "#d97706" }}>
+                    {attempt?.completed ? "Completed" : "Submitted"}{attempt?.score !== null && ` ${attempt?.score}%`}
+                  </span>
+                  {!isOwnExercise && (
+                    <button onClick={() => setRevising(true)} style={{
+                      ...btnStyle, padding: "4px 12px", fontSize: 12,
+                      background: "transparent", color: theme.accent,
+                      border: `1px solid ${theme.accent}`,
+                    }}>Revise</button>
+                  )}
+                  {id && (
+                    <ShareButton
+                      svgElement={svgEl}
+                      sourceType="exercise"
+                      sourceId={id}
+                      title={exercise.title}
+                      description={exercise.description}
+                      style={{
+                        ...btnStyle, padding: "4px 12px", fontSize: 12,
+                        background: "transparent", color: theme.accent,
+                        border: `1px solid ${theme.accent}`,
+                      }}
+                    />
+                  )}
+                </div>
+              </div>
+            }
+          />
+          {errors !== null && exercise.template === "species_counterpoint" && renderSpeciesFeedback()}
+        </>
+      ) : (
+        /* Working / revising view — shown to everyone including unauthenticated */
+        <>
+          <NoteEditor
+            key="exercise-editor"
             lessonConfig={lessonConfig}
             readOnly={false}
             maxWidth={1200}
             initialTrebleBeats={effectiveAttempt?.trebleBeats || undefined}
             initialBassBeats={effectiveAttempt?.bassBeats || undefined}
+            onSvgRef={setSvgEl}
             subheader={exercise.description ? (
               <div style={{ maxWidth: 960, margin: "0 auto", padding: "12px 24px 0", fontSize: 14, color: theme.textSub, lineHeight: 1.5 }}>
                 {exercise.description}
@@ -639,11 +501,25 @@ export function CommunityExercisePage() {
                       </button>
                     </>
                   )}
+                  {id && (
+                    <ShareButton
+                      svgElement={svgEl}
+                      sourceType="exercise"
+                      sourceId={id}
+                      title={exercise.title}
+                      description={exercise.description}
+
+                      style={{
+                        ...btnStyle, padding: "4px 12px", fontSize: 12,
+                        background: "transparent", color: theme.accent,
+                        border: `1px solid ${theme.accent}`,
+                      }}
+                    />
+                  )}
                 </div>
               </div>
             }
           />
-          {/* Species counterpoint feedback for revising */}
           {isSubmitted && revising && errors !== null && exercise.template === "species_counterpoint" && renderSpeciesFeedback()}
         </>
       )}

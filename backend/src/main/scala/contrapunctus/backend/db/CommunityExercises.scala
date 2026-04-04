@@ -16,27 +16,27 @@ object CommunityExercises:
   private val exerciseCodec =
     uuid *: uuid *: text *: text *: text *: int4 *: text *: int4 *: int4 *:
     circeJsonb *: circeJsonb.opt *: circeJsonb.opt *: circeJsonb.opt *: circeJsonb.opt *:
-    textList *: text *: int4 *: int4 *: numeric *: text *: int4 *: int4 *: timestamptz *: timestamptz
+    textList *: text *: int4 *: int4 *: numeric *: text *: int4 *: int4 *: timestamptz *: timestamptz *: timestamptz
 
   private val exerciseWithNameCodec = exerciseCodec *: text
 
   private def toExercise(t: (UUID, UUID, String, String, String, Int, String, Int, Int,
     Json, Option[Json], Option[Json], Option[Json], Option[Json],
-    List[String], String, Int, Int, BigDecimal, String, Int, Int, java.time.OffsetDateTime, java.time.OffsetDateTime)) =
+    List[String], String, Int, Int, BigDecimal, String, Int, Int, java.time.OffsetDateTime, java.time.OffsetDateTime, java.time.OffsetDateTime)) =
     t match
       case (id, creatorId, title, desc, tmpl, tonic, scale, tsT, tsB,
             soprano, bass, fb, refSol, rnKey,
-            tags, status, attempts, completions, rate, diff, up, down, created, updated) =>
+            tags, status, attempts, completions, rate, diff, up, down, created, updated, contentUpdated) =>
         CommunityExercise(id, creatorId, title, desc, tmpl, tonic, scale, tsT, tsB,
-          soprano, bass, fb, refSol, rnKey, tags, status, attempts, completions, rate, diff, up, down, created, updated)
+          soprano, bass, fb, refSol, rnKey, tags, status, attempts, completions, rate, diff, up, down, created, updated, contentUpdated)
 
   private def toExerciseWithName(t: ((UUID, UUID, String, String, String, Int, String, Int, Int,
     Json, Option[Json], Option[Json], Option[Json], Option[Json],
-    List[String], String, Int, Int, BigDecimal, String, Int, Int, java.time.OffsetDateTime, java.time.OffsetDateTime), String)) =
+    List[String], String, Int, Int, BigDecimal, String, Int, Int, java.time.OffsetDateTime, java.time.OffsetDateTime, java.time.OffsetDateTime), String)) =
     val (base, displayName) = t
     toExercise(base).copy(creatorDisplayName = displayName)
 
-  private val returnCols = "id, creator_id, title, description, template, tonic_idx, scale_name, ts_top, ts_bottom, soprano_beats, bass_beats, figured_bass, reference_solution, rn_answer_key, tags, status, attempt_count, completion_count, completion_rate, inferred_difficulty, upvotes, downvotes, created_at, updated_at"
+  private val returnCols = "id, creator_id, title, description, template, tonic_idx, scale_name, ts_top, ts_bottom, soprano_beats, bass_beats, figured_bass, reference_solution, rn_answer_key, tags, status, attempt_count, completion_count, completion_rate, inferred_difficulty, upvotes, downvotes, created_at, updated_at, content_updated_at"
 
   val insert: Query[(UUID, String, String, String, Int, String, Int, Int, Json, Option[Json], Option[Json], Option[Json], Option[Json], List[String]), CommunityExercise] =
     sql"""
@@ -47,7 +47,7 @@ object CommunityExercises:
       RETURNING #$returnCols
     """.query(exerciseCodec).map(toExercise)
 
-  private val qualifiedReturnCols = "ce.id, ce.creator_id, ce.title, ce.description, ce.template, ce.tonic_idx, ce.scale_name, ce.ts_top, ce.ts_bottom, ce.soprano_beats, ce.bass_beats, ce.figured_bass, ce.reference_solution, ce.rn_answer_key, ce.tags, ce.status, ce.attempt_count, ce.completion_count, ce.completion_rate, ce.inferred_difficulty, ce.upvotes, ce.downvotes, ce.created_at, ce.updated_at"
+  private val qualifiedReturnCols = "ce.id, ce.creator_id, ce.title, ce.description, ce.template, ce.tonic_idx, ce.scale_name, ce.ts_top, ce.ts_bottom, ce.soprano_beats, ce.bass_beats, ce.figured_bass, ce.reference_solution, ce.rn_answer_key, ce.tags, ce.status, ce.attempt_count, ce.completion_count, ce.completion_rate, ce.inferred_difficulty, ce.upvotes, ce.downvotes, ce.created_at, ce.updated_at, ce.content_updated_at"
 
   val selectById: Query[UUID, CommunityExercise] =
     sql"""
@@ -82,7 +82,7 @@ object CommunityExercises:
         scale_name = $text, ts_top = $int4, ts_bottom = $int4,
         soprano_beats = $circeJsonb, bass_beats = ${circeJsonb.opt}, figured_bass = ${circeJsonb.opt},
         reference_solution = ${circeJsonb.opt}, rn_answer_key = ${circeJsonb.opt}, tags = ${textList},
-        updated_at = NOW()
+        updated_at = NOW(), content_updated_at = NOW()
       WHERE id = $uuid AND creator_id = $uuid AND status = 'draft'
       RETURNING #$returnCols
     """.query(exerciseCodec).map(toExercise)

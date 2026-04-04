@@ -60,10 +60,11 @@ object Server:
                      <+> ProfileRoutes.routes(pool, config.jwtSecret)
                      <+> AdminRoutes.routes(pool, config.adminPassword)
 
-      val sharePublicRoutes = ShareRoutes.publicRoutes(shareService, config.backendBaseUrl, config.frontendBaseUrl)
-      val trackedApiRoutes  = LastSeenMiddleware(pool, config.jwtSecret)(apiRoutes)
-      val loggedApiRoutes   = Logger.httpRoutes(logHeaders = false, logBody = false)(trackedApiRoutes)
-      val routes            = Router("/" -> (healthRoutes <+> sharePublicRoutes), "/api" -> loggedApiRoutes)
+      val sharePublicRoutes    = ShareRoutes.publicRoutes(shareService, config.backendBaseUrl, config.frontendBaseUrl)
+      val exerciseShareRoutes = ShareRoutes.exerciseShareRoutes(shareService, exerciseService, config.backendBaseUrl)
+      val trackedApiRoutes    = LastSeenMiddleware(pool, config.jwtSecret)(apiRoutes <+> exerciseShareRoutes)
+      val loggedApiRoutes     = Logger.httpRoutes(logHeaders = false, logBody = false)(trackedApiRoutes)
+      val routes              = Router("/" -> (healthRoutes <+> sharePublicRoutes), "/api" -> loggedApiRoutes)
       val corsRoutes        = CORS.policy.withAllowOriginAll(routes.orNotFound)
 
       EmberServerBuilder

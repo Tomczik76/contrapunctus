@@ -29,14 +29,14 @@ class ExerciseScoringSuite extends munit.FunSuite:
       tags = Nil, status = "published", attemptCount = 0, completionCount = 0,
       completionRate = BigDecimal(0), inferredDifficulty = "medium",
       upvotes = 0, downvotes = 0,
-      createdAt = OffsetDateTime.now(), updatedAt = OffsetDateTime.now()
+      createdAt = OffsetDateTime.now(), updatedAt = OffsetDateTime.now(), contentUpdatedAt = OffsetDateTime.now()
     )
 
-  private def makeAttempt(exerciseId: UUID, trebleBeats: Json, bassBeats: Json): ExerciseAttempt =
+  private def makeAttempt(exerciseId: UUID, trebleBeats: Json, bassBeats: Json, studentRomans: Json = Json.arr()): ExerciseAttempt =
     ExerciseAttempt(
       id = UUID.randomUUID(), userId = UUID.randomUUID(), exerciseId = exerciseId,
       trebleBeats = trebleBeats, bassBeats = bassBeats,
-      studentRomans = Json.arr(),
+      studentRomans = studentRomans,
       score = None, completed = false, status = "draft",
       savedAt = OffsetDateTime.now(), submittedAt = None
     )
@@ -184,5 +184,70 @@ class ExerciseScoringSuite extends munit.FunSuite:
     val (score, _) = ExerciseScoring.score(exercise, attempt)
     // Should produce some score (may have errors like parallel octaves, but at least runs)
     assert(score >= BigDecimal(0))
+
+  // ── Roman numeral scoring ──
+
+  // Helper for multi-note beats (chords)
+  private def chordBeatsJson(chords: List[List[(Int, String)]], duration: String = "half"): Json =
+    val arr = chords.map { notes =>
+      Json.obj(
+        "notes" -> Json.arr(notes.map { case (dp, acc) =>
+          Json.obj("dp" -> Json.fromInt(dp), "staff" -> Json.fromString("treble"), "accidental" -> Json.fromString(acc))
+        }*),
+        "duration" -> Json.fromString(duration),
+        "isRest" -> Json.fromBoolean(false)
+      )
+    }
+    Json.arr(arr*)
+
+  test("rn_analysis: correct answers score 100"):
+    // I - V in C major: full triads
+    // Beat 0: C E G (I) — soprano C4(28) E4(30) G4(32), bass C3(21)
+    // Beat 1: G B D (V) — soprano B3(27) D4(29) G4(32), bass G2(18)
+    val sopranoBeats = chordBeatsJson(List(
+      List((28, ""), (30, ""), (32, "")),
+      List((27, ""), (29, ""), (32, ""))
+    ))
+    val bassBeats = beatsJson(List((21, ""), (18, "")), "half")
+    val exercise = makeExercise("rn_analysis", sopranoBeats, Some(bassBeats),
+      tsTop = 4, tsBottom = 4, tonicIdx = 0, scaleName = "major")
+    val studentRomans = Json.obj("0" -> Json.fromString("I"), "1" -> Json.fromString("V"))
+    val attempt = makeAttempt(exercise.id, sopranoBeats, bassBeats, studentRomans)
+    val (score, completed) = ExerciseScoring.score(exercise, attempt)
+    assertEquals(score, BigDecimal(100))
+    assert(completed)
+
+  test("rn_analysis: wrong answer reduces score"):
+    val sopranoBeats = chordBeatsJson(List(
+      List((28, ""), (30, ""), (32, "")),
+      List((27, ""), (29, ""), (32, ""))
+    ))
+    val bassBeats = beatsJson(List((21, ""), (18, "")), "half")
+    val exercise = makeExercise("rn_analysis", sopranoBeats, Some(bassBeats),
+      tsTop = 4, tsBottom = 4, tonicIdx = 0, scaleName = "major")
+    val studentRomans = Json.obj("0" -> Json.fromString("I"), "1" -> Json.fromString("mistake"))
+    val attempt = makeAttempt(exercise.id, sopranoBeats, bassBeats, studentRomans)
+    val (score, _) = ExerciseScoring.score(exercise, attempt)
+    assert(score < BigDecimal(100), s"Expected wrong answer to reduce score, got $score")
+    assertEquals(score, BigDecimal(50)) // 1 out of 2 correct
+
+  test("rn_analysis: missing answers count as wrong"):
+    val sopranoBeats = chordBeatsJson(List(
+      List((28, ""), (30, ""), (32, "")),
+      List((27, ""), (29, ""), (32, ""))
+    ))
+    val bassBeats = beatsJson(List((21, ""), (18, "")), "half")
+    val exercise = makeExercise("rn_analysis", sopranoBeats, Some(bassBeats),
+      tsTop = 4, tsBottom = 4, tonicIdx = 0, scaleName = "major")
+    val studentRomans = Json.obj("0" -> Json.fromString("I"))
+    val attempt = makeAttempt(exercise.id, sopranoBeats, bassBeats, studentRomans)
+    val (score, _) = ExerciseScoring.score(exercise, attempt)
+    assertEquals(score, BigDecimal(50)) // 1 out of 2 correct
+
+  test("rn_analysis: normalizeRn handles unicode"):
+    assertEquals(ExerciseScoring.normalizeRn("♭II⁶"), "bII6")
+    assertEquals(ExerciseScoring.normalizeRn("N⁶"), "N6")
+    assertEquals(ExerciseScoring.normalizeRn("V⁷"), "V7")
+    assertEquals(ExerciseScoring.normalizeRn("i⁶₄"), "i64")
 
 end ExerciseScoringSuite
