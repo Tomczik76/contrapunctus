@@ -2040,7 +2040,7 @@ export function NoteEditor({ header, subheader, lessonConfig, onTrebleBeatsChang
           return <line key={`l-${ldp}`} x1={nx - LEDGER_HW} y1={ly} x2={nx + LEDGER_HW} y2={ly} stroke="currentColor" strokeWidth={LINE_W} />;
         })}
         {accSym && (
-          <text x={nx - headW / 2 - 1} y={y + (accSym === "\u266D" ? 4 : 6)} fontSize={accSym === "\u266E" ? 17 : 16} textAnchor="end"
+          <text x={nx - headW / 2 - 1} y={y + (accSym === "\u266D" ? 4 : accSym === "\u266E" ? 8 : 6)} fontSize={accSym === "\u266E" ? 22 : 16} textAnchor="end"
             fill="currentColor" stroke="currentColor" strokeWidth={0.5} paintOrder="stroke">{accSym}</text>
         )}
         <path d={head.path} fill="currentColor" stroke="none"

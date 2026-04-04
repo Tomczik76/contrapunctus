@@ -424,7 +424,7 @@ function NoteHead({ note, x, staffTopDp, staffBotDp, yOffset, durationFraction, 
 
       {/* Accidental */}
       {accSym && (
-        <text x={nx - headW / 2 - 1} y={y + (accSym === "\u266D" ? 4 : 6)} fontSize={accSym === "\u266E" ? 17 : 16} textAnchor="end"
+        <text x={nx - headW / 2 - 1} y={y + (accSym === "\u266D" ? 4 : accSym === "\u266E" ? 8 : 6)} fontSize={accSym === "\u266E" ? 22 : 16} textAnchor="end"
           fill="currentColor" stroke="currentColor" strokeWidth={0.5} paintOrder="stroke">
           {accSym}
         </text>

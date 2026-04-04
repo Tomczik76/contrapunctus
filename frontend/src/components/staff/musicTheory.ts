@@ -251,9 +251,9 @@ export function beatTimeOffsets(beats: PlacedBeat[]): number[] {
 // ── Key Signature Data ──────────────────────────────────────────────
 
 /** Diatonic positions for sharps in treble clef (F C G D A E B). */
-export const TREBLE_SHARP_DPS = [38, 35, 32, 36, 33, 37, 34];
+export const TREBLE_SHARP_DPS = [38, 35, 39, 36, 33, 37, 34];
 /** Diatonic positions for sharps in bass clef. */
-export const BASS_SHARP_DPS = [24, 21, 18, 22, 19, 23, 20];
+export const BASS_SHARP_DPS = [24, 21, 25, 22, 19, 23, 20];
 /** Diatonic positions for flats in treble clef (B E A D G C F). */
 export const TREBLE_FLAT_DPS = [34, 37, 33, 36, 32, 35, 31];
 /** Diatonic positions for flats in bass clef. */
