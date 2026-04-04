@@ -1979,14 +1979,46 @@ export function NoteEditor({ header, subheader, lessonConfig, onTrebleBeatsChang
 
 
   /** Render a notehead at a position (no stem/flag — those are per-beat). */
-  function renderNotehead(dp: number, dur: Duration, x: number, staffTopDp: number, staffBotDp: number, yOff: number, acc: Accidental = "", opacity = 1) {
+  /**
+   * Compute x-offsets for noteheads in a chord to avoid overlap on seconds.
+   * In clusters of consecutive seconds, noteheads alternate between two columns:
+   * odd positions (1st, 3rd, 5th from bottom) go LEFT, even positions (2nd, 4th) go RIGHT.
+   * For stem up, LEFT = normal position, RIGHT = +headW.
+   * For stem down, RIGHT = normal position, LEFT = -headW.
+   */
+  function computeSecondOffsets(dps: number[], stemDown: boolean, headW: number): number[] {
+    const offsets = new Array(dps.length).fill(0);
+    const displacement = headW - 2;
+    let i = 0;
+    while (i < dps.length) {
+      let j = i;
+      while (j + 1 < dps.length && dps[j + 1] - dps[j] === 1) j++;
+      if (j > i) {
+        for (let k = i; k <= j; k++) {
+          const pos = k - i;
+          if (stemDown) {
+            // Even cluster positions (0, 2, 4) = left column → displaced left
+            if (pos % 2 === 0) offsets[k] = -displacement;
+          } else {
+            // Odd cluster positions (1, 3, 5) = right column → displaced right
+            if (pos % 2 === 1) offsets[k] = displacement;
+          }
+        }
+      }
+      i = j + 1;
+    }
+    return offsets;
+  }
+
+  function renderNotehead(dp: number, dur: Duration, x: number, staffTopDp: number, staffBotDp: number, yOff: number, acc: Accidental = "", opacity = 1, xOffset = 0) {
     const y = dpToY(dp, staffTopDp, yOff);
     const s = GLYPH_SCALE;
     const head = dur === "whole" ? NOTEHEAD_WHOLE
       : dur === "half" ? NOTEHEAD_HALF
       : NOTEHEAD_BLACK;
     const headW = (head.outlineXMax - head.outlineXMin) * s;
-    const headX = x - headW / 2 - head.outlineXMin * s;
+    const nx = x + xOffset;
+    const headX = nx - headW / 2 - head.outlineXMin * s;
     const accSym = displayAccidental(acc, dp, keySig);
 
     // Ledger lines
@@ -2005,10 +2037,10 @@ export function NoteEditor({ header, subheader, lessonConfig, onTrebleBeatsChang
       <g opacity={opacity}>
         {ledgers.map((ldp) => {
           const ly = dpToY(ldp, staffTopDp, yOff);
-          return <line key={`l-${ldp}`} x1={x - LEDGER_HW} y1={ly} x2={x + LEDGER_HW} y2={ly} stroke="currentColor" strokeWidth={LINE_W} />;
+          return <line key={`l-${ldp}`} x1={nx - LEDGER_HW} y1={ly} x2={nx + LEDGER_HW} y2={ly} stroke="currentColor" strokeWidth={LINE_W} />;
         })}
         {accSym && (
-          <text x={x - headW / 2 - 1} y={y + (accSym === "\u266D" ? 4 : 6)} fontSize={accSym === "\u266E" ? 17 : 16} textAnchor="end"
+          <text x={nx - headW / 2 - 1} y={y + (accSym === "\u266D" ? 4 : 6)} fontSize={accSym === "\u266E" ? 17 : 16} textAnchor="end"
             fill="currentColor" stroke="currentColor" strokeWidth={0.5} paintOrder="stroke">{accSym}</text>
         )}
         <path d={head.path} fill="currentColor" stroke="none"
@@ -2060,6 +2092,7 @@ export function NoteEditor({ header, subheader, lessonConfig, onTrebleBeatsChang
       const dps = trebleNotes.map((n) => n.dp);
       const { stemDown, stemX, stemBaseY, stemEndY } =
         stemGeometry(dps, ED_TREBLE_TOP, ED_TREBLE_MID, trebleYOffset);
+      const trebleOffsets = computeSecondOffsets(dps, stemDown, headW);
 
       trebleNotes.forEach((n, i) => {
         const y = dpToY(n.dp, ED_TREBLE_TOP, trebleYOffset);
@@ -2070,9 +2103,10 @@ export function NoteEditor({ header, subheader, lessonConfig, onTrebleBeatsChang
         const hasError = noteErrs && noteErrs.length > 0;
         const errText = hasError ? noteErrs!.join(", ") : "";
         const errTip = hasError ? noteErrs!.map(e => errorTooltips[e] || e).join(", ") : "";
+        const noteXOffset = trebleOffsets[i];
         elements.push(
           <g key={`t-${i}`}>
-            {renderNotehead(n.dp, dur, x, ED_TREBLE_TOP, ED_TREBLE_LINES[0], trebleYOffset, n.accidental, opacity)}
+            {renderNotehead(n.dp, dur, x, ED_TREBLE_TOP, ED_TREBLE_LINES[0], trebleYOffset, n.accidental, opacity, noteXOffset)}
             {hasError && (() => {
               const badgeH = 14;
               const padX = 4;
@@ -2132,6 +2166,7 @@ export function NoteEditor({ header, subheader, lessonConfig, onTrebleBeatsChang
       const dps = bassNotes.map((n) => n.dp);
       const { stemDown, stemX, stemBaseY, stemEndY } =
         stemGeometry(dps, ED_BASS_TOP, ED_BASS_MID, bassYOffset);
+      const bassOffsets = computeSecondOffsets(dps, stemDown, headW);
 
       bassNotes.forEach((n, i) => {
         const y = dpToY(n.dp, ED_BASS_TOP, bassYOffset);
@@ -2142,9 +2177,10 @@ export function NoteEditor({ header, subheader, lessonConfig, onTrebleBeatsChang
         const hasError = noteErrs && noteErrs.length > 0;
         const errText = hasError ? noteErrs!.join(", ") : "";
         const errTip = hasError ? noteErrs!.map(e => errorTooltips[e] || e).join(", ") : "";
+        const noteXOffset = bassOffsets[i];
         elements.push(
           <g key={`b-${i}`}>
-            {renderNotehead(n.dp, dur, x, ED_BASS_TOP, ED_BASS_LINES[0], bassYOffset, n.accidental, opacity)}
+            {renderNotehead(n.dp, dur, x, ED_BASS_TOP, ED_BASS_LINES[0], bassYOffset, n.accidental, opacity, noteXOffset)}
             {hasError && (() => {
               const badgeH = 14;
               const padX = 4;

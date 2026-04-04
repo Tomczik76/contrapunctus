@@ -158,8 +158,24 @@ export function GrandStaff({ data }: StaffProps) {
       })()}
 
       {/* Notes */}
-      {beatPositions.map(({ x, beat }, i) =>
-        beat.isRest ? null : (
+      {beatPositions.map(({ x, beat }, i) => {
+        if (beat.isRest) return null;
+        // Compute reversed noteheads for seconds within each staff group
+        const trebleNotesInBeat = beat.notes.filter(n => n.staff === "treble").sort((a, b) => a.diatonicPosition - b.diatonicPosition);
+        const bassNotesInBeat = beat.notes.filter(n => n.staff === "bass").sort((a, b) => a.diatonicPosition - b.diatonicPosition);
+        const [num, den] = beat.durationFraction;
+        const dur = durationCategory(num / den);
+        const head = dur === "whole" ? NOTEHEAD_WHOLE : dur === "half" ? NOTEHEAD_HALF : NOTEHEAD_BLACK;
+        const headW = (head.outlineXMax - head.outlineXMin) * GLYPH_SCALE;
+        const trebleStemDown = treble ? trebleNotesInBeat.length > 0 && (trebleNotesInBeat.reduce((a, b) => a + b.diatonicPosition, 0) / trebleNotesInBeat.length) >= middleLine(treble) : false;
+        const bassStemDown = bass ? bassNotesInBeat.length > 0 && (bassNotesInBeat.reduce((a, b) => a + b.diatonicPosition, 0) / bassNotesInBeat.length) >= middleLine(bass) : false;
+        const trebleOffsets = computeSecondOffsets(trebleNotesInBeat.map(n => n.diatonicPosition), trebleStemDown, headW);
+        const bassOffsets = computeSecondOffsets(bassNotesInBeat.map(n => n.diatonicPosition), bassStemDown, headW);
+        const noteOffsets = new Map<NoteRender, number>();
+        trebleNotesInBeat.forEach((n, idx) => { if (trebleOffsets[idx]) noteOffsets.set(n, trebleOffsets[idx]); });
+        bassNotesInBeat.forEach((n, idx) => { if (bassOffsets[idx]) noteOffsets.set(n, bassOffsets[idx]); });
+
+        return (
           <g key={`beat-${i}`}>
             {beat.notes.map((note, ni) => {
               const staffDef = note.staff === "treble" ? treble : bass;
@@ -176,12 +192,13 @@ export function GrandStaff({ data }: StaffProps) {
                   yOffset={yOff}
                   durationFraction={beat.durationFraction}
                   staffMiddleDp={middleLine(staffDef)}
+                  xOffset={noteOffsets.get(note) ?? 0}
                 />
               );
             })}
           </g>
-        )
-      )}
+        );
+      })}
 
       {/* Roman numerals */}
       {hasRomanNumerals && beatPositions.map(({ x, beat }, i) => {
@@ -204,6 +221,37 @@ export function GrandStaff({ data }: StaffProps) {
       })}
     </svg>
   );
+}
+
+// ── Helpers ─────────────────────────────────────────────────────────
+
+/**
+ * Compute x-offsets for noteheads in a chord to avoid overlap on seconds.
+ * In clusters of consecutive seconds, noteheads alternate between two columns:
+ * odd positions (1st, 3rd, 5th from bottom) go LEFT, even positions (2nd, 4th) go RIGHT.
+ * For stem up, LEFT = normal, RIGHT = +headW.
+ * For stem down, RIGHT = normal, LEFT = -headW.
+ */
+function computeSecondOffsets(dps: number[], stemDown: boolean, headW: number): number[] {
+  const offsets = new Array(dps.length).fill(0);
+  const displacement = headW - 2;
+  let i = 0;
+  while (i < dps.length) {
+    let j = i;
+    while (j + 1 < dps.length && dps[j + 1] - dps[j] === 1) j++;
+    if (j > i) {
+      for (let k = i; k <= j; k++) {
+        const pos = k - i;
+        if (stemDown) {
+          if (pos % 2 === 0) offsets[k] = -displacement;
+        } else {
+          if (pos % 2 === 1) offsets[k] = displacement;
+        }
+      }
+    }
+    i = j + 1;
+  }
+  return offsets;
 }
 
 // ── Sub-components ──────────────────────────────────────────────────
@@ -311,9 +359,9 @@ function getBarlineEnds(
   return { topY, botY };
 }
 
-function NoteHead({ note, x, staffTopDp, staffBotDp, yOffset, durationFraction, staffMiddleDp }: {
+function NoteHead({ note, x, staffTopDp, staffBotDp, yOffset, durationFraction, staffMiddleDp, xOffset = 0 }: {
   note: NoteRender; x: number; staffTopDp: number; staffBotDp: number;
-  yOffset: number; durationFraction: [number, number]; staffMiddleDp: number;
+  yOffset: number; durationFraction: [number, number]; staffMiddleDp: number; xOffset?: number;
 }) {
   const dp = note.diatonicPosition;
   const y = dpToY(dp, staffTopDp, yOffset);
@@ -329,8 +377,9 @@ function NoteHead({ note, x, staffTopDp, staffBotDp, yOffset, durationFraction, 
 
   // Notehead width in pixels (from actual outline bounds)
   const headW = (head.outlineXMax - head.outlineXMin) * s;
-  // Center notehead horizontally on x
-  const headX = x - headW / 2 - head.outlineXMin * s;
+  // Center notehead horizontally on x, applying offset for seconds
+  const nx = x + xOffset;
+  const headX = nx - headW / 2 - head.outlineXMin * s;
 
   const stemDown = dp >= staffMiddleDp;
   const hasStem = dur !== "whole";
@@ -370,12 +419,12 @@ function NoteHead({ note, x, staffTopDp, staffBotDp, yOffset, durationFraction, 
       {/* Ledger lines */}
       {ledgers.map((ldp) => {
         const ly = dpToY(ldp, staffTopDp, yOffset);
-        return <line key={`ledger-${ldp}`} x1={x - LEDGER_HW} y1={ly} x2={x + LEDGER_HW} y2={ly} stroke="currentColor" strokeWidth={LINE_W} />;
+        return <line key={`ledger-${ldp}`} x1={nx - LEDGER_HW} y1={ly} x2={nx + LEDGER_HW} y2={ly} stroke="currentColor" strokeWidth={LINE_W} />;
       })}
 
       {/* Accidental */}
       {accSym && (
-        <text x={x - headW / 2 - 1} y={y + (accSym === "\u266D" ? 4 : 6)} fontSize={accSym === "\u266E" ? 17 : 16} textAnchor="end"
+        <text x={nx - headW / 2 - 1} y={y + (accSym === "\u266D" ? 4 : 6)} fontSize={accSym === "\u266E" ? 17 : 16} textAnchor="end"
           fill="currentColor" stroke="currentColor" strokeWidth={0.5} paintOrder="stroke">
           {accSym}
         </text>

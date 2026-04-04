@@ -7,6 +7,8 @@
 - Export Midi
 - Transforms to change modes 
 - AI asstant
+- Bugs in the key signatures
+- 
 
 Here's my evaluation of the music theory engine in shared/:
 
